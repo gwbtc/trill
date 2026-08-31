@@ -43,4 +43,8 @@ Most importantly though, we are an Urbit app, living in the users computer, and 
 
 The biggest technical innovation of Trill 2.0 compared to it's parent version is WebSockets support. This was added specifically to support the Nostr protocol. Trill 2.0 allows users to add Nostr relays, fetch data from them and send data to them. Unfortunately the data to be found in Nostr relays as of August 2026 is not very stellar content but there is still plenty of value in interop with the Nostr community, and we plan to support DMs, group DMs and user authentication using Nostr standards. The idea is to Embrace and Extend. Never Extinguish of course, we would never do that. We just want to welcome the Nostr community and show the how Urbit can complement their technology in a way nothing else can.
 
+### Cashu
+
+As part of Nostr support we will support ecash payments with cashu, as many Nostr clients like Primal do.
+
 
