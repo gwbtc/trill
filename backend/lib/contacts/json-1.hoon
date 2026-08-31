@@ -1,0 +1,193 @@
+/-  c=contacts, c0=contacts-0
+|%
+++  g
+|%
+++  enjs
+=,  enjs:format
+  |%
+  ++  print-flag
+    |=  f=flag:c0
+    ^-  @t
+    (rap 3 (scot %p p.f) '/' q.f ~)
+  ++  flag
+    |=  f=flag:c0
+    s+(print-flag f)
+  ++  print-nest
+    |=  n=nest:c
+    ^-  @t
+    (rap 3 p.n '/' (print-flag q.n) ~)
+  ::
+  ++  nest
+    |=  n=nest:c
+    s+(print-nest n)
+--
+++  dejs
+=,  dejs:format
+|%
+  ++  p
+    |%
+    ++  rank  (perk %czar %king %duke %earl %pawn ~)
+    ++  ship  ;~(pfix sig fed:ag)
+    ++  flag  ;~((glue fas) ship ^sym)
+    ++  nest  ;~((glue fas) ^sym flag)
+    --
+  ++  sym  (se %tas)
+  ++  ship  (se %p)
+  ++  rank  (su rank:p)
+  ++  flag  (su flag:p)
+  ++  nest  (su nest:p)
+  --
+--
+++  enjs  =,  enjs:format
+  |%
+  ::
+  ++  ship
+    |=(her=@p n+(rap 3 '"' (scot %p her) '"' ~))
+  ::
+  ++  cid
+    |=  =cid:c
+    ^-  json
+    s+(scot %uv cid)
+  ::
+  ++  kip
+    |=  =kip:c
+    ^-  json
+    ?@  kip
+      (ship kip)
+    (cid +.kip)
+  ::
+  ++  value
+    |=  val=value:c
+    ^-  json
+    ?@  val
+      (frond type+s/%null)
+    ?-  -.val
+      %text  (pairs type+s/%text value+s+p.val ~)
+      %numb  (pairs type+s/%numb value+(numb p.val) ~)
+      %date  (pairs type+s/%date value+s+(scot %da p.val) ~)
+      %tint  (pairs type+s/%tint value+s+(rsh 3^2 (scot %ux p.val)) ~)
+      %ship  (pairs type+s/%ship value+(ship p.val) ~)
+      %look  (pairs type+s/%look value+s/p.val ~)
+      %flag  (pairs type+s/%flag value+(flag:enjs:g p.val) ~)
+      %set   (pairs type+s/%set value+a+(turn ~(tap in p.val) value) ~)
+    ==
+  ::
+  ++  contact
+    |=  con=contact:c
+    ^-  json
+    o+(~(run by con) value)
+  ::
+  ++  page
+    |=  =page:c
+    ^-  json
+    a+[(contact con.page) (contact mod.page) ~]
+  ::
+  ++  book
+    |=  =book:c
+    ^-  json
+    =|  kob=(map @ta json)
+    :-  %o
+    %-  ~(rep by book)
+    |=  [[=kip:c =page:c] acc=_kob]
+    ?^  kip
+      (~(put by acc) (scot %uv +.kip) (^page page))
+    (~(put by acc) (scot %p kip) (^page page))
+  ::
+  ++  directory
+    |=  =directory:c
+    %-  pairs
+    %+  turn  ~(tap by directory)
+    |=  [who=@p =leaf:c]
+    :-  (scot %p who)
+    %-   pairs
+    =,  leaf
+    :~  'isContact'^b+contact
+        contact+(^contact con)
+        mod+(^contact mod)
+    ==
+  ::
+  ++  response
+    |=  n=response:c
+    ^-  json
+    %+  frond  -.n
+    ?-  -.n
+      %self  (frond contact+(contact con.n))
+      %page  %-  pairs
+             :~  kip+(kip kip.n)
+                 contact+(contact con.n)
+                 mod+(contact mod.n)
+             ==
+      %wipe  (frond kip+(kip kip.n))
+      %peer  %-  pairs
+             :~  who+(ship who.n)
+                 contact+(contact con.n)
+             ==
+    ==
+  --
+::
+++  dejs
+  =,  dejs:format
+  |%
+  ::
+  ++  ship  (se %p)
+  ::
+  ++  cid
+    |=  jon=json
+    ^-  cid:c
+    ?>  ?=(%s -.jon)
+    (slav %uv p.jon)
+  ::
+  ++  kip
+    |=  jon=json
+    ^-  kip:c
+    ?>  ?=(%s -.jon)
+    ?:  =('~' (end [3 1] p.jon))
+      (ship jon)
+    id+(cid jon)
+  ::  +ta: tag .wit parsed json with .mas
+  ::
+  ++  ta
+    |*  [mas=@tas wit=fist]
+    |=  jon=json
+    [mas (wit jon)]
+  ::
+  ++  value
+    ^-  $-(json value:c)
+    |=  jon=json
+    ?~  jon  ~
+    =/  [type=@tas val=json]
+      %.  jon
+      (ot type+(se %tas) value+json ~)
+    ?+  type  !!
+      %text  %.  val  (ta %text so)
+      %numb  %.  val  (ta %numb ni)
+      %date  %.  val  (ta %date (se %da))
+      %tint  %.  val
+             %+  ta  %tint
+             %+  cu
+             |=(s=@t (slav %ux (cat 3 '0x' s)))
+             so
+      %ship  %.  val  (ta %ship ship)
+      %look  %.  val  (ta %look so)
+      %flag  %.  val  (ta %flag flag:dejs:g)
+      %set   %.  val  (ta %set (as value))
+    ==
+  ::
+  ++  contact
+    ^-  $-(json contact:c)
+    (om value)
+  ::
+  ++  action
+    ^-  $-(json action:c)
+    %-  of
+    :~  anon+ul
+        self+contact
+        page+(ot kip+kip contact+contact ~)
+        edit+(ot kip+kip contact+contact ~)
+        wipe+(ar kip)
+        meet+(ar ship)
+        drop+(ar ship)
+        snub+(ar ship)
+    ==
+  --
+--

@@ -1,0 +1,140 @@
+/* Nostr Feed Styles */
+.nostr-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  padding: 40px 20px;
+
+  .icon {
+    width: 6rem;
+  }
+
+  .resync-btn {
+    .icon {
+      width: 1rem;
+    }
+  }
+}
+
+.empty-content {
+  text-align: center;
+  max-width: 400px;
+}
+
+.empty-content h3 {
+  margin: 20px 0 10px 0;
+  color: var(--color-text);
+  font-size: 24px;
+}
+
+.empty-content p {
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  margin-bottom: 30px;
+}
+
+.resync-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 500;
+  transition: opacity 0.2s ease;
+}
+
+.resync-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.resync-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.nostr-feed {
+  width: 100%;
+}
+
+.nostr-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: var(--color-surface);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  border: 1px solid var(--color-border);
+}
+
+.feed-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.feed-info h4 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 18px;
+}
+
+.post-count {
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  background: var(--color-background);
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+}
+
+.btn-small {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--color-text);
+}
+
+.btn-small:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+  border-color: var(--color-primary);
+}
+
+.btn-small:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-spinner {
+  width: 16px;
+  height: 16px;
+  animation: spin 1s linear infinite;
+}
+
+.btn-spinner-small {
+  width: 14px;
+  height: 14px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}

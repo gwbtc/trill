@@ -1,0 +1,721 @@
+import { describe, expect, test } from "bun:test";
+import { getFocusWrapTarget } from "../src/logic/focusTrap";
+import { getRailSearchRoute } from "../src/logic/searchRouting";
+import { normalizeThreadStyle } from "../src/hooks/useThreadStyle";
+import { patpToFallbackUID } from "../src/logic/gw";
+import {
+  nostrFeedsToFcMap,
+  sourcedFeedsToFc,
+  stringToUser,
+  userToStringSafe,
+} from "../src/logic/nostrill";
+import { parseStateFact } from "../src/logic/stateFact";
+import { getHandleLabel, getUserId } from "../src/logic/userDisplay";
+import { isValidRelayUrl } from "../src/logic/relayDisplay";
+import {
+  buildFeedStatusSubscriptions,
+  getFeedStatusSummary,
+} from "../src/logic/feedStatus";
+import {
+  buildDmConversations,
+  buildDmRequestRows,
+  canCreateRawDm,
+  filterDmConversationsForSearch,
+  filterDmDirectory,
+  getDmUnreadCount,
+  getPinnedDmPatps,
+  mergeDmJailConversations,
+  orderPinnedDmConversations,
+} from "../src/logic/dms";
+import { countThreadChildren, flattenThreadChildren } from "../src/logic/threadTree";
+import {
+  buildDemoInvoice,
+  classifyWalletInput,
+  getCashuBalance,
+  getZapAmountError,
+  getWalletTotal,
+  sanitizeSats,
+} from "../src/logic/wallet";
+import {
+  getProfileGalaxy,
+  getProfileMedia,
+  getProfilePosts,
+  getProfileReplies,
+  getReplyTarget,
+} from "../src/logic/profile";
+import {
+  filterNotifications,
+  formatNotificationTimestamp,
+  getNotificationKind,
+  isSameNotificationRope,
+  notificationPath,
+  skeinToNote,
+} from "../src/logic/notifications";
+import type { DMs, UserProfile } from "../src/types/nostrill";
+import type { Notification } from "../src/types/notifications";
+import type { Rope, Skein } from "../src/types/hark";
+import type { FC, FullNode, Poast } from "../src/types/trill";
+
+describe("right rail search routing", () => {
+  test("navigates to search and remembers the previous page", () => {
+    const result = getRailSearchRoute({
+      currentLocation: "/sets",
+      isSearchScreen: false,
+      nextQuery: "relays",
+      previousRoute: "/f",
+    });
+
+    expect(result).toEqual({
+      nextPath: "/search?q=relays",
+      previousRoute: "/sets",
+    });
+  });
+
+  test("clearing search keeps the empty Search screen open", () => {
+    const result = getRailSearchRoute({
+      currentLocation: "/search",
+      isSearchScreen: true,
+      nextQuery: "",
+      previousRoute: "/fols",
+    });
+
+    expect(result).toEqual({
+      nextPath: "/search",
+      previousRoute: "/fols",
+    });
+  });
+});
+
+describe("thread style persistence", () => {
+  test("normalizes unknown values to nested", () => {
+    expect(normalizeThreadStyle(null)).toBe("nested");
+    expect(normalizeThreadStyle("compact")).toBe("nested");
+  });
+
+  test("preserves the linear preference", () => {
+    expect(normalizeThreadStyle("linear")).toBe("linear");
+  });
+});
+
+describe("notification helpers", () => {
+  const rope = (thread: string): Rope => ({
+    group: null,
+    channel: null,
+    desk: "nostrill",
+    thread,
+  });
+  const note = (
+    id: string,
+    timestamp: number,
+    type: Notification["type"],
+    unread = true,
+  ): Notification => ({
+    id,
+    timestamp,
+    type,
+    unread,
+    message: [],
+    rope: rope(id),
+  });
+
+  test("filters each notification tab and keeps newest activity first", () => {
+    const notifications = [
+      note("reply", 100, {
+        post: {
+          reply: {
+            user: "~litzod",
+            parent: { ship: "~zod", id: "root" },
+            id: "reply",
+          },
+        },
+      }),
+      note("relay", 300, { nostr: { relayDown: "wss://relay.test" } }),
+      note("mention", 200, {
+        post: { mention: { user: "~nec", post: { ship: "~zod", id: "post" } } },
+      }, false),
+    ];
+
+    expect(filterNotifications(notifications, "all").map(({ id }) => id)).toEqual([
+      "relay",
+      "mention",
+      "reply",
+    ]);
+    expect(filterNotifications(notifications, "unread").map(({ id }) => id)).toEqual([
+      "relay",
+      "reply",
+    ]);
+    expect(filterNotifications(notifications, "mentions").map(({ id }) => id)).toEqual([
+      "mention",
+      "reply",
+    ]);
+    expect(filterNotifications(notifications, "relays").map(({ id }) => id)).toEqual([
+      "relay",
+    ]);
+  });
+
+  test("derives icons and routes from the real notification variants", () => {
+    const reply = note("reply", 100, {
+      post: {
+        reply: {
+          user: "~litzod",
+          parent: { ship: "~zod", id: "root" },
+          id: "reply",
+        },
+      },
+    });
+    const nostrPost = {
+      ...note("nostr", 100, { prof: "~zod" }),
+      from: { nostr: "ab".repeat(32) },
+      postId: "event-id",
+    } satisfies Notification;
+
+    expect(getNotificationKind(reply.type)).toBe("reply");
+    expect(notificationPath(reply)).toBe("/t/u/~zod/root");
+    expect(notificationPath(nostrPost)).toBe("/t/n/event-id");
+  });
+
+  test("parses repost and deletion variants without collapsing their types", () => {
+    const makeSkein = (wer: string): Skein => ({
+      time: 1_700_000_000_000,
+      count: 0,
+      "ship-count": 0,
+      unread: true,
+      top: {
+        id: wer,
+        rope: rope(wer),
+        time: 1_700_000_000_000,
+        con: [],
+        wer,
+        but: null,
+      },
+    });
+    const repost = skeinToNote(makeSkein("/post/rp/~litzod/~zod/root/repost"));
+    const deletion = skeinToNote(
+      makeSkein("/post/delParent/~litzod/~zod/root/deleted"),
+    );
+
+    expect("ok" in repost && getNotificationKind(repost.ok.type)).toBe("repost");
+    expect("ok" in deletion && getNotificationKind(deletion.ok.type)).toBe("deletion");
+    expect("ok" in repost && repost.ok.rope?.thread).toBe(
+      "/post/rp/~litzod/~zod/root/repost",
+    );
+  });
+
+  test("handles Hark second timestamps and exact rope identity", () => {
+    expect(formatNotificationTimestamp(1_700_000_000, 1_700_000_120_000)).toBe("2m ago");
+    expect(isSameNotificationRope(rope("one"), rope("one"))).toBe(true);
+    expect(isSameNotificationRope(rope("one"), rope("two"))).toBe(false);
+  });
+});
+
+describe("wallet helpers", () => {
+  const mints = [
+    { id: "one", name: "One", url: "https://one.test", balance: 800, online: true },
+    { id: "two", name: "Two", url: "https://two.test", balance: 200, online: false },
+  ];
+
+  test("derives the displayed balances from connected mints", () => {
+    expect(getCashuBalance(mints)).toBe(1_000);
+    expect(getWalletTotal(mints)).toBe(13_500);
+  });
+
+  test("sanitizes amounts and detects supported payment input", () => {
+    expect(sanitizeSats("21,000 sats")).toBe("21000");
+    expect(classifyWalletInput("cashuAeyJ0b2tlbiI6W10")).toBe("cashu");
+    expect(classifyWalletInput("lnbc21000n1example")).toBe("lightning");
+    expect(classifyWalletInput("short")).toBeNull();
+  });
+
+  test("builds a deterministic invoice-looking value for the UI preview", () => {
+    expect(buildDemoInvoice(5_000)).toBe(buildDemoInvoice(5_000));
+    expect(buildDemoInvoice(5_000)).toStartWith("lnbc5000");
+  });
+
+  test("rejects empty and over-balance Zap amounts", () => {
+    expect(getZapAmountError(0, 12_500)).toBe("Enter at least 1 sat");
+    expect(getZapAmountError(12_501, 12_500)).toBe(
+      "Amount exceeds your Lightning balance",
+    );
+    expect(getZapAmountError(12_500, 12_500)).toBeNull();
+  });
+});
+
+describe("profile helpers", () => {
+  const uid = patpToFallbackUID("~sorreg-namtyv");
+  const post = (
+    id: string,
+    time: number,
+    parent: string | null,
+    contents: Poast["contents"],
+  ) => ({
+    id,
+    hash: id,
+    host: "~litzod",
+    author: uid.patp,
+    authorFull: { host: uid, author: uid },
+    thread: parent ? "root" : null,
+    parent,
+    perms: {
+      read: { lock: { open: null }, manual: false, begs: {}, mute: { open: null }, backlog: 0 },
+      write: { lock: { open: null }, manual: false, begs: {}, mute: { open: null }, backlog: 0 },
+    },
+    tags: [],
+    contents,
+    time,
+    children: [],
+    engagement: { reacts: {}, quoted: [], shared: [] },
+  }) as Poast;
+  const feed: FC = {
+    start: null,
+    end: null,
+    feed: {
+      root: post("root", 100, null, [{ paragraph: [{ text: "root" }] }]),
+      reply: post("reply", 200, "parent", [
+        { paragraph: [{ text: "reply" }] },
+        { media: { images: ["https://cdn.test/photos/one.png", "https://cdn.test/two.jpg"] } },
+      ]),
+    },
+  };
+
+  test("separates root posts and replies while preserving newest-first order", () => {
+    expect(getProfilePosts(feed, uid.patp).map((item) => item.id)).toEqual(["root"]);
+    expect(getProfileReplies(feed, uid.patp).map((item) => item.id)).toEqual(["reply"]);
+    expect(getReplyTarget(feed.feed.reply)).toBe("~litzod");
+  });
+
+  test("extracts real image tiles with filenames and carousel state", () => {
+    expect(getProfileMedia(feed, uid.patp).map(({ label, multi }) => ({ label, multi }))).toEqual([
+      { label: "one.png", multi: true },
+      { label: "two.jpg", multi: true },
+    ]);
+  });
+
+  test("derives the Urbit galaxy without inventing metadata for Nostr users", () => {
+    expect(getProfileGalaxy({ urbit: uid })).toBe("~zod");
+    expect(getProfileGalaxy({ nostr: "aa".repeat(32) })).toBeNull();
+  });
+});
+
+describe("modal focus wrapping", () => {
+  test("wraps Shift+Tab from the first control to the last", () => {
+    expect(getFocusWrapTarget(0, 4, true)).toBe(3);
+  });
+
+  test("wraps Tab from the last control to the first", () => {
+    expect(getFocusWrapTarget(3, 4, false)).toBe(0);
+  });
+
+  test("does not wrap when focus is inside the list", () => {
+    expect(getFocusWrapTarget(1, 4, false)).toBeNull();
+    expect(getFocusWrapTarget(2, 4, true)).toBeNull();
+  });
+});
+
+describe("identity helpers", () => {
+  test("keeps Urbit users rich while exposing stable string keys", () => {
+    const uid = patpToFallbackUID("~zod");
+    const user = { urbit: uid };
+
+    expect(getUserId(user)).toBe("~zod");
+    expect(userToStringSafe(user)).toBe("~zod");
+    expect(getHandleLabel(user)).toBe("~zod");
+  });
+
+  test("parses patps into full Urbit identities", () => {
+    const result = stringToUser("~zod");
+
+    expect("ok" in result).toBe(true);
+    if ("ok" in result && "urbit" in result.ok) {
+      expect(result.ok.urbit.patp).toBe("~zod");
+      expect(typeof result.ok.urbit.point).toBe("bigint");
+    }
+  });
+});
+
+describe("relay helpers", () => {
+  test("validates relay URLs by websocket protocol", () => {
+    expect(isValidRelayUrl("wss://relay.example")).toBe(true);
+    expect(isValidRelayUrl("ws://localhost:8080")).toBe(true);
+    expect(isValidRelayUrl("https://relay.example")).toBe(false);
+    expect(isValidRelayUrl("not a url")).toBe(false);
+  });
+});
+
+describe("feed status helpers", () => {
+  const relays = {
+    "wss://relay.one": {
+      start: 100,
+      wid: 1,
+      reqs: {
+        home: {
+          eventsReceived: 3,
+          filters: [{ kinds: [1], limit: 20 }],
+          name: "Home timeline",
+          ongoing: true,
+        },
+      },
+    },
+    "wss://relay.two": {
+      start: 100,
+      wid: 2,
+      reqs: {
+        home: {
+          eventsReceived: 5,
+          filters: [{ kinds: [1], limit: 20 }],
+          name: "Home timeline",
+          ongoing: true,
+        },
+      },
+    },
+  };
+
+  test("groups matching relay request ids into one subscription", () => {
+    const [subscription] = buildFeedStatusSubscriptions(relays);
+
+    expect(subscription.label).toBe("Home timeline");
+    expect(subscription.relayCount).toBe(2);
+    expect(subscription.totalEvents).toBe(8);
+    expect(subscription.state).toBe("live");
+    expect(subscription.filter).toContain('"kinds"');
+  });
+
+  test("summarizes syncing before live state", () => {
+    expect(getFeedStatusSummary(relays).label).toBe("live · 1 req");
+    expect(getFeedStatusSummary(relays, {}, true)).toEqual({
+      state: "syncing",
+      label: "syncing...",
+      requestCount: 1,
+    });
+  });
+});
+
+describe("dm helpers", () => {
+  const litzod = {
+    ...patpToFallbackUID("~litzod"),
+    gwid: {
+      english: {
+        nym: "wicket bright",
+        abridged: "wicket",
+        foreshortened: "wit",
+      },
+      hanzi: {
+        nym: "",
+        abridged: "",
+        foreshortened: "",
+      },
+    },
+  };
+  const dmPost = (id: string, author: string, text: string, time: number): Poast =>
+    ({
+      id,
+      hash: id,
+      host: "~zod",
+      author,
+      authorFull: { host: patpToFallbackUID("~zod"), author: patpToFallbackUID("~zod") },
+      thread: null,
+      parent: null,
+      perms: {
+        read: { lock: { open: null }, manual: false, begs: {}, mute: { open: null }, backlog: 0 },
+        write: { lock: { open: null }, manual: false, begs: {}, mute: { open: null }, backlog: 0 },
+      },
+      tags: [],
+      contents: [{ paragraph: [{ text }] }],
+      time,
+      children: [],
+      engagement: { reacts: {}, quoted: [], shared: [] },
+    }) as Poast;
+  const fc: FC = {
+    start: null,
+    end: null,
+    feed: {
+      "1": dmPost("1", "~litzod", "hello", 1_700_000_000_000),
+      "2": dmPost("2", "~zod", "reply", 1_700_000_060_000),
+    },
+  };
+  const dms: DMs = {
+    "~litzod": {
+      peer: litzod,
+      unread: 2,
+      lastId: 2n,
+      lastTs: 1_700_000_060_000,
+      lastRead: 0n,
+      muted: true,
+      blocked: false,
+      delivery: {},
+      fc,
+    },
+  };
+  const profiles = new Map<string, UserProfile>([
+    ["~litzod", { name: "profile name", picture: "", about: "", other: {}, pubkey: "", following: [], followingCount: 0, followers: [], followerCount: 0, urbitID: litzod }],
+  ]);
+
+  test("counts unread conversations instead of raw unread messages", () => {
+    expect(getDmUnreadCount(dms)).toBe(1);
+    expect(getDmUnreadCount({ "~litzod": { ...dms["~litzod"], unread: 0 } })).toBe(0);
+  });
+
+  test("filters known people and detects raw addresses", () => {
+    const results = filterDmDirectory("wick", dms, profiles);
+
+    expect(results[0]).toMatchObject({
+      id2: "~litzod",
+      label: "wicket",
+      existing: true,
+    });
+    expect(canCreateRawDm("~zod")).toBe(true);
+    expect(canCreateRawDm("not-an-address")).toBe(false);
+  });
+
+  test("builds display conversations from backend FC data", () => {
+    const [conversation] = buildDmConversations(dms, profiles, "~zod");
+
+    expect(conversation.name).toBe("wicket");
+    expect(conversation.id2).toBe("~litzod");
+    expect(conversation.muted).toBe(true);
+    expect(conversation.blocked).toBe(false);
+    expect(conversation.preview).toBe("you: reply");
+    expect(conversation.messages.map((message) => message.mine)).toEqual([false, true]);
+  });
+
+  test("attaches DM delivery status to messages by post id", () => {
+    const [conversation] = buildDmConversations(
+      {
+        "~litzod": {
+          ...dms["~litzod"],
+          delivery: {
+            "1": "pending",
+            "2": "failed",
+          },
+        },
+      },
+      profiles,
+      "~zod",
+    );
+
+    expect(conversation.messages.map((message) => message.delivery)).toEqual([
+      "pending",
+      "failed",
+    ]);
+  });
+
+  test("marks messages newer than lastRead as unread", () => {
+    const [conversation] = buildDmConversations(
+      {
+        "~litzod": {
+          ...dms["~litzod"],
+          lastRead: 1n,
+        },
+      },
+      profiles,
+      "~zod",
+    );
+
+    expect(conversation.messages.map((message) => message.unread)).toEqual([
+      false,
+      true,
+    ]);
+  });
+
+  test("reads pinned DM patps from settings", () => {
+    expect(getPinnedDmPatps({ noschat: { pinned: ["~nec", 7, "~litzod", ""] } })).toEqual([
+      "~nec",
+      "~litzod",
+    ]);
+    expect(getPinnedDmPatps({ relay: { pinned: ["~nec"] } })).toEqual([]);
+  });
+
+  test("orders pinned conversations before the rest", () => {
+    const conversations = [
+      { id: "~zod", label: "newest" },
+      { id: "~nec", label: "older" },
+      { id: "~litzod", label: "oldest" },
+    ];
+
+    expect(
+      orderPinnedDmConversations(conversations, ["~litzod", "~missing", "~nec"])
+        .map((conversation) => conversation.id),
+    ).toEqual(["~litzod", "~nec", "~zod"]);
+  });
+
+  test("adds jailed peers without open DM history", () => {
+    const nec = patpToFallbackUID("~nec");
+    const conversations = mergeDmJailConversations(
+      buildDmConversations(dms, profiles, "~zod"),
+      {
+        muted: [nec],
+        blocked: [],
+      },
+    );
+
+    const jailed = conversations.find((conversation) => conversation.id === "~nec");
+    expect(jailed).toMatchObject({
+      id2: "~nec",
+      muted: true,
+      blocked: false,
+      unread: 0,
+      messages: [],
+    });
+  });
+
+  test("applies jail status to existing conversations", () => {
+    const conversations = mergeDmJailConversations(
+      buildDmConversations({
+        "~litzod": {
+          ...dms["~litzod"],
+          muted: false,
+        },
+      }, profiles, "~zod"),
+      {
+        muted: [],
+        blocked: [litzod],
+      },
+    );
+
+    expect(conversations).toHaveLength(1);
+    expect(conversations[0]).toMatchObject({
+      id: "~litzod",
+      muted: false,
+      blocked: true,
+    });
+  });
+
+  test("searches DM peers and message contents", () => {
+    const conversations = buildDmConversations(dms, profiles, "~zod");
+
+    expect(
+      filterDmConversationsForSearch(conversations, "wicket", "wicket")
+        .map((conversation) => conversation.id),
+    ).toEqual(["~litzod"]);
+    expect(
+      filterDmConversationsForSearch(conversations, "hello", "hello")
+        .map((conversation) => conversation.id),
+    ).toEqual(["~litzod"]);
+  });
+
+  test("builds request rows newest first", () => {
+    const nec = patpToFallbackUID("~nec");
+    const rows = buildDmRequestRows({
+      "~litzod": {
+        peer: litzod,
+        post: dmPost("1", "~litzod", "older request", 1_700_000_000_000),
+      },
+      "~nec": {
+        peer: nec,
+        post: dmPost("2", "~nec", "newer request", 1_700_000_060_000),
+      },
+    });
+
+    expect(rows.map((row) => row.id)).toEqual(["~nec", "~litzod"]);
+    expect(rows[1]).toMatchObject({
+      name: "wicket",
+      id2: "~litzod",
+      preview: "older request",
+    });
+  });
+});
+
+describe("thread tree helpers", () => {
+  const uid = patpToFallbackUID("~zod");
+  const node = (id: string, children: Record<string, FullNode> = {}): FullNode => ({
+    id,
+    hash: id,
+    host: "~zod",
+    author: "~zod",
+    authorFull: { host: uid, author: uid },
+    thread: null,
+    parent: null,
+    perms: {
+      read: { lock: { open: null }, manual: false, begs: {}, mute: { open: null }, backlog: 0 },
+      write: { lock: { open: null }, manual: false, begs: {}, mute: { open: null }, backlog: 0 },
+    },
+    tags: [],
+    contents: [],
+    time: Number(id),
+    engagement: { reacts: {}, quoted: [], shared: [] },
+    children,
+  });
+
+  test("counts and flattens nested replies", () => {
+    const root = node("3", {
+      "2": node("2", { "1": node("1") }),
+      "4": node("4"),
+    });
+
+    expect(countThreadChildren(root)).toBe(3);
+    expect(flattenThreadChildren(root).map((item) => item.node.id)).toEqual([
+      "4",
+      "2",
+      "1",
+    ]);
+  });
+});
+
+describe("nostr feed provenance helpers", () => {
+  const ev = (id: string, createdAt: number) => ({
+    id,
+    pubkey: "aa".repeat(32),
+    sig: "",
+    created_at: createdAt,
+    kind: 1,
+    tags: [],
+    content: `hello ${id}`,
+  });
+  const sub = {
+    name: "timeline",
+    eventsReceived: 2,
+    filters: [{ kinds: [1] }],
+    ongoing: true as const,
+  };
+  const sources = {
+    "wss://relay.one": { feed: [ev("e1", 1000), ev("e2", 2000)], sub },
+    "wss://relay.two": { feed: [ev("e1", 1000)], sub },
+  };
+
+  test("merges relays, dedupes by event id, accumulates provenance", () => {
+    const fc = sourcedFeedsToFc(sources);
+    const posts = Object.values(fc.feed);
+    expect(posts.length).toBe(2);
+    const p1 = posts.find((p) => p.hash === "e1")!;
+    expect(p1.event?.relays?.sort()).toEqual([
+      "wss://relay.one",
+      "wss://relay.two",
+    ]);
+    const p2 = posts.find((p) => p.hash === "e2")!;
+    expect(p2.event?.relays).toEqual(["wss://relay.one"]);
+  });
+
+  test("keys merged feeds by sub name", () => {
+    const map = nostrFeedsToFcMap({ timeline: sources });
+    expect(Object.keys(map)).toEqual(["timeline"]);
+    expect(Object.keys(map.timeline.feed).length).toBe(2);
+  });
+
+  test("state fact maps timeline global key and nested nostr feeds", () => {
+    const slices = parseStateFact({
+      key: "ff".repeat(32),
+      relays: {},
+      profiles: {},
+      feed: { feed: {}, start: null, end: null },
+      following: {},
+      followGraph: { "~zod": [{ urbit: "~nec" }] },
+      timeline: { global: { "123": { id: "123" } }, start: "123", end: "123" },
+      nostr: { timeline: sources },
+    });
+    expect(slices.pubkey).toBe("ff".repeat(32));
+    expect(slices.timeline.feed["123"]).toBeDefined();
+    expect(slices.timeline.start).toBe("123");
+    expect(Object.keys(slices.nostrFeeds)).toEqual(["timeline"]);
+    // the sync sub feed doubles as the default nostr feed
+    expect(Object.keys(slices.nostrFeed.feed).length).toBe(2);
+    expect(slices.followGraph["~zod"]).toEqual([{ urbit: "~nec" }]);
+  });
+
+  test("state fact parse never throws on missing or odd keys", () => {
+    for (const input of [{}, null, undefined, { nostr: [], timeline: 42 }]) {
+      const slices = parseStateFact(input);
+      expect(slices.nostrFeed.feed).toEqual({});
+      expect(slices.timeline).toEqual({ feed: {}, start: null, end: null });
+      expect(slices.pubkey).toBe("");
+    }
+  });
+});

@@ -1,0 +1,11 @@
+:~
+  title+'Trill 2'
+  info+'Pater Nostr'
+  color+0xff.d400
+  version+[0 1 2]
+  website+'https://groundwire.dev'
+  license+'Noli me tangere'
+  image+'https://s3.sortug.com/img/nostrill-tile.png'
+  base+'nostrill'
+  glob-http+['https://s3.sortug.com/globs/glob-0v2.vfkqh.qb452.gcgv4.2f2d6.t41bs.glob' 0v2.vfkqh.qb452.gcgv4.2f2d6.t41bs]
+==
