@@ -1,0 +1,44 @@
+name: Deploy to distribution ship
+on:
+  push:
+    branches:
+      - master
+
+env:
+  DESK:      trill
+  SRC:       backend
+  SCREEN:    sponsor
+  SHIP_HOST: root@${{ vars.SPONSOR_IP }}
+  PIER_PATH: /root
+  PIER:      sponsor
+  DIST_PIER: ${{ vars.SPONSOR_URBIT_ID_NO_TILDE }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create desk.ship
+        run: |
+          printf '%s\n' "~${DIST_PIER}" > ${SRC}/desk.ship
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.SPONSOR_VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ vars.SPONSOR_IP }} >> ~/.ssh/known_hosts
+
+      - name: Clear deployed desk
+        run: ssh ${SHIP_HOST} "find ${PIER_PATH}/${PIER}/${DESK} -mindepth 1 -maxdepth 1 -exec rm -rf {} +"
+
+      - name: Deploy desk
+        run: |
+          rsync -az --delete --exclude='.git*' \
+            ${SRC}/ ${SHIP_HOST}:${PIER_PATH}/${PIER}/${DESK}/
+
+      - name: Commit desk on ship
+        run: |
+          ssh ${SHIP_HOST} "screen -S ${SCREEN} -p 0 -X stuff $'|commit %${DESK}\r'"
