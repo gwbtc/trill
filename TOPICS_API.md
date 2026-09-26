@@ -130,7 +130,7 @@ Google News links are `news.google.com` redirects, not publisher URLs.
 A Google Trends item's own title is only the search term ("peyton manning
 son"). Its picture comes from one of its news articles, so that article's
 headline becomes the topic's `title` and its link the `url`; the search term
-goes in `content`. With no matching article, the title is the search term.
+goes in `content`. With no matching article, the first article gives the title and `url`.
 
 ## Preferences
 

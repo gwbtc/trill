@@ -42,7 +42,7 @@
 ::    %hint: the source's fallback; %unclassified: %other
 ::    date: when the source dated it (fetch time if it didn't)
 ::    title: for google trends, the headline of the news item behind the
-::    search's picture (the search term itself if none matches)
+::    search's picture, else the first news item's
 ::    content: the source's description; for google trends, the search
 ::    term when there is none
 ::    url: google trends' is that news item's (else the first one's)

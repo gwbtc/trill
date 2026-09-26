@@ -94,7 +94,8 @@
   ?~  links  ~
   ::  the search's picture comes from one of its news items, whose
   ::  headline says more than the term: that item gives the title and
-  ::  url. with no match, the term and the first item's url
+  ::  url. with no match (the picture url often differs slightly from
+  ::  every item's), the first item's
   =/  pic  (web-url (field item 'ht:picture'))
   =/  main=(unit link:sur)
     ?~  pic  ~
@@ -103,7 +104,7 @@
   =/  desc  (plain (field item 'description'))
   :-  ~
   :*  (fall (rfc822 (field item 'pubDate')) now)
-      ?~(main term title.u.main)
+      ?~(main title.i.links title.u.main)
       ?:(=('' desc) term desc)
       `?~(main url.i.links url.u.main)
       pic
