@@ -1,4 +1,5 @@
 import { linkLabel, safeHref } from "@/logic/utils";
+import NostrText from "./NostrText";
 import type {
   // TODO ref backend fetching!!
   Reference,
@@ -122,7 +123,7 @@ function Inlin({ i }: { i: Inline }) {
       <>
         {tokens.text.map((t, i) =>
           "text" in t ? (
-            <span key={t.text + i}>{t.text}</span>
+            <NostrText key={t.text + i} text={t.text} />
           ) : (
             <a key={t.link.href + i} href={t.link.href} title={t.link.href}>
               {linkLabel(t.link.show)}

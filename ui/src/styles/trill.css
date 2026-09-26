@@ -193,8 +193,17 @@
       margin-block-end: 1em;
     }
 
+    /* no side margins: the surrounding text keeps its own spaces, and a
+       margin indented links that start a line */
     .body-text a {
-      margin: 0 0.5ch 0 0.5ch;
+      text-decoration: underline;
+    }
+
+    .body-text a.nostr-mention {
+      text-decoration: none;
+    }
+
+    .body-text a.nostr-mention:hover {
       text-decoration: underline;
     }
 
@@ -963,6 +972,18 @@
 
 .mention:hover {
   cursor: pointer;
+  text-decoration: underline;
+}
+
+/* nostr references in note text (components/post/NostrText.tsx). inside
+   posts, the nested .body-text rules above take over the underline */
+a.nostr-mention {
+  color: var(--color-primary, #543fd7);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+a.nostr-mention:hover {
   text-decoration: underline;
 }
 

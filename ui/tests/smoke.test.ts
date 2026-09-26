@@ -73,6 +73,7 @@ import {
 } from "../src/logic/topics";
 import { encodeSharedCard, parseSharedCard } from "../src/logic/cards";
 import { linkLabel } from "../src/logic/utils";
+import { shortNote, shortNpub, splitNostrRefs } from "../src/logic/nostrRefs";
 
 describe("right rail search routing", () => {
   test("navigates to search and remembers the previous page", () => {
@@ -1016,6 +1017,42 @@ describe("nostr notes", () => {
     expect(pics).toEqual([pic]);
     // the image once, as media; only the url the text doesn't have as a link
     expect(links).toEqual([other]);
+  });
+});
+
+describe("nostr references (NIP-27)", () => {
+  const pk = "6e468422dfb74a5738702a8823b9b28168abab8655faacb6853cd0ee15deee93";
+  const npub = "npub1dergggklka99wwrs92yz8wdjs952h2ux2ha2ed598ngwu9w7a6fsh9xzpc";
+  const nprofile =
+    "nprofile1qyxhwumn8ghj7mn0wvhxcmmvqqsxu35yyt0mwjjh8pcz4zprhxegz69t4wr9t74vk6zne58wzh0waycq59rkf";
+  const note = "note1dergggklka99wwrs92yz8wdjs952h2ux2ha2ed598ngwu9w7a6fsx09lcs";
+  const nevent = "nevent1qqsxu35yyt0mwjjh8pcz4zprhxegz69t4wr9t74vk6zne58wzh0waycnw94hx";
+
+  test("splits people and notes out of the text", () => {
+    expect(splitNostrRefs(`hi nostr:${npub}, see nostr:${note}!`)).toEqual([
+      { text: "hi " },
+      { profile: pk, raw: `nostr:${npub}` },
+      { text: ", see " },
+      { event: pk, raw: `nostr:${note}` },
+      { text: "!" },
+    ]);
+    expect(splitNostrRefs(`nostr:${nprofile} nostr:${nevent}`)).toEqual([
+      { profile: pk, raw: `nostr:${nprofile}` },
+      { text: " " },
+      { event: pk, raw: `nostr:${nevent}` },
+    ]);
+  });
+
+  test("leaves plain text and broken references alone", () => {
+    expect(splitNostrRefs("no refs here")).toEqual([{ text: "no refs here" }]);
+    // bad checksum, and a bare npub without the nostr: scheme
+    const bad = `nostr:${npub.slice(0, -1)}q and ${npub}`;
+    expect(splitNostrRefs(bad)).toEqual([{ text: bad }]);
+  });
+
+  test("shortens what it can't name", () => {
+    expect(shortNpub(pk)).toBe("npub1dergg…xzpc");
+    expect(shortNote(pk)).toBe("note1derg…9lcs");
   });
 });
 
