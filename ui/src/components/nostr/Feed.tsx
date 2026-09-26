@@ -19,18 +19,25 @@ export default function Nostr() {
     setEose: s.setEose,
   }));
   const [fetchingPosts, setFetchingPosts] = useState("");
+  // eose seen, waiting for the store's /x/j/nostr rescry to land
+  const [awaitingFeed, setAwaitingFeed] = useState(false);
   const { syncRelays } = useRelayActions();
 
   // pokes no longer return subIds; on eose the store refreshes feeds from
-  // the /x/j/nostr scry, so any eose closes whichever sync we're waiting on
+  // the /x/j/nostr scry, so any eose closes whichever sync we're waiting on.
+  // that scry can take seconds on a big backlog: the sync is only done
+  // once its result is in the store
   useEffect(() => {
     if (!lastEose) return;
-    if (fetchingPosts) {
-      setFetchingPosts("");
-      toast.success("Nostr feed sync complete", { id: SYNC_TOAST });
-    }
+    if (fetchingPosts) setAwaitingFeed(true);
     setEose("");
   }, [lastEose]);
+  useEffect(() => {
+    if (!awaitingFeed) return;
+    setAwaitingFeed(false);
+    setFetchingPosts("");
+    toast.success("Nostr feed sync complete", { id: SYNC_TOAST });
+  }, [nostrFeed]);
   const handleResync = async () => {
     if (!api) return;
     toast.loading("Nostr post sync initiated", { id: SYNC_TOAST });

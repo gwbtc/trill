@@ -6,6 +6,7 @@ import { patpToFallbackUID } from "../src/logic/gw";
 import {
   addEventToFc,
   eventsToFc,
+  eventToPoast,
   extractURLs,
   nostrFeedsToFcMap,
   sourcedFeedsToFc,
@@ -71,6 +72,7 @@ import {
   topicPublisher,
 } from "../src/logic/topics";
 import { encodeSharedCard, parseSharedCard } from "../src/logic/cards";
+import { linkLabel } from "../src/logic/utils";
 
 describe("right rail search routing", () => {
   test("navigates to search and remembers the previous page", () => {
@@ -988,6 +990,45 @@ describe("shared cards", () => {
     expect(parseSharedCard("not json")).toBeNull();
     expect(parseSharedCard(JSON.stringify({ ...card, v: 2 }))).toBeNull();
     expect(parseSharedCard(JSON.stringify({ ...card, items: [] }))).toBeNull();
+  });
+});
+
+describe("nostr notes", () => {
+  test("r tags don't repeat urls already in the text", () => {
+    const pic = "https://x.org/a.jpg";
+    const other = "https://y.org/page";
+    const poast = eventToPoast({
+      id: "e1",
+      pubkey: "ab",
+      created_at: 1,
+      kind: 1,
+      content: `${pic}\n#tag`,
+      sig: "",
+      tags: [
+        ["r", pic],
+        ["r", other],
+      ],
+    } as any)!;
+    const links = poast.contents.flatMap((b: any) =>
+      "paragraph" in b ? b.paragraph.filter((i: any) => "link" in i).map((i: any) => i.link.href) : [],
+    );
+    const pics = poast.contents.flatMap((b: any) => ("media" in b ? (b.media.images ?? []) : []));
+    expect(pics).toEqual([pic]);
+    // the image once, as media; only the url the text doesn't have as a link
+    expect(links).toEqual([other]);
+  });
+});
+
+describe("link labels", () => {
+  test("cuts bare urls to 30 characters, leaves other link text alone", () => {
+    const long = "https://www.usatoday.com/story/sports/high-school/football";
+    expect(linkLabel(long)).toBe("https://www.usatoday.com/story…");
+    expect(linkLabel("https://short.example/a")).toBe("https://short.example/a");
+    expect(linkLabel("www.example.com/a/very/long/path/indeed/yes")).toBe(
+      "www.example.com/a/very/long/pa…",
+    );
+    const label = "a long custom label that someone wrote for their link";
+    expect(linkLabel(label)).toBe(label);
   });
 });
 

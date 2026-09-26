@@ -402,11 +402,13 @@
         =/  c  (update-ui:cardslib [%nostr %thread f])
         [:~(c) relay]
       ::
-      ?:  (profs-req:nreq filters.reqs)
-        =/  c  (update-ui:cardslib [%prof profiles.state])
-        [:~(c) relay]
-      ::
       [~ relay]
+    ::  any req that asked for profiles (kind 0) sends them on, whatever
+    ::  else it was: the timeline sub asks for its authors' profiles
+    ::  alongside their posts, and is caught by +user-req above
+    =/  prof-cards=(list card:agent:gall)
+      ?.  (profs-req:nreq filters.reqs)  ~
+      ~[(update-ui:cardslib [%prof profiles.state])]
     ::  TODO handle chunked requests: pop the queue, send the next sub
     ::  one-shot subs close at %eose; ongoing subs record it
     ::  and stay live
@@ -424,7 +426,7 @@
     =/  relays-card  (update-ui:cardslib [%nostr %relays relays.state])
     :_  state
     :-  eose-card  :-  relays-card
-    (weld cards cards3)
+    :(weld cards prof-cards cards3)
   --
 ::  +handle-ted: relay requests proxied through a thread
 ::

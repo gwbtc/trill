@@ -104,6 +104,11 @@ export function eventToPoast(event: Wevent): Poast | null {
     { media: { images: inl.pics } },
   ];
   if (inl.vids.length > 0) contents.push({ media: { video: inl.vids[0] } });
+  const inContent = new Set([
+    ...inl.pics,
+    ...inl.vids,
+    ...inl.text.flatMap((t) => ("link" in t ? [t.link.href] : [])),
+  ]);
   const ts = event.created_at * 1000;
   const id = `${ts}`;
   const uid: UrbitID = {
@@ -146,9 +151,12 @@ export function eventToPoast(event: Wevent): Poast | null {
       // else if (marker === "mention") poast.parent = eventId;
     }
     //
-    else if (ff === "r")
+    // r tags list the urls a note references, mostly ones already in its
+    // text: only those that aren't get a link of their own (an image url
+    // in both used to render twice)
+    else if (ff === "r" && tag[1] && !inContent.has(tag[1]))
       contents.push({
-        paragraph: [{ link: { show: tag[1]!, href: tag[1]! } }],
+        paragraph: [{ link: { show: tag[1], href: tag[1] } }],
       });
     else if (ff === "p") {
       //
