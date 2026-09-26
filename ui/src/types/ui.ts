@@ -1,16 +1,20 @@
 import type { NostrMetadata } from "./nostrill";
 import type { Poast } from "./trill";
 import type { Ship } from "./urbit";
+import type { SharedCard } from "@/logic/cards";
+import type { TopicItem } from "@/logic/topics";
 export type Result<T> = { ok: T } | { error: string };
 export type AsyncRes<T> = Promise<Result<T>>;
 
 export type Timestamp = number;
 export type UrbitTime = string;
 
-export interface ComposerData {
-  type: "quote" | "reply";
-  post: SPID;
-}
+export type ComposerData =
+  | { type: "quote" | "reply"; post: SPID }
+  // sharing a UI card into a new post
+  | { type: "card"; card: SharedCard }
+  // posting about a trending topic: a plain post, the headline quoted
+  | { type: "topic"; topic: TopicItem };
 export type SPID = TrillPID | NostrPID;
 
 export interface TrillPID {

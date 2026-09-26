@@ -1,4 +1,4 @@
-/-  *wrap, sur=nostrill, nsur=nostr, comms=nostrill-comms
+/-  *wrap, sur=nostrill, nsur=nostr, comms=nostrill-comms, tsur=topics
 |%
 +$  poke
   $%  [%fols fols-poke]
@@ -8,6 +8,7 @@
       [%keys ~]  ::  cycle-keys
       [%rela relay-poke]
       [%lists lists-poke]
+      [%topics =prefs:tsur]  ::  trending topics settings, for %topics
       :: [%notif @da]  :: dismiss notification
   ==
 ::  bookmarks, mutes and reports: private lists, except that reporting

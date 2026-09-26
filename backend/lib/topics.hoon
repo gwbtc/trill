@@ -18,14 +18,16 @@
 ++  user-agent  'nostrill-topics/0.1 (urbit)'
 ::
 ++  request
-  |=  =source:sur
+  |=  [=source:sur =prefs:sur]
   ^-  request:http
-  :^  %'GET'  (url source)
+  :^  %'GET'  (url source prefs)
     ~[['user-agent' user-agent] ['accept' '*/*']]
   ~
+::  +url: google news in the prefs' edition (any country and language
+::  pair works); google trends in the source's region
 ::
 ++  url
-  |=  =source:sur
+  |=  [=source:sur =prefs:sur]
   ^-  @t
   ?-  kind.source
       %gtrends
@@ -39,8 +41,9 @@
     %+  rap  3
     :~  'https://news.google.com/rss/headlines/section/topic/'
         (query-value param.source)
-        '?hl=en-US&gl=US&ceid='
-        (query-value 'US:en')
+        '?hl='  (query-value lang.prefs)
+        '&gl='  (query-value country.prefs)
+        '&ceid='  (query-value (rap 3 ~[country.prefs ':' lang.prefs]))
     ==
   ==
 :: 
@@ -77,6 +80,9 @@
   %+  murn  (kids i.chan 'item')
   |=  item=manx
   ^-  (unit raw)
+  ::  the item's own title is just the search term
+  =/  term  (plain (field item 'title'))
+  ?:  |(=('' term) (spam term))  ~
   =/  links=(list link:sur)
     %+  murn  (kids item 'ht:news_item')
     |=  n=manx
@@ -85,31 +91,22 @@
       (field n 'ht:news_item_url')
       `(field n 'ht:news_item_picture')
       (field n 'ht:news_item_source')
-
-  =/  links2  links
   ?~  links  ~
-::  of the many links there is one which contributes the picture url to the parent item
-:: we choose that one and get the title too
-  =/  pic  (plain (field item 'ht:picture'))
-  =/  title  (plain (field item 'title'))
-  =/  url  ''
-  =/  main=[title=@t link=@t pic=@t]
-    |-  ?~  links2  [title url pic]
-      ?~  pic.i.links2  
-        $(links2 t.links2)
-      ?.  .=(u.pic.i.links2 pic)
-        $(links2 t.links2)
-      :+  title.i.links2
-            url.i.links2
-                  pic
-
-
+  ::  the search's picture comes from one of its news items, whose
+  ::  headline says more than the term: that item gives the title and
+  ::  url. with no match, the term and the first item's url
+  =/  pic  (web-url (field item 'ht:picture'))
+  =/  main=(unit link:sur)
+    ?~  pic  ~
+    =/  hits  (skim `(list link:sur)`links |=(l=link:sur =(pic pic.l)))
+    ?~(hits ~ `i.hits)
+  =/  desc  (plain (field item 'description'))
   :-  ~
   :*  (fall (rfc822 (field item 'pubDate')) now)
-      title.main
-      (plain (field item 'description'))
-      `link.main
-      `pic.main
+      ?~(main term title.u.main)
+      ?:(=('' desc) term desc)
+      `?~(main url.i.links url.u.main)
+      pic
       (traffic (field item 'ht:approx_traffic'))
       links
   ==
@@ -236,7 +233,7 @@
   ^-  (unit link:sur)
   =/  title  (plain title.l)
   =/  url  (trim-url url.l)
-  =/  pic  ?~  pic.l  ~  `(trim-url u.pic.l)
+  =/  pic  ?~(pic.l ~ (web-url u.pic.l))
   ?:  |(=('' title) !(web url) (spam title))  ~
   =/  publisher  (plain publisher.l)
   `[title url pic ?:(=('' publisher) (host url) publisher)]
@@ -378,6 +375,15 @@
   |=  u=@t
   ^-  @t
   (crip (skip (trip u) |=(c=@t (lte c ' '))))
+::
+::  +web-url: a trimmed url if it's on the web: missing and empty feed
+::  fields become ~, not `''
+::
+++  web-url
+  |=  u=@t
+  ^-  (unit @t)
+  =/  t  (trim-url u)
+  ?.((web t) ~ `t)
 ::
 ++  web
   |=  u=@t

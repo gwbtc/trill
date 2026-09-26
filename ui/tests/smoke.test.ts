@@ -61,6 +61,16 @@ import type { DMs, UserProfile } from "../src/types/nostrill";
 import type { Notification } from "../src/types/notifications";
 import type { Rope, Skein } from "../src/types/hark";
 import type { FC, FullNode, Poast } from "../src/types/trill";
+import {
+  availableTabs,
+  escapeMarkdown,
+  parseTrending,
+  pickTopics,
+  topicMeta,
+  topicPostContent,
+  topicPublisher,
+} from "../src/logic/topics";
+import { encodeSharedCard, parseSharedCard } from "../src/logic/cards";
 
 describe("right rail search routing", () => {
   test("navigates to search and remembers the previous page", () => {
@@ -885,5 +895,146 @@ describe("notification text", () => {
     expect(
       displayYarn([{ ship: "~nec" }, "Reported your post:", "/urbit/~zod/170.141", "spam"]),
     ).toEqual([{ ship: "~nec" }, "Reported your post:", "spam"]);
+  });
+});
+
+describe("trending topics", () => {
+  const t = (
+    source: string,
+    title: string,
+    categories: string[] = [],
+    score: number | null = null,
+  ) => ({ source, title, url: null, pic: null, score, date: 0, categories });
+  const prefs = { country: "MX", lang: "es-419", categories: ["world", "sports"] };
+  const parsed = parseTrending({
+    prefs,
+    sources: {
+      "gnews-world": {
+        fetched: 1,
+        topics: [t("gnews-world", "W1", ["world"]), t("gnews-world", "W2", ["world"])],
+      },
+      "gnews-sports": { fetched: 1, topics: [t("gnews-sports", "S1", ["sports"])] },
+      // a region missing from SOURCE_ORDER still takes google trends' turn
+      "gtrends-mx": {
+        fetched: 1,
+        topics: [t("gtrends-mx", "T1", ["sports"]), t("gtrends-mx", "w1")],
+      },
+      hn: { fetched: 1, topics: [t("hn", "H1", ["technology"]), { title: "" }] },
+    },
+  })!;
+  const data = parsed.sources;
+
+  test("reads the prefs, and keeps only web links and pictures", () => {
+    expect(parsed.prefs).toEqual(prefs);
+    const odd = parseTrending({
+      sources: {
+        x: {
+          topics: [
+            { title: "a", url: "javascript:alert(1)", pic: "https://i.example/a.jpg" },
+            { title: "b", url: "https://b.example", pic: "data:image/png;base64,AAAA" },
+          ],
+        },
+      },
+    })!;
+    expect(odd.prefs).toBeNull();
+    expect(odd.sources.x.topics.map((x) => [x.url, x.pic])).toEqual([
+      [null, "https://i.example/a.jpg"],
+      ["https://b.example", null],
+    ]);
+  });
+
+  test("interleaves kinds of source, then sources within a kind", () => {
+    expect(pickTopics(data, "all", 4).map((x) => x.title)).toEqual(["W1", "T1", "H1", "S1"]);
+    // "w1" repeats "W1"; once other kinds run dry, google news keeps its turns
+    expect(pickTopics(data, "all", 10).map((x) => x.title)).toEqual(["W1", "T1", "H1", "S1", "W2"]);
+  });
+
+  test("filters by category and only offers tabs with topics", () => {
+    expect(pickTopics(data, "sports").map((x) => x.title)).toEqual(["S1", "T1"]);
+    expect(availableTabs(data).map((x) => x.id)).toEqual(["all", "world", "technology", "sports"]);
+  });
+
+  test("describes each source's score", () => {
+    expect(topicMeta(t("hn", "x", [], 312))).toBe("Hacker News · 312 points");
+    expect(topicMeta(t("gtrends-us", "x", [], 2000))).toBe("Google Trends US · 2K+ searches");
+    expect(topicMeta(t("gnews-world", "x", [], 1))).toBe("Google News · 1 article");
+    expect(topicMeta(t("gnews-world", "x"))).toBe("Google News");
+  });
+
+  test("rejects anything but a source map", () => {
+    expect(parseTrending(null)).toBeNull();
+    expect(parseTrending([])).toBeNull();
+    expect(parseTrending({ prefs })).toBeNull();
+  });
+});
+
+describe("shared cards", () => {
+  const card = {
+    v: 1 as const,
+    kind: "trending",
+    title: "Trending topics",
+    subtitle: "",
+    at: 5,
+    items: [{ title: "A", url: "https://a.example", meta: "m", pic: "https://a.example/p.jpg" }],
+  };
+
+  test("round-trips", () => {
+    expect(parseSharedCard(encodeSharedCard(card))).toEqual(card);
+  });
+
+  test("drops non-web links and rejects junk from other ships", () => {
+    const evil = { ...card, items: [{ title: "A", url: "javascript:alert(1)", meta: "" }] };
+    expect(parseSharedCard(JSON.stringify(evil))!.items[0].url).toBeNull();
+    expect(parseSharedCard("not json")).toBeNull();
+    expect(parseSharedCard(JSON.stringify({ ...card, v: 2 }))).toBeNull();
+    expect(parseSharedCard(JSON.stringify({ ...card, items: [] }))).toBeNull();
+  });
+});
+
+describe("posting about a topic", () => {
+  test("escapes what the backend's markdown would eat", () => {
+    expect(escapeMarkdown("A *big* [deal] (really)! AT&T_x \\ `code`\n  more")).toBe(
+      "A \\*big\\* \\[deal\\] \\(really\\)\\! AT\\&T\\_x \\\\ 'code' more",
+    );
+  });
+
+  test("quotes the headline after the text, then the link", () => {
+    expect(topicPostContent(" wow ", { title: "Big *news*", url: "https://x.example/a" })).toBe(
+      "wow\n\n> Big \\*news\\*\n\nhttps://x.example/a",
+    );
+    // no text, no url
+    expect(topicPostContent("", { title: "Just this", url: null })).toBe("> Just this");
+  });
+
+  test("names the link's publisher, not google's redirect host", () => {
+    const links = [
+      { title: "a", url: "https://news.google.com/rss/articles/x", publisher: "TechCrunch", pic: null },
+    ];
+    expect(topicPublisher({ url: "https://news.google.com/rss/articles/x", links })).toBe("TechCrunch");
+    expect(topicPublisher({ url: "https://www.example.com/p", links })).toBe("example.com");
+    expect(topicPublisher({ url: null, links })).toBe("");
+  });
+
+  test("keeps related links on the web", () => {
+    const parsed = parseTrending({
+      sources: {
+        x: {
+          topics: [
+            {
+              title: "t",
+              content: "term",
+              links: [
+                { title: "ok", url: "https://a.example", publisher: "A", pic: null },
+                { title: "bad", url: "javascript:x", publisher: "B" },
+                { url: "https://c.example" },
+              ],
+            },
+          ],
+        },
+      },
+    })!;
+    const topic = parsed.sources.x.topics[0];
+    expect(topic.content).toBe("term");
+    expect(topic.links).toEqual([{ title: "ok", url: "https://a.example", publisher: "A", pic: null }]);
   });
 });

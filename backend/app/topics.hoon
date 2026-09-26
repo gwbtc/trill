@@ -6,6 +6,7 @@
 ::      /x/topics/<source>  (list topic) from one source
 ::      /x/category/<cat>   (list topic) in a category (%world, %sports..)
 ::      /x/sources          (map source-id source)
+::      /x/prefs            prefs: country, language, categories
 ::      /x/status           [every next errors fetched]
 ::
 ::    e.g. .^((list topic:topics) %gx /=topics=/topics/noun)
@@ -18,6 +19,7 @@
 +$  card  card:agent:gall
 +$  state-0
   $:  %0
+      =prefs:sur
       sources=(map source-id:sur source:sur)
       snapshots=(map source-id:sur snapshot:sur)
       errors=(map source-id:sur [at=@da msg=@t])  ::  last failed fetch
@@ -25,53 +27,77 @@
       next=(unit @da)                             ::  pending timer
   ==
 ::
-::  +default-sources: google trends in five regions, the us edition's
-::  google news topics, hacker news
+::  +default-prefs: english, the us, every category
 ::
-++  default-sources
+++  default-prefs
+  ^-  prefs:sur
+  :+  'US'  'en'
+  %-  silt
+  ^-  (list category:sur)
+  :~  %world  %technology  %business  %sports  %entertainment
+      %internet-culture  %lifestyle  %other
+  ==
+::  +gnews-sections: google news topic -> our category
+::
+++  gnews-sections
+  ^-  (list [@t category:sur])
+  :~  ['WORLD' %world]
+      ['NATION' %world]
+      ['BUSINESS' %business]
+      ['TECHNOLOGY' %technology]
+      ['SCIENCE' %technology]
+      ['ENTERTAINMENT' %entertainment]
+      ['SPORTS' %sports]
+      ['HEALTH' %lifestyle]
+  ==
+::  +sources-for: google trends in the prefs' country, the google news
+::  sections of the prefs' categories (fetched in the prefs' edition, see
+::  +url:lib), hacker news
+::
+++  sources-for
+  |=  =prefs:sur
   ^-  (map source-id:sur source:sur)
-  =/  regions=(list @t)  ~['US' 'GB' 'IN' 'CA' 'AU']
-  ::  google news topic -> our category
-  =/  gnews=(list [@t category:sur])
-    :~  ['WORLD' %world]
-        ['NATION' %world]
-        ['BUSINESS' %business]
-        ['TECHNOLOGY' %technology]
-        ['SCIENCE' %technology]
-        ['ENTERTAINMENT' %entertainment]
-        ['SPORTS' %sports]
-        ['HEALTH' %lifestyle]
-    ==
   %-  ~(gas by *(map source-id:sur source:sur))
   ^-  (list [source-id:sur source:sur])
   ;:  weld
-    %+  turn  regions
-    |=  r=@t
-    ^-  [source-id:sur source:sur]
-    :-  (rap 3 ~['gtrends-' (crip (cass (trip r)))])
-    [%gtrends r ~ %.y]
+    :~  :-  (rap 3 ~['gtrends-' (crip (cass (trip country.prefs)))])
+        [%gtrends country.prefs ~ %.y]
+    ==
   ::
-    %+  turn  gnews
+    %+  murn  gnews-sections
     |=  [topic=@t c=category:sur]
-    ^-  [source-id:sur source:sur]
+    ^-  (unit [source-id:sur source:sur])
+    ?.  (~(has in cats.prefs) c)  ~
+    :-  ~
     :-  (rap 3 ~['gnews-' (crip (cass (trip topic)))])
     [%gnews topic `c %.y]
   ::
     `(list [source-id:sur source:sur])`~[[%hn [%hn '' ~ %.y]]]
   ==
+::  +valid-prefs: an ISO country code, a plausible google language code
+::  ('en', 'es-419', 'zh-Hans'), at least one category
+::
+++  valid-prefs
+  |=  p=prefs:sur
+  ^-  ?
+  ?&  ?=(^ (rush country.p ;~(plug hig hig)))
+      ?=(^ (rush lang.p ;~(plug low low (star ;~(pose low hig nud hep)))))
+      (lte (met 3 lang.p) 12)
+      ?=(^ cats.p)
+  ==
 ::
 ++  fetch-card
-  |=  [id=source-id:sur =source:sur]
+  |=  [id=source-id:sur =source:sur =prefs:sur]
   ^-  card
-  [%pass /fetch/[id] %arvo %i %request (request:lib source) *outbound-config:iris]
+  [%pass /fetch/[id] %arvo %i %request (request:lib source prefs) *outbound-config:iris]
 ::
 ++  fetch-all
-  |=  sources=(map source-id:sur source:sur)
+  |=  [sources=(map source-id:sur source:sur) =prefs:sur]
   ^-  (list card)
   %+  murn  ~(tap by sources)
   |=  [id=source-id:sur src=source:sur]
   ?.  enabled.src  ~
-  `(fetch-card id src)
+  `(fetch-card id src prefs)
 ::  +stamp: parsed topics tagged with their source and categories. a
 ::  google news topic takes its section's category; the rest are
 ::  classified by keyword
@@ -155,8 +181,9 @@
 ++  on-init
   ^-  (quip card _this)
   =/  at  (add now.bowl ~h1)
-  :_  this(sources default-sources, every ~h1, next `at)
-  [(timer-card at) (fetch-all default-sources)]
+  =/  srcs  (sources-for default-prefs)
+  :_  this(prefs default-prefs, sources srcs, every ~h1, next `at)
+  [(timer-card at) (fetch-all srcs default-prefs)]
 ::
 ++  on-save  !>(state)
 ::
@@ -178,12 +205,34 @@
     `this
   =/  act  ;;(action:sur q.vase)
   ?-  -.act
-      %fetch  [(fetch-all sources) this]
+      %fetch  [(fetch-all sources prefs) this]
   ::
       %add-source
     :_  this(sources (~(put by sources) id.act source.act))
     ?.  enabled.source.act  ~
-    ~[(fetch-card id.act source.act)]
+    ~[(fetch-card id.act source.act prefs)]
+  ::
+  ::  new prefs replace the sources, and any added by hand. a new country
+  ::  or language changes every google feed, so their old topics go;
+  ::  otherwise only the dropped sources' do. then everything is fetched
+      %set-prefs
+    ~|  %bad-topics-prefs
+    ?>  (valid-prefs prefs.act)
+    =/  srcs  (sources-for prefs.act)
+    =/  same-edition=?
+      &(=(country.prefs country.prefs.act) =(lang.prefs lang.prefs.act))
+    =/  keep
+      |=  [id=source-id:sur *]
+      ?&  (~(has by srcs) id)
+          |(same-edition =(%hn id))
+      ==
+    :-  (fetch-all srcs prefs.act)
+    %=  this
+      prefs      prefs.act
+      sources    srcs
+      snapshots  (malt (skim ~(tap by snapshots) keep))
+      errors     (malt (skim ~(tap by errors) keep))
+    ==
   ::
       %del-source
     :-  ~
@@ -209,6 +258,7 @@
   ^-  (unit (unit cage))
   ?+  pole  ~
     [%x %sources ~]  ``noun+!>(sources)
+    [%x %prefs ~]    ``noun+!>(prefs)
   ::
       [%x %status ~]
     =/  fetched  (~(run by snapshots) |=(s=snapshot:sur fetched.s))
@@ -235,7 +285,7 @@
     ?.  =(next (slaw %da i.t.wire))  `this
     =/  at  (add now.bowl every)
     :_  this(next `at)
-    [(timer-card at) (fetch-all sources)]
+    [(timer-card at) (fetch-all sources prefs)]
   ::
       [%fetch @ *]
     ?.  ?=([%iris %http-response *] sign-arvo)  `this
@@ -253,7 +303,7 @@
       ?.  (~(has in (silt ~[301 302 303 307 308])) status-code.response-header.res)  ~
       (location headers.response-header.res)
     ?:  &(?=(^ moved) (lth hops 3))
-      =/  req  (request:lib u.src)
+      =/  req  (request:lib u.src prefs)
       :_  this
       :~  :*  %pass  /fetch/[id]/(scot %ud +(hops))  %arvo  %i  %request
               req(url u.moved)  *outbound-config:iris

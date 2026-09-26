@@ -1,5 +1,7 @@
 import type { ExternalContent } from "@/types/trill";
 import Card from "./Card";
+import SharedCardView from "./SharedCard";
+import { parseSharedCard } from "@/logic/cards";
 
 interface JSONProps {
   content: ExternalContent[];
@@ -18,6 +20,10 @@ function JSONContent({ content }: JSONProps) {
   return (
     <>
       {content.map((c, i) => {
+        if (c.json.origin === "card") {
+          const card = parseSharedCard(c.json.content);
+          return card ? <SharedCardView key={i} card={card} /> : null;
+        }
         if (!parsesToValue(c.json.content)) return <p key={i}>Error</p>;
         else
           return (

@@ -11,6 +11,10 @@ import { shortRelayUrl } from "@/logic/relayDisplay";
 import type { UserType } from "@/types/nostrill";
 import { patpToFallbackUID } from "@/logic/gw";
 import InputBox from "./InputBox";
+import SharedCardView from "@/components/post/SharedCard";
+import { encodeSharedCard } from "@/logic/cards";
+import { topicPostContent } from "@/logic/topics";
+import TopicSnippet from "@/components/topics/TopicSnippet";
 import {
   AtSign,
   Check,
@@ -101,6 +105,11 @@ function Composer({
   async function addComplex(content: string) {
     if (!api) return;
     if (!composerData) return;
+    if (composerData.type === "card")
+      return await api.addCardPost(content, encodeSharedCard(composerData.card));
+    // to the backend, a post like any other
+    if (composerData.type === "topic")
+      return await addSimple(topicPostContent(content, composerData.topic));
     const host: UserType =
       "trill" in composerData.post
         ? { urbit: composerData.post.trill.authorFull.author }
@@ -239,7 +248,9 @@ function Composer({
   const placeholder =
     composerData?.type === "reply"
       ? "Write your reply..."
-      : composerData?.type === "quote"
+      : composerData?.type === "quote" ||
+          composerData?.type === "card" ||
+          composerData?.type === "topic"
         ? "Add your thoughts..."
         : isModal
           ? "Broadcast to the fleet..."
@@ -510,6 +521,46 @@ function Composer({
         {composerData && composerData.type === "quote" && (
           <div className="composer-context quote-context">
             <Snippets post={composerData.post} />
+          </div>
+        )}
+
+        {/* a shared card appears below input, as it will in the post */}
+        {composerData && composerData.type === "card" && (
+          <div className="composer-context quote-context">
+            <div className="context-header">
+              <span className="context-type">
+                <Icon name="quote" size={14} /> Sharing a card
+              </span>
+              <button
+                className="clear-context"
+                onClick={clearComposer}
+                title="Clear"
+                type="button"
+              >
+                ×
+              </button>
+            </div>
+            <SharedCardView card={composerData.card} />
+          </div>
+        )}
+
+        {/* a trending topic: quoted as its headline and link in the post */}
+        {composerData && composerData.type === "topic" && (
+          <div className="composer-context quote-context">
+            <div className="context-header">
+              <span className="context-type">
+                <Icon name="quote" size={14} /> Posting about a topic
+              </span>
+              <button
+                className="clear-context"
+                onClick={clearComposer}
+                title="Clear"
+                type="button"
+              >
+                ×
+              </button>
+            </div>
+            <TopicSnippet topic={composerData.topic} />
           </div>
         )}
       </div>

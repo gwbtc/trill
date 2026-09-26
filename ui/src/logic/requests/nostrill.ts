@@ -31,6 +31,7 @@ import type {
 } from "@/types/nostrill";
 import type { AsyncRes } from "@/types/ui";
 import type { Rope, Skein } from "@/types/hark";
+import type { TopicPrefs } from "@/logic/topics";
 
 // the UI carries full UrbitIDs, but the backend's user decoder
 // (user:de:common) only takes { urbit: "~ship" } | { nostr: "hex" }; an
@@ -284,6 +285,18 @@ export default class IO {
   async addQuote(content: string, host: UserType, id: string) {
     const json = { quote: { content, host: toWireUser(host), id } };
     return this.poke({ post: json });
+  }
+  // a post sharing a UI card, see logic/cards.ts
+  async addCardPost(content: string, card: string) {
+    return this.poke({ post: { card: { content, card } } });
+  }
+  // trending topics from %topics; null when %topics isn't running
+  async scryTopics() {
+    return await this.scry("/j/topics");
+  }
+  // %topics refetches everything for the new prefs; %nostrill forwards them
+  async setTopicPrefs(prefs: TopicPrefs) {
+    return this.poke({ topics: prefs });
   }
   async addRP(host: UserType, id: string) {
     const json = { rp: { host: toWireUser(host), id } };

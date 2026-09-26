@@ -2,7 +2,7 @@
     tf=trill-feed, tp=trill-post,
     wrap
 /+  sr=sortug, common=json-common, trill=json-trill, nostr=json-nostr,
-    gwid, gwidj=json-gwid
+    gwid, gwidj=json-gwid, topicsj=json-topics
 |%
 ++  en
 =,  enjs:format
@@ -328,6 +328,7 @@
     post+ui-post
     rela+ui-relay
     lists+ui-lists
+    topics+prefs:de:topicsj
   ==
 ++  ui-lists
   %-  of  :~

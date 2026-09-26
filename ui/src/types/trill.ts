@@ -111,7 +111,7 @@ export type ExternalContent = {
     content: string;
   };
 };
-export type ExternalApp = "twatter" | "insta" | "anon" | "rumors" | "nostr";
+export type ExternalApp = "twatter" | "insta" | "anon" | "rumors" | "nostr" | "card";
 export interface TwatterReference {
   json: {
     origin: "twatter";

@@ -506,6 +506,69 @@
   color: var(--color-primary, #543fd7);
 }
 
+/* Trending topics (components/settings/TopicsSettings.tsx) */
+.topics-settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.topics-settings-row label {
+  flex: 1 1 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.topics-settings-select {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.topics-settings-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.topics-settings-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary, #566069);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.topics-settings-cat.active {
+  border-color: var(--color-primary, #543fd7);
+  color: var(--color-primary, #543fd7);
+  font-weight: 600;
+}
+
+.topics-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.topics-settings-actions .settings-save-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .settings-page {

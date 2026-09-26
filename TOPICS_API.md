@@ -4,12 +4,13 @@
 from the web, keeps the latest batch from each source, and lets other agents
 on the same ship read them via scries.
 
-- **Sources:**
-  - Google Trends: trending searches in 5 regions.
-  - Google News: 8 topic sections, US edition.
+- **Sources**, chosen by the ship owner's preferences (see [Preferences](#preferences)):
+  - Google Trends: trending searches in the chosen country.
+  - Google News: the topic sections for the chosen categories, in the chosen
+    country and language.
   - Hacker News: the front page.
 
-  None needs an API key.
+  None needs an API key. The default is the US, English, every category.
 - **Schedule:** every source is fetched when the agent starts, then every hour
   (adjustable).
 - **Storage:** only the latest successful fetch per source is kept. A failed
@@ -31,6 +32,7 @@ All scries are `%gx`, return `%noun`, and are local to the ship.
 | `/topics/<source-id>` | `(list topic)` | one source's topics, in the source's order; `[~ ~]` if it hasn't been fetched yet |
 | `/category/<category>` | `(list topic)` | topics in one category, newest first |
 | `/sources` | `(map source-id source)` | the configured sources |
+| `/prefs` | `prefs` | country, language and categories (see [Preferences](#preferences)) |
 | `/status` | see below | fetch schedule, last fetch per source, last error per source |
 
 `/status` returns:
@@ -76,19 +78,25 @@ From `sur/topics.hoon`:
       hint=(unit category)  ::  %gnews: its section's category; otherwise a fallback
       enabled=?
   ==
-+$  link  [title=@t url=@t publisher=@t]
++$  link  [title=@t url=@t pic=(unit @t) publisher=@t]
 +$  topic
   $:  source=source-id
       categories=(set category)
       classification=?(%source %rules %hint %unclassified)
       date=@da              ::  the source's date for the item (fetch time if none)
       title=@t
-      content=@t            ::  description, where the source has one
+      content=@t            ::  description; Google Trends: the search term
       url=(unit @t)
+      pic=(unit @t)         ::  an image url; only Google Trends has them
       score=(unit @ud)      ::  meaning depends on the source, see below
       links=(list link)     ::  related articles
   ==
 +$  snapshot  [fetched=@da topics=(list topic)]
++$  prefs
+  $:  country=@t            ::  ISO 3166 code: 'US'
+      lang=@t               ::  Google News language code: 'en', 'es-419', 'pt-BR'
+      cats=(set category)
+  ==
 ```
 
 `classification` records how `categories` were chosen:
@@ -102,7 +110,7 @@ From `sur/topics.hoon`:
 
 | Source ids | Items | `score` | `url` | `links` | Categories |
 |---|---|---|---|---|---|
-| `gtrends-us` `-gb` `-in` `-ca` `-au` | ~10 trending searches per region | approximate searches (`2K+` → 2000) | none | news articles about the search | keyword rules |
+| `gtrends-<country>`, e.g. `gtrends-us` | ~10 trending searches | approximate searches (`2K+` → 2000) | the news article behind the search's picture, else the first one | news articles about the search | keyword rules |
 | `gnews-world` `-nation` `-business` `-technology` `-science` `-entertainment` `-sports` `-health` | ~55–70 stories per section | number of articles in the story cluster | Google News link to the lead article | every article in the cluster, with its publisher | the section |
 | `hn` | 30 front-page stories | points | the story (or its HN thread) | the story, plus the HN discussion | keyword rules |
 
@@ -119,6 +127,29 @@ Google News sections map to categories as follows:
 
 Google News links are `news.google.com` redirects, not publisher URLs.
 
+A Google Trends item's own title is only the search term ("peyton manning
+son"). Its picture comes from one of its news articles, so that article's
+headline becomes the topic's `title` and its link the `url`; the search term
+goes in `content`. With no matching article, the title is the search term.
+
+## Preferences
+
+The ship owner's `prefs` decide the sources:
+
+- **Country:** Google Trends' region (`gtrends-<country>`), and the country of
+  the Google News edition.
+- **Language:** the Google News edition's language. Any country and language
+  pair works (`US` + `es-419` is Spanish-language news for the US). Google
+  Trends ignores the language, and Hacker News is English only.
+- **Categories:** only the Google News sections in these categories are
+  fetched. Google Trends and Hacker News topics are fetched regardless; readers
+  (Trill's card) hide topics outside the chosen categories. The scries here
+  never filter.
+
+Setting prefs replaces every source, including ones added with
+`%add-source`. If the country or language changed, the old Google topics are
+dropped too. Then everything is fetched again.
+
 ## Pokes
 
 `%noun` mark, accepted only from our own ship:
@@ -129,6 +160,7 @@ Google News links are `news.google.com` redirects, not publisher URLs.
 | `[%add-source id source]` | add or replace a source, and fetch it now if enabled |
 | `[%del-source id]` | remove a source along with its topics and error |
 | `[%set-interval @dr]` | change the fetch interval (minimum `~m1`) |
+| `[%set-prefs prefs]` | replace the prefs and rebuild the sources from them (see [Preferences](#preferences)); crashes on a bad country or language code, or no categories |
 | `%print` | log the saved topics to the terminal, one line each |
 
 From dojo:
@@ -137,17 +169,19 @@ From dojo:
 :topics %print
 :topics [%fetch ~]
 :topics [%set-interval ~h2]
+:topics [%set-prefs 'MX' 'es-419' (silt `(list @tas)`~[%world %sports])]
 :topics [%add-source %gtrends-de [%gtrends 'DE' ~ %.y]]
-:topics [%add-source %gnews-us-business [%gnews 'BUSINESS' `%business %.y]]
-:topics [%del-source %gtrends-au]
+:topics [%del-source %gtrends-de]
 ```
 
 ## Notes
 
 - **No subscriptions or remote scries yet.** Other ships can't read the data,
   and local agents have to scry again to see new topics. There is no push.
-- **No JSON.** All scries are `%noun`, so a web UI can't read them directly
-  yet.
+- **No JSON here.** All scries are `%noun`. Trill's UI goes through
+  `%nostrill`: its `/j/topics` scry returns the prefs and each source's leading
+  topics as JSON (filtered to the chosen categories), and its `{topics: prefs}`
+  UI poke forwards `%set-prefs`.
 - **Unreleased state.** Its shape may still change without migration. After a
   change the agent is reset with `|nuke %topics, =hard &` and restarts from the
-  default sources.
+  default prefs (US, English, every category).

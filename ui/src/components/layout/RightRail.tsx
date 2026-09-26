@@ -7,6 +7,7 @@ import { useLocation, useSearch } from "wouter";
 import { followGraphWithProfiles, suggestFollows } from "@/logic/suggestions";
 import { stringToUser } from "@/logic/nostrill";
 import UserModal from "@/components/modals/UserModal";
+import TrendingTopics from "./TrendingTopics";
 import "./RightRail.css";
 
 export default function RightRail() {
@@ -222,6 +223,8 @@ export default function RightRail() {
           })}
         </div>
       )}
+
+      <TrendingTopics />
     </aside>
   );
 }

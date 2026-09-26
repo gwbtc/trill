@@ -176,6 +176,12 @@
               [cs this]
       %post  =^  cs  state  (handle-post:posts +.u.upoke)
              [cs this]
+      ::  the settings page's trending topics prefs: %topics keeps them
+      %topics
+        :_  this
+        :~  :*  %pass  /topics/prefs  %agent  [our.bowl %topics]
+                %poke  %noun  !>([%set-prefs +.u.upoke])
+        ==  ==
     ==
   ::
   ++  handle-fols

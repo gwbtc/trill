@@ -7,6 +7,7 @@ import toast from "react-hot-toast";
 import "@/styles/Settings.css";
 import { WS_URL } from "@/logic/api";
 import PageHeader from "@/components/layout/PageHeader";
+import TopicsSettings from "@/components/settings/TopicsSettings";
 import TabStrip, { type TabItem } from "@/components/ui/TabStrip";
 import { useTheme } from "@/styles/ThemeProvider";
 import { themeSwatches } from "@/styles/themeMetadata";
@@ -323,6 +324,8 @@ function Settings() {
             </button>
           </div>
         </div>
+
+        <TopicsSettings />
 
         <div id="settings-muted" className="settings-section">
           <div className="section-header">

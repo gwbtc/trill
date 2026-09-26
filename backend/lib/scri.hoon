@@ -228,13 +228,18 @@
         ==
       %gx  (weld base /status/noun)
     ==
+  =/  =prefs:tsur  .^(prefs:tsur %gx (weld base /prefs/noun))
   ::  only fetched sources: an unfetched one's scry is empty and .^
-  ::  would crash on it
-  %-  trending:en:topicsj
+  ::  would crash on it. topics in none of the chosen categories are
+  ::  left out (the keyword-classified ones; google news only fetches
+  ::  the chosen sections)
+  %+  trending:en:topicsj  prefs
   %+  turn  ~(tap by fetched.status)
   |=  [id=source-id:tsur at=@da]
   =/  topics
-    .^((list topic:tsur) %gx (weld base /topics/[id]/noun))
+    %+  skim  .^((list topic:tsur) %gx (weld base /topics/[id]/noun))
+    |=  t=topic:tsur
+    ?=(^ (~(int in categories.t) cats.prefs))
   [id at (scag 10 topics)]
 ::
 ++  relays
