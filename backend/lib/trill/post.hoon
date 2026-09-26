@@ -90,7 +90,8 @@
   |-  ?~  inls  (flop res)
     =/  inl  i.inls
     =/  r=inline:tp  ?-  -.inl
-      %escape           [%codespan char.inl]
+      ::  a backslash-escaped character is just that character
+      %escape           [%text char.inl]
       %entity           [%codespan code.inl]
       %code-span        [%codespan text.inl]
       %line-break       [%break ~]
@@ -159,9 +160,11 @@
   ::     %+  turn  nodelist  de-node
   ::   $(lmd t.lmd, res [blocks res])
     
+::  +denest: a blockquote's inlines, in order. res is built by welding
+::  onto its end, so it isn't flopped
 ++  denest  |=  mde=markdown:md  ^-  paragraph:tp
   =|  res=paragraph:tp
-  |-  ?~  mde  (flop res)
+  |-  ?~  mde  res
     =/  block  (de-node i.mde)
     =/  r=paragraph:tp  (break-block block)
     =/  nr  (weld res r)
