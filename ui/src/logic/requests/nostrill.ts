@@ -441,8 +441,13 @@ export default class IO {
   async syncRelays(relays: number[]) {
     return await this.relayGet(relays, SYNC_SUB_NAME, { sync: null });
   }
+  // a user's notes, and their profile: the backend pushes profiles to the
+  // UI at eose when a req asked for kind 0
   async nostrFeed(pubkey: string, relays: number[]) {
-    const filters = [{ kinds: [1], authors: [pubkey] }];
+    const filters = [
+      { kinds: [1], authors: [pubkey] },
+      { kinds: [0], authors: [pubkey] },
+    ];
     return await this.relayCustom(relays, `user/${pubkey}`, filters);
   }
   async nostrThread(id: string, relays: number[]) {

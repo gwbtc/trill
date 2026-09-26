@@ -1,6 +1,6 @@
 import useLocalState from "@/state/state";
 import { unwrap } from "@/logic/result";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/Icon";
 import toast from "react-hot-toast";
 import type { FC } from "@/types/trill";
@@ -26,12 +26,27 @@ export default function NostrUser({
   setIsAccessLoading: (b: boolean) => void;
   onFeedChange?: (feed: FC) => void;
 }) {
-  const { api, lastFact, relays } = useLocalState((s) => ({
+  const { api, lastFact, relays, storedUserFeed } = useLocalState((s) => ({
     api: s.api,
     lastFact: s.lastFact,
     relays: s.relays,
+    // the backend sends no %user fact at eose (a TODO there); the store's
+    // /j/nostr refresh after eose files the req under its sub name
+    storedUserFeed: s.nostrFeeds[`user/${pubkey}`],
   }));
   const [fc, setFC] = useState<FC>();
+  const shownFeed = fc || storedUserFeed;
+  const wids = Object.values(relays)
+    .map((r) => r.wid)
+    .filter((w): w is number => w != null);
+  // someone we don't follow: fetch their notes and profile on arrival,
+  // once, as soon as a relay is connected
+  const fetchedFor = useRef("");
+  useEffect(() => {
+    if (!api || feed || wids.length === 0 || fetchedFor.current === pubkey) return;
+    fetchedFor.current = pubkey;
+    handleRequestAccess();
+  }, [api, feed, pubkey, wids.length]);
 
   useEffect(() => {
     if (!lastFact) return;
@@ -45,7 +60,7 @@ export default function NostrUser({
     } else if ("event" in lastFact.nostr) {
       const ev = lastFact.nostr.event;
       if (ev.kind === 1 && ev.pubkey === pubkey) {
-        const f = feed || fc;
+        const f = feed || shownFeed;
         if (!f) return;
         const nf = addEventToFc(ev, f);
         setFC(nf);
@@ -53,9 +68,9 @@ export default function NostrUser({
     }
   }, [lastFact]);
   useEffect(() => {
-    const visibleFeed = fc || feed;
+    const visibleFeed = shownFeed || feed;
     if (visibleFeed) onFeedChange?.(visibleFeed);
-  }, [fc, feed, onFeedChange]);
+  }, [shownFeed, feed, onFeedChange]);
   // Show empty state with resync option when no feed data
 
   async function refetch() {
@@ -83,12 +98,9 @@ export default function NostrUser({
   }
   async function handleRequestAccess() {
     if (!api) return;
-    const rels = Object.values(relays)
-      .map((r) => r.wid)
-      .filter((w): w is number => w != null);
     setIsAccessLoading(true);
     try {
-      await api.nostrFeed(pubkey, rels);
+      await api.nostrFeed(pubkey, wids);
     } catch (error) {
       toast.error(`Failed to request access from ${pubkey}`);
       console.error("Access request error:", error);
@@ -117,7 +129,7 @@ export default function NostrUser({
           )}
         </button>
 
-        {(!feed || !feed.feed || Object.keys(feed.feed).length === 0) && (
+        {Object.keys((feed || shownFeed)?.feed ?? {}).length === 0 && (
           <button
             onClick={handleRequestAccess}
             disabled={isAccessLoading}
@@ -137,10 +149,10 @@ export default function NostrUser({
           </button>
         )}
       </div>
-      {(feed || fc) && (
+      {(feed || shownFeed) && (
         <div id="feed-proper">
-          {Object.values((feed || fc)!.feed).some((post) => !post.parent) ? (
-            <PostList data={(feed || fc)!} refetch={refetch} spine={false} />
+          {Object.values((feed || shownFeed)!.feed).some((post) => !post.parent) ? (
+            <PostList data={(feed || shownFeed)!} refetch={refetch} spine={false} />
           ) : (
             <div className="profile-tab-empty">
               <Icon name="messages" size={38} color="textMuted" />

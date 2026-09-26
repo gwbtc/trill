@@ -23,6 +23,7 @@ import type { S3Config, UrbitContacts } from "@/types/urbit";
 import { getPoint } from "@/logic/gw";
 import { fixDMRequests, fixDMs, parseBigint } from "@/logic/utils";
 import { pingRelays } from "@/logic/latency";
+import { mentionedPubkeys } from "@/logic/nostrRefs";
 // TODO handle airlock connection issues
 // the SSE pipeline has a "status-update" event FWIW
 // type AirlockState = "connecting" | "connected" | "failed";
@@ -182,6 +183,25 @@ export const useStore = creator((set, get) => ({
     // time, and once more afterwards if any eose came in meanwhile
     let nostrScrying = false;
     let nostrRescry = false;
+    // people mentioned in notes (nostr:npub…) aren't their authors, so no
+    // sub fetched their profiles. ask the relays for those we lack, each
+    // at most once a session: one missing from every relay stays missing
+    const askedProfiles = new Set<string>();
+    const fetchMentionedProfiles = (feeds: Record<string, FC>) => {
+      const { profiles, relays } = get();
+      const texts = Object.values(feeds).flatMap((fc) =>
+        Object.values(fc.feed).map((p) => p.event?.content ?? ""),
+      );
+      const missing = mentionedPubkeys(texts)
+        .filter((pk) => !profiles.has(pk) && !askedProfiles.has(pk))
+        .slice(0, 100);
+      const wids = Object.values(relays)
+        .map((r) => r.wid)
+        .filter((w): w is number => w != null);
+      if (missing.length === 0 || wids.length === 0) return;
+      missing.forEach((pk) => askedProfiles.add(pk));
+      api.nostrProfiles(wids, missing);
+    };
     const refreshNostrFeeds = () => {
       if (nostrScrying) {
         nostrRescry = true;
@@ -201,6 +221,7 @@ export const useStore = creator((set, get) => ({
             nostrFeeds,
             nostrFeed: nostrFeeds[SYNC_SUB_NAME] ?? emptyFC(),
           });
+          fetchMentionedProfiles(nostrFeeds);
         })
         .finally(() => {
           nostrScrying = false;

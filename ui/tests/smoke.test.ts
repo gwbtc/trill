@@ -73,7 +73,7 @@ import {
 } from "../src/logic/topics";
 import { encodeSharedCard, parseSharedCard } from "../src/logic/cards";
 import { linkLabel } from "../src/logic/utils";
-import { shortNote, shortNpub, splitNostrRefs } from "../src/logic/nostrRefs";
+import { mentionedPubkeys, shortNote, shortNpub, splitNostrRefs } from "../src/logic/nostrRefs";
 
 describe("right rail search routing", () => {
   test("navigates to search and remembers the previous page", () => {
@@ -1048,6 +1048,12 @@ describe("nostr references (NIP-27)", () => {
     // bad checksum, and a bare npub without the nostr: scheme
     const bad = `nostr:${npub.slice(0, -1)}q and ${npub}`;
     expect(splitNostrRefs(bad)).toEqual([{ text: bad }]);
+  });
+
+  test("collects everyone mentioned, once", () => {
+    expect(
+      mentionedPubkeys([`a nostr:${npub} b`, `nostr:${nprofile} and nostr:${note}`, "nothing"]),
+    ).toEqual([pk]);
   });
 
   test("shortens what it can't name", () => {

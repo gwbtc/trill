@@ -28,7 +28,7 @@ export default function NostrText({ text }: { text: string }) {
             title={t.raw}
             onClick={(e) => go(e, `/u/${t.profile}`)}
           >
-            @{profiles.get(t.profile)?.name || shortNpub(t.profile)}
+            @{profiles.get(t.profile)?.name?.trim() || shortNpub(t.profile)}
           </a>
         ) : (
           <a

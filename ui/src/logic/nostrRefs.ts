@@ -56,3 +56,13 @@ export function shortNote(id: string): string {
   const note = nip19.noteEncode(id);
   return `${note.slice(0, 9)}…${note.slice(-4)}`;
 }
+
+// everyone mentioned in these texts, once each
+export function mentionedPubkeys(texts: string[]): string[] {
+  const out = new Set<string>();
+  for (const text of texts) {
+    if (!text.includes("nostr:")) continue;
+    for (const t of splitNostrRefs(text)) if ("profile" in t) out.add(t.profile);
+  }
+  return [...out];
+}
