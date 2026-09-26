@@ -103,6 +103,7 @@
   |=  [poke=post-poke:ui p=post:post]  ^-  engagement:comms
   ?-  -.poke
     %add  !!
+    %card  !!
     %reply     [%reply id.poke p]
     %quote     [%quote id.poke p]
     %rp        [%rp [host.poke id.poke] id.p]
@@ -227,6 +228,24 @@
           :~  ui-card
               fact-card
           ==
+      ::  a shared card: our text, then the card as a %json block. like
+      ::  quotes, not sent to nostr
+      %card
+        ?~  (de:json:html card.poke)  ~&  >>>  bad-card-json=card.poke  `state
+        =/  sp  (build-sp:postlib our.bowl our.bowl content.poke ~ ~)
+        =.  contents.sp  (snoc contents.sp [%json %card card.poke])
+        =/  p=post:post  (build-post:postlib now.bowl pubkey sp)
+        =.  state  (add-to-feed p)
+        =/  fact  [%post %add (wrap-post p)]
+        =/  mentions
+          (extract-mentions:postlib content.poke (silt ~[our.bowl]))
+        :_  state
+        %+  weld
+          %+  turn  mentions  |=  s=@p
+          (poke-host:crds s [%eng %mention p])
+        :~  (update-ui:cards:lib fact)
+            (update-followers:cards:lib fact)
+        ==
       %quote
         =/  quote  ?-  -.host.poke
           %urbit  [%ref %trill +.host.poke /(crip (scow:sr %ud id.poke))]

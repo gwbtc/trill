@@ -387,6 +387,7 @@
     add+postadd
     reply+reply
     quote+quote
+    card+(ot ~[content+so card+so])
     rp+upid
     :: rt+de-rt
     reaction+reaction

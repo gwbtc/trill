@@ -34,7 +34,7 @@
   ==
 ::  +link: a related article
 ::
-+$  link  [title=@t url=@t publisher=@t]
++$  link  [title=@t url=@t pic=(unit @t) publisher=@t]
 ::  +topic: one trending item
 ::
 ::    classification: how categories were picked. %source: the source's
@@ -54,6 +54,7 @@
       title=@t
       content=@t
       url=(unit @t)
+      pic=(unit @t)
       score=(unit @ud)
       links=(list link)
   ==

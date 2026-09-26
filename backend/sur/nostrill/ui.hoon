@@ -29,6 +29,9 @@
   $%  [%add content=@t global=? anon=? reply=reply-policy]
       [%reply content=@t host=user:sur id=@da thread=@da]
       [%quote content=@t host=user:sur id=@da]
+      ::  a post sharing a UI card (e.g. trending topics): the card is
+      ::  the JSON the UI renders, kept as a %json block with origin %card
+      [%card content=@t card=@t]
       [%rp host=user:sur id=@da]  :: NIP-18
       [%reaction host=user:sur id=@da reaction=@t]
       [%del-reaction host=user:sur id=@da]

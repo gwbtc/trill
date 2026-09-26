@@ -1,5 +1,5 @@
 /-  sur=nostrill, nsur=nostr, comms=nostrill-comms,
-    post=trill-post, gate=trill-gate, feed=trill-feed
+    post=trill-post, gate=trill-gate, feed=trill-feed, tsur=topics
 /+  appjs=json-nostrill,
     lib=nostrill,
     feedlib=trill-feed,
@@ -8,7 +8,8 @@
     sr=sortug,
     gwid,
     gwidj=json-gwid,
-    ws=websockets
+    ws=websockets,
+    topicsj=json-topics
 
 |_  [=state:sur =bowl:gall]
 +$  card  card:agent:gall
@@ -210,6 +211,31 @@
     ?:  .=('nostr' which)  `%nostr
     ?:  .=('urbit' which)  `%urbit
     ~
+::  +trending: the leading topics of each %topics source, for the
+::  trending topics card. null when %topics isn't running
+::
+++  trending
+^-  (unit (unit cage))
+  :-  ~  :-  ~  :-  %json  !>
+  ^-  json
+  =/  base=path  /(scot %p our.bowl)/topics/(scot %da now.bowl)
+  ?.  .^(? %gu (weld base /$))  ~
+  =/  status
+    .^  $:  every=@dr
+            next=(unit @da)
+            errors=(map source-id:tsur [at=@da msg=@t])
+            fetched=(map source-id:tsur @da)
+        ==
+      %gx  (weld base /status/noun)
+    ==
+  ::  only fetched sources: an unfetched one's scry is empty and .^
+  ::  would crash on it
+  %-  trending:en:topicsj
+  %+  turn  ~(tap by fetched.status)
+  |=  [id=source-id:tsur at=@da]
+  =/  topics
+    .^((list topic:tsur) %gx (weld base /topics/[id]/noun))
+  [id at (scag 10 topics)]
 ::
 ++  relays
 ^-  (unit (unit cage))

@@ -10,6 +10,7 @@
       title=@t
       content=@t
       url=(unit @t)
+      pic=(unit @t)
       score=(unit @ud)
       links=(list link:sur)
   ==
@@ -42,6 +43,7 @@
         (query-value 'US:en')
     ==
   ==
+:: 
 ::  +query-value: percent-encoded twice. the runtime's http client
 ::  (vere's cttp.c) parses the url with de-purl, which decodes the query,
 ::  and writes it back out without re-encoding, so a single %20 goes on
@@ -75,18 +77,39 @@
   %+  murn  (kids i.chan 'item')
   |=  item=manx
   ^-  (unit raw)
-  =/  title  (plain (field item 'title'))
-  ?:  |(=('' title) (spam title))  ~
   =/  links=(list link:sur)
     %+  murn  (kids item 'ht:news_item')
     |=  n=manx
-    (evidence (field n 'ht:news_item_title') (field n 'ht:news_item_url') (field n 'ht:news_item_source'))
+    %-  evidence  :^
+      (field n 'ht:news_item_title')
+      (field n 'ht:news_item_url')
+      `(field n 'ht:news_item_picture')
+      (field n 'ht:news_item_source')
+
+  =/  links2  links
   ?~  links  ~
+::  of the many links there is one which contributes the picture url to the parent item
+:: we choose that one and get the title too
+  =/  pic  (plain (field item 'ht:picture'))
+  =/  title  (plain (field item 'title'))
+  =/  url  ''
+  =/  main=[title=@t link=@t pic=@t]
+    |-  ?~  links2  [title url pic]
+      ?~  pic.i.links2  
+        $(links2 t.links2)
+      ?.  .=(u.pic.i.links2 pic)
+        $(links2 t.links2)
+      :+  title.i.links2
+            url.i.links2
+                  pic
+
+
   :-  ~
   :*  (fall (rfc822 (field item 'pubDate')) now)
-      title
+      title.main
       (plain (field item 'description'))
-      ~
+      `link.main
+      `pic.main
       (traffic (field item 'ht:approx_traffic'))
       links
   ==
@@ -116,9 +139,10 @@
       title
       ''
       `story
+      ~
       (get-n o 'points')
-      ?:  =(story thread)  ~[[title story publisher]]
-      ~[[title story publisher] ['Hacker News discussion' thread 'Hacker News']]
+      ?:  =(story thread)  ~[[title story ~ publisher]]
+      ~[[title story ~ publisher] ['Hacker News discussion' thread ~ 'Hacker News']]
   ==
 ::  +parse-gnews: a google news topic feed, one <item> per story. the
 ::  headline ends in " - <publisher>", which is dropped. the item's
@@ -143,12 +167,13 @@
   =/  links=(list link:sur)
     =/  articles  (cluster (field item 'description'))
     ?^  articles  articles
-    (drop (evidence title link publisher))
+    (drop (evidence title link ~ publisher))
   :-  ~
   :*  (fall (rfc822 (field item 'pubDate')) now)
       title
       ''
       ?:((web link) `link ~)
+      ~
       `(lent links)
       links
   ==
@@ -189,7 +214,7 @@
   ?~  cs  ~
   ?.  &(=('a' (tag i.cs)) ?=(^ t.cs) =('font' (tag i.t.cs)))
     $(cs t.cs)
-  =/  l  (evidence (text i.cs) (attr i.cs 'href') (text i.t.cs))
+  =/  l  (evidence (text i.cs) (attr i.cs 'href') ~ (text i.t.cs))
   ?~  l  $(cs t.t.cs)
   [u.l $(cs t.t.cs)]
 ::  +drop-suffix: 'Headline - Publisher' to 'Headline'
@@ -207,13 +232,14 @@
 ::  on the web
 ::
 ++  evidence
-  |=  [title=@t url=@t publisher=@t]
+  |=  l=link:sur
   ^-  (unit link:sur)
-  =/  title  (plain title)
-  =/  url  (trim-url url)
+  =/  title  (plain title.l)
+  =/  url  (trim-url url.l)
+  =/  pic  ?~  pic.l  ~  `(trim-url u.pic.l)
   ?:  |(=('' title) !(web url) (spam title))  ~
-  =/  publisher  (plain publisher)
-  `[title url ?:(=('' publisher) (host url) publisher)]
+  =/  publisher  (plain publisher.l)
+  `[title url pic ?:(=('' publisher) (host url) publisher)]
 ::
 ::  classification
 ::
