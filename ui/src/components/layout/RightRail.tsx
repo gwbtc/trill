@@ -2,22 +2,39 @@ import useLocalState from "@/state/state";
 import { buildRelayModels } from "@/logic/relayDisplay";
 import { getRailSearchRoute } from "@/logic/searchRouting";
 import { Search, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearch } from "wouter";
+import { followGraphWithProfiles, suggestFollows } from "@/logic/suggestions";
+import { stringToUser } from "@/logic/nostrill";
+import UserModal from "@/components/modals/UserModal";
 import "./RightRail.css";
 
 export default function RightRail() {
   const [location, navigate] = useLocation();
   const searchString = useSearch();
-  const { relays, relayLatency, following, profiles, modal, setModal } =
-    useLocalState((s) => ({
-      relays: s.relays,
-      relayLatency: s.relayLatency,
-      following: s.following,
-      profiles: s.profiles,
-      modal: s.modal,
-      setModal: s.setModal,
-    }));
+  const {
+    relays,
+    relayLatency,
+    following,
+    profiles,
+    modal,
+    setModal,
+    followGraph,
+    lists,
+    our,
+    pubkey,
+  } = useLocalState((s) => ({
+    relays: s.relays,
+    relayLatency: s.relayLatency,
+    following: s.following,
+    profiles: s.profiles,
+    modal: s.modal,
+    setModal: s.setModal,
+    followGraph: s.followGraph,
+    lists: s.lists,
+    our: s.api?.airlock.our,
+    pubkey: s.pubkey,
+  }));
 
   const relayModels = buildRelayModels(relays, relayLatency);
   const openRelayDashboard = () => {
@@ -26,12 +43,16 @@ export default function RightRail() {
     });
   };
 
-  const suggestions = Array.from(following.entries())
-    .slice(0, 4)
-    .map(([pubkey]) => {
-      const profile = profiles.get(pubkey);
-      return { pubkey, profile };
-    });
+  const suggestions = useMemo(
+    () =>
+      suggestFollows(
+        followGraphWithProfiles(followGraph, profiles),
+        following,
+        lists,
+        [our ?? "", pubkey].filter(Boolean),
+      ),
+    [followGraph, profiles, following, lists, our, pubkey],
+  );
   const searchParams = new URLSearchParams(searchString);
   const isSearchScreen = location === "/search";
   const urlSearchQuery = isSearchScreen ? searchParams.get("q") || "" : "";
@@ -180,18 +201,25 @@ export default function RightRail() {
       {suggestions.length > 0 && (
         <div id="who-to-follow" className="rail-card">
           <h2 className="rail-card-title">Who to follow</h2>
-          {suggestions.map(({ pubkey, profile }) => (
-            <div key={pubkey} className="rail-follow-row">
-              <div className="rail-follow-info">
-                <div className="rail-follow-name">
-                  {profile?.name ?? pubkey.slice(0, 10) + "…"}
+          {suggestions.map(({ id, followedBy }) => {
+            const user = stringToUser(id);
+            const handle = id.startsWith("~") ? id : `${id.slice(0, 12)}…`;
+            return (
+              <button
+                type="button"
+                key={id}
+                className="rail-follow-row"
+                onClick={() => "ok" in user && setModal(<UserModal user={user.ok} />)}
+              >
+                <div className="rail-follow-info">
+                  <div className="rail-follow-name">{profiles.get(id)?.name ?? handle}</div>
+                  <div className="rail-follow-handle mono">
+                    {handle} · followed by {followedBy} you follow
+                  </div>
                 </div>
-                <div className="rail-follow-handle mono">
-                  {pubkey.slice(0, 12)}…
-                </div>
-              </div>
-            </div>
-          ))}
+              </button>
+            );
+          })}
         </div>
       )}
     </aside>

@@ -57,6 +57,7 @@
   =.  profiles.state  ?~  prof
     (~(del by profiles.state) [%urbit src.bowl])
     (~(put by profiles.state) [%urbit src.bowl] u.prof)
-  ::  TODO kinda wanna send it to the UI
-  `state
+  :_  state
+  :~  (update-ui:cards:lib [%prof profiles.state])
+  ==
 --

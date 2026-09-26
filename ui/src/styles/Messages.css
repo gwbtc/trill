@@ -131,7 +131,7 @@
 }
 
 .dm-tab-count.blocked {
-  background: #dc2626;
+  background: var(--color-error);
 }
 
 .dm-inbox-list {
@@ -170,11 +170,11 @@
 }
 
 .trill-dm-row.blocked {
-  background: color-mix(in srgb, #dc2626 5%, var(--color-background));
+  background: color-mix(in srgb, var(--color-error) 5%, var(--color-background));
 }
 
 .trill-dm-row.blocked.unread {
-  background: color-mix(in srgb, #dc2626 7%, var(--color-background));
+  background: color-mix(in srgb, var(--color-error) 7%, var(--color-background));
 }
 
 .trill-dm-row:hover,
@@ -253,8 +253,8 @@
 
 .dm-row-state.blocked,
 .dm-peer-state.blocked {
-  background: color-mix(in srgb, #dc2626 12%, var(--color-background));
-  color: #b91c1c;
+  background: color-mix(in srgb, var(--color-error) 12%, var(--color-background));
+  color: color-mix(in srgb, var(--color-error) 82%, black);
 }
 
 .dm-pin-button {
@@ -366,7 +366,7 @@
 }
 
 .dm-request-action.reject {
-  background: #dc2626;
+  background: var(--color-error);
   color: #fff;
 }
 
@@ -388,7 +388,7 @@
 
 .dm-request-action.reject:hover,
 .dm-request-action.reject:focus-visible {
-  background: #b91c1c;
+  background: color-mix(in srgb, var(--color-error) 82%, black);
   color: #fff;
 }
 
@@ -495,8 +495,8 @@
 }
 
 .dm-empty-icon.blocked {
-  background: color-mix(in srgb, #dc2626 9%, var(--color-background));
-  color: #dc2626;
+  background: color-mix(in srgb, var(--color-error) 9%, var(--color-background));
+  color: var(--color-error);
 }
 
 .dm-empty-state h2 {
@@ -1043,12 +1043,12 @@
 }
 
 .dm-message-row.delivery-failed .dm-bubble {
-  border: 1px solid color-mix(in srgb, #dc2626 34%, transparent);
-  background: color-mix(in srgb, #dc2626 8%, var(--color-surface, #f1f3f5));
+  border: 1px solid color-mix(in srgb, var(--color-error) 34%, transparent);
+  background: color-mix(in srgb, var(--color-error) 8%, var(--color-surface, #f1f3f5));
 }
 
 .dm-message-row.delivery-failed.mine .dm-bubble {
-  background: #b91c1c;
+  background: color-mix(in srgb, var(--color-error) 82%, black);
   color: #fff;
 }
 
@@ -1153,11 +1153,11 @@
 }
 
 .dm-delivery-status.failed {
-  color: #b91c1c;
+  color: color-mix(in srgb, var(--color-error) 82%, black);
 }
 
 .dm-message-row.mine .dm-delivery-status.failed {
-  color: #fee2e2;
+  color: color-mix(in srgb, var(--color-error) 14%, var(--color-background));
 }
 
 .dm-delivery-status button {
@@ -1165,10 +1165,10 @@
   align-items: center;
   gap: 4px;
   padding: 3px 7px;
-  border: 1px solid color-mix(in srgb, #dc2626 32%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-error) 32%, transparent);
   border-radius: 999px;
   background: var(--color-background, #fff);
-  color: #b91c1c;
+  color: color-mix(in srgb, var(--color-error) 82%, black);
   cursor: pointer;
   font-family: inherit;
   font-size: 11px;
@@ -1177,7 +1177,7 @@
 
 .dm-delivery-status button:hover,
 .dm-delivery-status button:focus-visible {
-  background: #fee2e2;
+  background: color-mix(in srgb, var(--color-error) 14%, var(--color-background));
   outline: none;
 }
 
@@ -1204,7 +1204,7 @@
 
 .dm-composer.blocked {
   flex-wrap: wrap;
-  background: color-mix(in srgb, #dc2626 3%, var(--color-background));
+  background: color-mix(in srgb, var(--color-error) 3%, var(--color-background));
 }
 
 .dm-composer-blocked-note {
@@ -1212,7 +1212,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  color: #b91c1c;
+  color: color-mix(in srgb, var(--color-error) 82%, black);
   font-size: 12px;
   font-weight: 700;
 }

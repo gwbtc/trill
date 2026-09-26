@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import useLocalState from "@/state/state";
-import { Zap, MessageCircle, Activity } from "lucide-react";
+import { Zap, Activity } from "lucide-react";
 
 export default function NostrSignals() {
     const lastNostrEventTime = useLocalState((s) => s.lastNostrEventTime);

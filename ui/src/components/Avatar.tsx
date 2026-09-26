@@ -6,7 +6,6 @@ import { isValidPatp } from "urbit-ob";
 import type { UrbitID, UserProfile, UserType } from "@/types/nostrill";
 import Icon from "@/components/Icon";
 import UserModal from "./modals/UserModal";
-import { abbreviatePatp } from "@/logic/utils";
 
 export default function({
   user,
@@ -41,11 +40,11 @@ export default function({
     setModal(<UserModal user={user} />);
   }
   const name = (
-    <div className="name cp" role="link" onMouseUp={openModal}>
+    <div className="name cp" role="link" onClick={openModal}>
       {profile ? (
         <p>{profile.name}</p>
       ) : "urbit" in user ? (
-        <p className={"p-only" + user.urbit.gwid.english.foreshortened}>
+        <p className={"p-only" + tooLong(user.urbit.gwid.english.foreshortened)}>
           {user.urbit.gwid.english.foreshortened}
         </p>
       ) : (

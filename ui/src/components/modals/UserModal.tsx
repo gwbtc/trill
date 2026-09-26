@@ -1,4 +1,6 @@
+import { safeHref } from "@/logic/utils";
 import "@/styles/Profile.css";
+import { unwrap } from "@/logic/result";
 import "@/styles/UserModal.css";
 import Avatar from "../Avatar";
 import Icon from "@/components/Icon";
@@ -88,8 +90,15 @@ export default function UserModal({ user }: { user: UserType }) {
     }
   }
 
-  function followedUrbit(_data: Enbowled<Deferred<FeedData>>) {
+  function followedUrbit(fact: Enbowled<Deferred<FeedData>>) {
+    if (fact.user !== userString) return;
     setLoading(false);
+    const msg = fact.data.msg ? `\nThey added: ${fact.data.msg}.` : "";
+    if (fact.data.data === "maybe")
+      toast.success(`${userString} will review your follow request manually.${msg}`);
+    else if (fact.data.data === null)
+      toast.error(`${userString} denied your follow request.${msg}`);
+    else toast.success(`Now following ${profile?.name || userString}`);
   }
 
   function followedNostr(fact: NostrFollow) {
@@ -113,9 +122,9 @@ export default function UserModal({ user }: { user: UserType }) {
     setLoading(true);
     try {
       if (isFollowing) {
-        await api.unfollow(user);
+        unwrap(await api.unfollow(user));
       } else {
-        await api.follow(user);
+        unwrap(await api.follow(user));
       }
     } catch (_err) {
       toast.error("Action failed");
@@ -168,7 +177,6 @@ export default function UserModal({ user }: { user: UserType }) {
                 Connect to a relay to follow
               </span>
             ) : (
-              "nostr" in user &&
               !itsMe && (
                 <button
                   className={`user-modal-follow ${isFollowing ? "following" : ""}`}
@@ -253,15 +261,8 @@ export default function UserModal({ user }: { user: UserType }) {
   );
 }
 
-const isURL = (str: string): boolean => {
-  if (!str) return false;
-  try {
-    new URL(str);
-    return true;
-  } catch {
-    return false;
-  }
-};
+// profile fields are remote data: only http(s) values become links
+const isURL = (str: string): boolean => !!str && !!safeHref(str);
 
 export function ProfValue({ value }: { value: any }) {
   if (typeof value === "string")

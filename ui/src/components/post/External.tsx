@@ -5,11 +5,20 @@ interface JSONProps {
   content: ExternalContent[];
 }
 
+// remote content: malformed json must not throw during render
+function parsesToValue(s: string) {
+  try {
+    return !!JSON.parse(s);
+  } catch {
+    return false;
+  }
+}
+
 function JSONContent({ content }: JSONProps) {
   return (
     <>
       {content.map((c, i) => {
-        if (!JSON.parse(c.json.content)) return <p key={i}>Error</p>;
+        if (!parsesToValue(c.json.content)) return <p key={i}>Error</p>;
         else
           return (
             <p

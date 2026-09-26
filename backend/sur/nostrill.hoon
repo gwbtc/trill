@@ -23,6 +23,16 @@
       =requests
       ::  our responses to requests
       =responses
+      ::  personal lists, private to us
+      bookmarks=(map post-ref @da)  ::  -> when it was bookmarked
+      muted=(set user)
+      reported=(set post-ref)
+  ==
+::  +post-ref: a post pointed at from our lists. urbit posts by host and
+::  id, nostr posts by event id
++$  post-ref
+  $%  [%urbit host=@p id=@da]
+      [%nostr id=@ux]
   ==
 ::
 +$  global-feed  ((mop upid post:tp) ugth)

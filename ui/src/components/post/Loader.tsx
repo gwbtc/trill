@@ -88,27 +88,6 @@ function PostData(props: Props) {
       // }, 10_000);
     }
 
-    // useEffect(() => {
-    //   const path = `${host}/${id}`;
-    //   if (path in peekedPosts) {
-    //     queryClient.setQueryData(["trill-thread", host, id], {
-    //       fpost: peekedPosts[path],
-    //     });
-    //   } else if (path in deniedPosts) {
-    //     setDenied(true);
-    //   }
-    // }, [peekedPosts]);
-    // useEffect(() => {
-    //   const path = `${host}/${id}`;
-    //   if (path in deniedPosts) setDenied(true);
-    // }, [deniedPosts]);
-
-    // useEffect(() => {
-    //   const l = lastThread;
-    //   if (l && l.thread == id) {
-    //     queryClient.setQueryData(["trill-thread", host, id], { fpost: l });
-    //   }
-    // }, [lastThread]);
     function retryPeek(e: React.MouseEvent) {
       e.stopPropagation();
       setDead(false);
@@ -118,7 +97,7 @@ function PostData(props: Props) {
       return (
         <div className={props.className}>
           <div className="lazy x-center not-found">
-            <button className="x-center" onMouseUp={handleShowNested}>
+            <button className="x-center" onClick={handleShowNested}>
               Load more
             </button>
           </div>
@@ -130,7 +109,7 @@ function PostData(props: Props) {
           <div className={props.className}>
             <div className="no-response x-center not-found">
               <p>{host} did not respond</p>
-              <button className="x-center" onMouseUp={retryPeek}>
+              <button className="x-center" onClick={retryPeek}>
                 Try again
               </button>
             </div>
@@ -155,9 +134,13 @@ function PostData(props: Props) {
           />
         )
       ) : // no data
-      isLoading || isError ? (
+      isLoading ? (
         <div className={props.className}>
           <img className="x-center post-spinner" src={spinner} alt="" />
+        </div>
+      ) : isError ? (
+        <div className={props.className}>
+          <p className="x-center not-found">Could not load post {host}/{id}</p>
         </div>
       ) : (
         <div className={props.className}>

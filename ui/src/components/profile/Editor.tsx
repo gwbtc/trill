@@ -1,10 +1,14 @@
 import { useState } from "react";
+import { unwrap } from "@/logic/result";
 import type { BasicProfile, UserProfile, UserType } from "@/types/nostrill";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import { getCustomProfileFields, getProfileBanner } from "@/logic/userDisplay";
 import useLocalState from "@/state/state";
 import toast from "react-hot-toast";
 import Avatar from "../Avatar";
+import { uploadToS3 } from "@/logic/s3";
+
+const MAX_INLINE_IMAGE_BYTES = 100 * 1024;
 import { Camera, Info, Plus, X } from "lucide-react";
 
 interface ProfileEditorProps {
@@ -20,9 +24,10 @@ const ProfileEditor: React.FC<ProfileEditorProps> = ({
   userString,
   onSave,
 }) => {
-  const { api, setModal } = useLocalState((s) => ({
+  const { api, setModal, s3 } = useLocalState((s) => ({
     api: s.api,
     setModal: s.setModal,
+    s3: s.s3,
   }));
 
   const initialBanner = getProfileBanner(profile);
@@ -38,12 +43,30 @@ const ProfileEditor: React.FC<ProfileEditorProps> = ({
   const [customFields, setCustomFields] = useState(initialFields);
   const [isSaving, setIsSaving] = useState(false);
 
+  // profiles are copied to followers and republished to nostr as kind-0, so
+  // an inlined data: url would ship the whole image in every copy. upload to
+  // S3 when it's configured; otherwise only allow small images inline
   const handleFilePreview =
     (setter: (value: string) => void) =>
-    (event: React.ChangeEvent<HTMLInputElement>) => {
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
+      event.target.value = "";
       if (!file) return;
 
+      if (s3) {
+        try {
+          setter(await uploadToS3(file, s3));
+        } catch (e) {
+          toast.error(`Upload failed: ${e}`);
+        }
+        return;
+      }
+      if (file.size > MAX_INLINE_IMAGE_BYTES) {
+        toast.error(
+          `Images over ${MAX_INLINE_IMAGE_BYTES / 1024} KB need S3 storage; configure it or paste an image URL`,
+        );
+        return;
+      }
       const reader = new FileReader();
       reader.onload = () => {
         if (typeof reader.result === "string") setter(reader.result);
@@ -82,7 +105,7 @@ const ProfileEditor: React.FC<ProfileEditorProps> = ({
         other,
       };
 
-      await api.createProfile(nextProfile);
+      unwrap(await api.createProfile(nextProfile));
       toast.success("Profile updated successfully");
       onSave?.();
       setModal(null);

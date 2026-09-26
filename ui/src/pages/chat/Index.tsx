@@ -1,8 +1,9 @@
 import "@/styles/Messages.css";
+import { unwrap } from "@/logic/result";
 import Avatar from "@/components/Avatar";
 import NewDmModal from "@/components/modals/NewDmModal";
 import TabStrip, { type TabItem } from "@/components/ui/TabStrip";
-import useLocalState from "@/state/state";
+import useLocalState, { useStore } from "@/state/state";
 import {
   buildDmConversations,
   buildDmRequestRows,
@@ -158,7 +159,7 @@ export default function ChatIndex() {
 
     setPinnedPatps(nextPatps);
     try {
-      await api.setSettings("noschat", "pinned", nextPatps);
+      unwrap(await api.setSettings("noschat", "pinned", nextPatps));
     } catch (error) {
       setPinnedPatps(previousPatps);
       toast.error("Failed to save pinned chats");
@@ -191,7 +192,6 @@ export default function ChatIndex() {
     }
     const request = dmRequests[id];
     if (!request) return;
-    const previousRequests = dmRequests;
     const nextRequests = { ...dmRequests };
     delete nextRequests[id];
     setRequestPending(id, true);
@@ -200,7 +200,8 @@ export default function ChatIndex() {
       const res = await api.acceptReq(id);
       if ("error" in res) throw new Error(res.error);
     } catch (error) {
-      setDmRequests(previousRequests);
+      // put back just this request; other requests may have changed meanwhile
+      setDmRequests({ ...useStore.getState().dmRequests, [id]: request });
       toast.error("Failed to accept message request");
       console.error("Accept DM request error:", error);
     } finally {
@@ -215,7 +216,6 @@ export default function ChatIndex() {
     }
     const request = dmRequests[id];
     if (!request) return;
-    const previousRequests = dmRequests;
     const nextRequests = { ...dmRequests };
     delete nextRequests[id];
     setRequestPending(id, true);
@@ -224,7 +224,8 @@ export default function ChatIndex() {
       const res = await api.rejectReq(id);
       if ("error" in res) throw new Error(res.error);
     } catch (error) {
-      setDmRequests(previousRequests);
+      // put back just this request; other requests may have changed meanwhile
+      setDmRequests({ ...useStore.getState().dmRequests, [id]: request });
       toast.error("Failed to reject message request");
       console.error("Reject DM request error:", error);
     } finally {

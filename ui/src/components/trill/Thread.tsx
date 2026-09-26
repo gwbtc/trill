@@ -1,7 +1,6 @@
 import useLocalState from "@/state/state";
 import Icon from "@/components/Icon";
 import spinner from "@/assets/triangles.svg";
-import Post from "@/components/post/Post";
 import { toFlat } from "@/logic/trill/helpers";
 import type { FC, FullNode, Poast } from "@/types/trill";
 import type { UserProfile } from "@/types/nostrill";
@@ -49,14 +48,9 @@ export default function Thread({
         </div>
       </div>
       <div id="feed-proper">
-        {poast && poast.children.length === 0 ? (
-          <>
-            <Head poast={poast} profile={profile} />
-            <ThreadReplyComposer poast={poast} />
-          </>
-        ) : (
-          <Loader poast={poast} host={host} id={id} profile={profile} />
-        )}
+        {/* always fetch: a cached copy with no children may just not have
+            synced its replies yet. Loader shows the cached post meanwhile */}
+        <Loader poast={poast} host={host} id={id} profile={profile} />
       </div>
     </>
   );
@@ -83,15 +77,17 @@ function Loader({
     else {
       const msg = res.ok.data.msg;
       const data = res.ok.data.data;
+      const withMsg = (s: string) => (msg ? `${s}\nHe added: ${msg}.` : s);
       if (data === "maybe") {
-        const toastMsg = `The request to access this thread will be reviewed manually.`;
-        msg ? toastMsg + `\nHe added: ${msg}.` : toastMsg;
-        toast.success(msg, { duration: 5000 });
+        const toastMsg = withMsg(
+          `The request to access this thread will be reviewed manually.`,
+        );
+        toast.success(toastMsg, { duration: 5000 });
+        setError(toastMsg);
       } else if (data === null) {
-        const toastMsg = `The request to access this thread was denied.`;
-        msg ? toastMsg + `\nHe added: ${msg}.` : toastMsg;
-        toast.error(msg, { duration: 5000 });
-        setError(msg)
+        const toastMsg = withMsg(`The request to access this thread was denied.`);
+        toast.error(toastMsg, { duration: 5000 });
+        setError(toastMsg);
       } else {
         setData(data.node);
         setThread(data.thread);
@@ -101,6 +97,24 @@ function Loader({
   useEffect(() => {
     fetchThread();
   }, [host, id]);
+
+  // the scry is a one-off snapshot; refetch when a post fact touches this
+  // thread (a new or deleted reply, an updated parent) so it stays live
+  const lastFact = useLocalState((s) => s.lastFact);
+  useEffect(() => {
+    if (!lastFact || !("post" in lastFact)) return;
+    const f = lastFact.post;
+    const p = "add" in f ? f.add.post : "upd" in f ? f.upd.post : f.del.post;
+    if (p.host !== host) return;
+    const root = data?.thread || id;
+    const shown = new Set([id, ...ted.map((n) => n.id)]);
+    if (data) flattenThreadChildren(data).forEach(({ node }) => shown.add(node.id));
+    const touches =
+      shown.has(p.id) ||
+      (p.parent != null && shown.has(p.parent)) ||
+      p.thread === root;
+    if (touches) fetchThread();
+  }, [lastFact]);
   if (ted.length > 1)
     return (
       <LongThread
@@ -196,6 +210,14 @@ function LongThread({
 }) {
   if (thread.length === 0) return <p>wtf</p>;
   const op = thread[0];
+  // `thread` is only the author's self-reply chain; everyone else's replies
+  // to posts in it hang off the chain nodes' children
+  const chainIds = new Set(thread.map((n) => n.id));
+  const replies = thread.flatMap((parent) =>
+    Object.values(parent.children || {})
+      .filter((child) => !chainIds.has(child.id))
+      .map((node) => ({ node, parent })),
+  );
   return (
     <div id="trill-thread" className={`thread-replies-${threadStyle}`}>
       <ThreadRootPost
@@ -206,7 +228,7 @@ function LongThread({
       <ThreadReplyComposer poast={toFlat(op)} />
       {thread.slice(1).map((child, i) => (
         <div
-          key={child.hash + i}
+          key={child.id}
           className="timeline-post trill-post cp thread-child"
         >
           <div className="left">{`${i + 2}/${thread.length}`}</div>
@@ -220,72 +242,20 @@ function LongThread({
           </div>
         </div>
       ))}
+      {replies.length > 0 &&
+        (threadStyle === "linear" ? (
+          <LinearThreadReplies
+            nodes={replies.flatMap((r) => [r, ...flattenThreadChildren(r.node)])}
+            userForNode={(node) => ({ urbit: node.authorFull.author })}
+          />
+        ) : (
+          <NestedThreadReplies
+            nodes={replies.map((r) => r.node)}
+            userForNode={(node) => ({ urbit: node.authorFull.author })}
+            nodeKey={(node) => node.id}
+          />
+        ))}
     </div>
   );
 }
 
-// function ChildTree({ node }: { node: FullNode }) {
-//   const { threadChildren, replies } = extractThread(node);
-//   return (
-//     <>
-//       <div id="tail">
-//         {threadChildren.map((n) => {
-//           return (
-//             <Post user={{ urbit: n.author }} key={n.id} poast={toFlat(n)} />
-//           );
-//         })}
-//       </div>
-//       <div id="replies">
-//         {replies.map((n) => (
-//           <ReplyThread key={n.id} node={n} />
-//         ))}
-//       </div>
-//     </>
-//   );
-// }
-
-// function ReplyThread({ node }: { node: FullNode }) {
-//   // const { threadChildren, replies } = extractThread(node);
-//   const { replies } = extractThread(node);
-//   return (
-//     <div className="trill-reply-thread">
-//       <div className="head">
-//         <Post user={{ urbit: node.author }} poast={toFlat(node)} />
-//       </div>
-//       <div className="tail">
-//         {replies.map((r) => (
-//           <Post key={r.id} user={{ urbit: r.author }} poast={toFlat(r)} />
-//         ))}
-//       </div>
-//     </div>
-//   );
-// }
-
-// function OwnData(props: Props) {
-//   const { api } = useLocalState((s) => ({
-//     api: s.api,
-//   }));
-//   const { host, id } = props;
-//   async function fetchThread() {
-//     return await api!.scryThread(host, id);
-//   }
-//   const { isLoading, isError, data, refetch } = useQuery({
-//     queryKey: ["trill-thread", host, id],
-//     queryFn: fetchThread,
-//   });
-//   return isLoading ? (
-//     <div className={props.className}>
-//       <div className="x-center not-found">
-//         <p className="x-center">Scrying Post, please wait...</p>
-//         <img src={spinner} className="x-center s-100" alt="" />
-//       </div>
-//     </div>
-//   ) : null;
-// }
-// function SomeoneElses(props: Props) {
-//   // const { api, following } = useLocalState((s) => ({
-//   //   api: s.api,
-//   //   following: s.following,
-//   // }));
-//   return <div>ho</div>;
-// }

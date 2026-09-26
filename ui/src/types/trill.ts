@@ -1,5 +1,5 @@
 import type { Wevent } from "./nostr";
-import type { GroundwireID, UrbitID } from "./nostrill";
+import type { UrbitID } from "./nostrill";
 import type { Ship } from "./urbit";
 
 export type SortugRef = {

@@ -1,3 +1,4 @@
+import { safeHref } from "@/logic/utils";
 import type {
   Block,
   Inline,
@@ -8,7 +9,6 @@ import Media from "./Media";
 import { YoutubeSnippet } from "./External";
 import { useLocation } from "wouter";
 import type { Ship } from "@/types/urbit.ts";
-import { extractURLs } from "@/logic/nostrill.ts";
 import { IMAGE_REGEX } from "@/logic/constants.ts";
 
 function Body({ contents }: { contents: Content }) {
@@ -122,7 +122,7 @@ function Inlin({ i }: { i: Inline }) {
       <span
         className="mention"
         role="link"
-        onMouseUp={(e) => gotoShip(e, i.ship)}
+        onClick={(e) => gotoShip(e, i.ship)}
       >
         {i.ship}
       </span>
@@ -149,7 +149,7 @@ function LinkParser({ href, show }: { href: string; show: string }) {
   ) : isImg ? (
     <img className="inline-pic" src={href} />
   ) : (
-    <a href={href}>{show}</a>
+    safeHref(href) ? <a href={href}>{show}</a> : <span>{show}</span>
   );
 }
 function Heading({ string, num }: { string: string; num: number }) {

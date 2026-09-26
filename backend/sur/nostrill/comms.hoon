@@ -42,6 +42,8 @@ $:  p=@p
       [%del-reply parent=upid child=@da]
       [%rp src=upid target=@da]
       [%reaction pid=upid reaction=@t]
+      [%del-reaction pid=upid]
+      [%report pid=upid reason=@t]
       [%mention =post:tp]
   ==
 ::  Data requests is done through subscriptions.

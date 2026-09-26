@@ -1,8 +1,6 @@
 import TrillPost from "@/components/post/Post";
 import type { FC } from "@/types/trill";
 import useLocalState from "@/state/state";
-import type { UserType } from "@/types/nostrill";
-import { isValidPatp } from "urbit-ob";
 import { userFromPost } from "@/logic/trill/helpers";
 import { getUserId } from "@/logic/userDisplay";
 // import { useEffect } from "react";
@@ -19,18 +17,6 @@ function TrillFeed({
   spine?: boolean;
 }) {
   const { profiles } = useLocalState((s) => ({ profiles: s.profiles }));
-  // const qc = useQueryClient();
-  // useEffect(() => {
-  //   Object.values(data.feed).forEach((poast) => {
-  //     const queryKey = ["trill-thread", poast.host, poast.id];
-  //     const existing = qc.getQueryData(queryKey);
-  //     if (!existing || !("fpost" in (existing as any))) {
-  //       qc.setQueryData(queryKey, {
-  //         fpost: toFull(poast),
-  //       });
-  //     }
-  //   });
-  // }, [data]);
   return (
     <>
       {Object.keys(data.feed)

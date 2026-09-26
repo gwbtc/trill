@@ -1,4 +1,5 @@
 import useLocalState from "@/state/state";
+import { unwrap } from "@/logic/result";
 import { useEffect, useState } from "react";
 import Icon from "@/components/Icon";
 import toast from "react-hot-toast";
@@ -36,6 +37,9 @@ export default function NostrUser({
     if (!lastFact) return;
     if (!("nostr" in lastFact)) return;
     if ("user" in lastFact.nostr) {
+      // user feeds arrive for whichever profile was requested last; only
+      // take ours (sub name set in IO.nostrFeed)
+      if (lastFact.nostr.user.name !== `user/${pubkey}`) return;
       const feed = eventsToFc(lastFact.nostr.user.feed);
       setFC(feed);
     } else if ("event" in lastFact.nostr) {
@@ -64,15 +68,17 @@ export default function NostrUser({
     try {
       const user = { nostr: pubkey };
       if (feed) {
-        await api.unfollow(user);
+        unwrap(await api.unfollow(user));
       } else {
-        await api.follow(user);
+        unwrap(await api.follow(user));
         toast.success(`Follow request sent to ${userString}`);
       }
     } catch (error) {
       toast.error(`Failed to ${!!feed ? "unfollow" : "follow"} ${userString}`);
-      setIsFollowLoading(false);
       console.error("Follow error:", error);
+    } finally {
+      // nostr follows get no confirming fact to wait on, unlike urbit ones
+      setIsFollowLoading(false);
     }
   }
   async function handleRequestAccess() {

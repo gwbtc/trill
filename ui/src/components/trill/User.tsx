@@ -1,5 +1,5 @@
-// import spinner from "@/assets/icons/spinner.svg";
-import Composer from "@/components/composer/Composer";
+
+import { unwrap } from "@/logic/result";
 import PostList from "@/components/feed/PostList";
 import useLocalState from "@/state/state";
 import Icon from "@/components/Icon";
@@ -60,6 +60,7 @@ function UserFeed({
       //
       setIsFollowLoading(false);
     } else if ("quit" in follow) {
+      if (follow.quit !== patp) return;
       toast.success(`Unfollowed ${patp}`);
       setIsFollowLoading(false);
     }
@@ -76,9 +77,9 @@ function UserFeed({
     setIsFollowLoading(true);
     try {
       if (!!feed) {
-        await api.unfollow({ urbit: patpToFallbackUID(patp) });
+        unwrap(await api.unfollow({ urbit: patpToFallbackUID(patp) }));
       } else {
-        await api.follow({ urbit: patpToFallbackUID(patp) });
+        unwrap(await api.follow({ urbit: patpToFallbackUID(patp) }));
         toast.success(`Follow request sent to ${patp}`);
       }
     } catch (error) {
@@ -151,7 +152,7 @@ function UserFeed({
             <h3>No Posts Available</h3>
             <p>
               This user's posts are not publicly visible.
-              {!!feed && " Try following them"} or request temporary access to
+              {" "}Try following them or request temporary access to
               see their content.
             </p>
           </div>

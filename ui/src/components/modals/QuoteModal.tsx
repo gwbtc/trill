@@ -21,8 +21,8 @@ export default function QuoteModal({ poast, onClose }: QuoteModalProps) {
       <h3>Quotes</h3>
       <div>
         {poast.engagement.quoted.map((quote, i) => {
-          const threadPath = `/apps/nostrill/t/${quote.pid.ship}/${quote.pid.id}`;
-          const routerPath = `/t/${quote.pid.ship}/${quote.pid.id}`;
+          const threadPath = `/apps/nostrill/t/u/${quote.pid.ship}/${quote.pid.id}`;
+          const routerPath = `/t/u/${quote.pid.ship}/${quote.pid.id}`;
           return (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <span>{quote.pid.ship}</span>

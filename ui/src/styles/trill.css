@@ -141,8 +141,6 @@
     }
 
     /* hide old nav/chevron */
-    .nav { display: none; }
-    .chevron { display: none; }
   }
 
   .body {
@@ -234,12 +232,6 @@
 
 
 
-  .nick {
-    font-weight: 700;
-  }
-
-
-
 }
 
 .trill-post .post-footer footer {
@@ -269,10 +261,6 @@
 .trill-post .post-footer .zap-action {
   flex: 1 1 0;
   min-width: 0;
-}
-
-.trill-post .post-footer .trash-action {
-  flex: 0 0 30px;
 }
 
 .trill-post .post-footer .icon-count {
@@ -537,11 +525,6 @@
 
 .trill-action-toast button:hover {
   background: color-mix(in srgb, var(--color-primary, #543fd7) 18%, var(--color-background, #fff));
-}
-
-.trill-reply-thread {
-  border-top: 1px solid var(--text-color);
-  margin-top: 1rem;
 }
 
 #thread-root-post.thread-root-card {
@@ -983,12 +966,6 @@
   text-decoration: underline;
 }
 
-.bad-quote {
-  border: 1px solid var(--text-color);
-  padding: 7px;
-  border-radius: 0.5rem;
-}
-
 /* post-cards */
 .trill-post-card {
   position: relative;
@@ -1097,6 +1074,24 @@
   img:hover {
     border: 1px solid var(--text-color);
   }
+
+  .react-remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 4rem;
+    height: 4rem;
+    cursor: pointer;
+    border: 1px dashed var(--color-text-muted, currentColor);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--color-text-muted, currentColor);
+  }
+
+  .react-remove:hover {
+    border-style: solid;
+    color: var(--text-color);
+  }
 }
 
 #stats-modal .trill-post {
@@ -1150,11 +1145,6 @@
 .youtube-thumbnail {
   width: 70%;
   margin: 0.7rem auto;
-}
-
-.rumor-quote img {
-  width: 50px;
-  margin-right: 1rem;
 }
 
 #trill-thread {

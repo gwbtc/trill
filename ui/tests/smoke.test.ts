@@ -4,6 +4,9 @@ import { getRailSearchRoute } from "../src/logic/searchRouting";
 import { normalizeThreadStyle } from "../src/hooks/useThreadStyle";
 import { patpToFallbackUID } from "../src/logic/gw";
 import {
+  addEventToFc,
+  eventsToFc,
+  extractURLs,
   nostrFeedsToFcMap,
   sourcedFeedsToFc,
   stringToUser,
@@ -28,6 +31,8 @@ import {
   orderPinnedDmConversations,
 } from "../src/logic/dms";
 import { countThreadChildren, flattenThreadChildren } from "../src/logic/threadTree";
+import { isHiddenPost, parseLists, postRef, refKey, withoutMuted } from "../src/logic/lists";
+import { followGraphWithProfiles, suggestFollows } from "../src/logic/suggestions";
 import {
   buildDemoInvoice,
   classifyWalletInput,
@@ -50,6 +55,7 @@ import {
   isSameNotificationRope,
   notificationPath,
   skeinToNote,
+  displayYarn,
 } from "../src/logic/notifications";
 import type { DMs, UserProfile } from "../src/types/nostrill";
 import type { Notification } from "../src/types/notifications";
@@ -189,16 +195,77 @@ describe("notification helpers", () => {
         but: null,
       },
     });
-    const repost = skeinToNote(makeSkein("/post/rp/~litzod/~zod/root/repost"));
+    const repost = skeinToNote(
+      makeSkein("/post/rp/~litzod/urbit/~zod/1.234/5.678/~2026.9.26"),
+    );
     const deletion = skeinToNote(
-      makeSkein("/post/delParent/~litzod/~zod/root/deleted"),
+      makeSkein("/post/del-reply/~litzod/urbit/~zod/1.234/5.678/~2026.9.26"),
     );
 
     expect("ok" in repost && getNotificationKind(repost.ok.type)).toBe("repost");
+    expect("ok" in repost && notificationPath(repost.ok)).toBe("/t/u/~zod/1234");
     expect("ok" in deletion && getNotificationKind(deletion.ok.type)).toBe("deletion");
+    expect("ok" in deletion && notificationPath(deletion.ok)).toBe("/t/u/~zod/1234");
     expect("ok" in repost && repost.ok.rope?.thread).toBe(
-      "/post/rp/~litzod/~zod/root/repost",
+      "/post/rp/~litzod/urbit/~zod/1.234/5.678/~2026.9.26",
     );
+  });
+
+  test("parses every post path layout emitted by backend/lib/hark.hoon", () => {
+    const makeSkein = (wer: string, con: Skein["top"]["con"] = []): Skein => ({
+      time: 1_700_000_000_000,
+      count: 0,
+      "ship-count": 0,
+      unread: true,
+      top: { id: wer, rope: rope(wer), time: 1_700_000_000_000, con, wer, but: null },
+    });
+    const path = (wer: string, con?: Skein["top"]["con"]) => {
+      const n = skeinToNote(makeSkein(wer, con), "~sampel");
+      if (!("ok" in n)) throw new Error(`failed to parse ${wer}`);
+      return notificationPath(n.ok);
+    };
+    const da = "~2026.9.26..12.00.00";
+
+    expect(path(`/post/mention/~bus/~bus/1.234/${da}`)).toBe("/t/u/~bus/1234");
+    expect(path(`/post/reply/~bus/~sampel/1.234/5.678/${da}`)).toBe("/t/u/~sampel/1234");
+    expect(path(`/post/quote/~bus/1.234/~bus/5.678/${da}`)).toBe("/t/u/~sampel/1234");
+    expect(path(`/post/react/~bus/urbit/~sampel/1.234/${da}`)).toBe("/t/u/~sampel/1234");
+    // current layout, and the older one with the parent pid spat into a knot
+    expect(path(`/post/del-quote/~bus/urbit/~sampel/1.234/5.678/${da}`)).toBe(
+      "/t/u/~sampel/1234",
+    );
+    expect(
+      path(`/post/del-quote/~bus//urbit/~sampel/1.234/urbit/~sampel/1.234/5.678/${da}`),
+    ).toBe("/t/u/~sampel/1234");
+
+    const react = skeinToNote(
+      makeSkein(`/post/react/~bus/urbit/~sampel/1.234/${da}`, [
+        { ship: "~bus" },
+        "Reacted to post:",
+        "/urbit/~sampel/1.234",
+        "🫡",
+      ]),
+    );
+    expect("ok" in react && "post" in react.ok.type && react.ok.type.post).toEqual({
+      reaction: { user: "~bus", post: { ship: "~sampel", id: "1234" }, reaction: "🫡" },
+    });
+
+    // current: url only in the yarn text
+    const relay = skeinToNote(
+      makeSkein(`/nostr/relay-down/${da}`, [
+        "The relay: ",
+        "wss://relay.damus.io",
+        "closed the websockets connection.",
+      ]),
+    );
+    expect("ok" in relay && relay.ok.type).toEqual({
+      nostr: { relayDown: "wss://relay.damus.io" },
+    });
+    // older: url in the path
+    const oldRelay = skeinToNote(makeSkein(`/nostr/new-relay/wss://nos.lol/${da}`));
+    expect("ok" in oldRelay && oldRelay.ok.type).toEqual({
+      nostr: { newRelay: "wss://nos.lol" },
+    });
   });
 
   test("handles Hark second timestamps and exact rope identity", () => {
@@ -717,5 +784,106 @@ describe("nostr feed provenance helpers", () => {
       expect(slices.timeline).toEqual({ feed: {}, start: null, end: null });
       expect(slices.pubkey).toBe("");
     }
+  });
+});
+
+describe("nostr event parsing", () => {
+  const ev = (id: string, created_at: number, content = "hi") => ({
+    id,
+    pubkey: "ab".repeat(32),
+    sig: "",
+    created_at,
+    kind: 1,
+    tags: [],
+    content,
+  });
+
+  test("keeps text around links and handles www and adjacent urls", () => {
+    expect(extractURLs("see https://www.x.com/a now").text).toEqual([
+      { text: "see " },
+      { link: { href: "https://www.x.com/a", show: "https://www.x.com/a" } },
+      { text: " now" },
+    ]);
+    const two = extractURLs("https://verylongdomain.com/abc https://b.io");
+    expect(two.text.filter((t) => "link" in t)).toHaveLength(2);
+    // repeated calls must not depend on regex lastIndex state
+    expect(extractURLs("https://b.io").text).toHaveLength(1);
+    expect(extractURLs("https://b.io/pic.png").pics).toEqual(["https://b.io/pic.png"]);
+  });
+
+  test("events from the same second don't overwrite each other", () => {
+    const fc = eventsToFc([ev("a", 100), ev("b", 100), ev("c", 99)]);
+    expect(Object.values(fc.feed).map((p) => p.hash).sort()).toEqual(["a", "b", "c"]);
+    expect(fc.start).toBe("99000");
+    expect(fc.end).toBe("100001");
+
+    // re-adding a known event keeps its slot; a new same-second one gets a new id
+    const again = addEventToFc(ev("b", 100), fc);
+    expect(Object.keys(again.feed)).toHaveLength(3);
+    const more = addEventToFc(ev("d", 100), again);
+    expect(Object.keys(more.feed)).toHaveLength(4);
+    expect(Object.keys(fc.feed)).toHaveLength(3); // input untouched
+  });
+});
+
+describe("lists and suggestions", () => {
+  const post = (over: Record<string, unknown> = {}) =>
+    ({ id: "1", host: "~nec", author: "~nec", ...over }) as any;
+
+  test("parses the agent's lists and hides reported posts and muted authors", () => {
+    const lists = parseLists({
+      bookmarks: [{ ref: { urbit: { host: "~nec", id: "1" } }, at: 5 }],
+      muted: [{ urbit: "~bus" }, { nostr: "ab" }],
+      reported: [{ urbit: { host: "~nec", id: "2" } }],
+    });
+    expect(lists.bookmarks.has(refKey(postRef(post())))).toBe(true);
+    expect(isHiddenPost(post({ id: "2" }), lists)).toBe(true);
+    expect(isHiddenPost(post({ author: "~bus" }), lists)).toBe(true);
+    // a muted author's posts still show where asked (their profile)
+    expect(isHiddenPost(post({ author: "~bus" }), lists, true)).toBe(false);
+    expect(isHiddenPost(post(), lists)).toBe(false);
+    // nostr posts are keyed by event id and pubkey
+    expect(isHiddenPost(post({ event: { id: "ev", pubkey: "ab" } }), lists)).toBe(true);
+    expect(
+      withoutMuted([{ from: { urbit: { patp: "~bus" } } }, { from: { nostr: "cd" } }], lists),
+    ).toHaveLength(1);
+  });
+
+  test("suggests follows-of-follows, never existing follows, self or muted", () => {
+    const lists = parseLists({ muted: [{ urbit: "~muted" }] });
+    const following = new Set(["~nec", "~bus"]);
+    const graph = {
+      "~nec": [{ urbit: "~wes" }, { urbit: "~bus" }, { urbit: "~zod" }, { urbit: "~muted" }],
+      "~bus": [{ urbit: "~wes" }, { nostr: "ab" }],
+      // not followed by us: ignored
+      "~sev": [{ urbit: "~per" }],
+    };
+    expect(suggestFollows(graph, following, lists, ["~zod"])).toEqual([
+      { id: "~wes", followedBy: 2 },
+      { id: "ab", followedBy: 1 },
+    ]);
+  });
+
+  test("takes follows-of-follows from followed users' profiles", () => {
+    const graph = followGraphWithProfiles(
+      { "~zod": [{ urbit: "~nec" }], "~nec": [{ urbit: "~wes" }] },
+      new Map<string, { following?: unknown }>([
+        ["~nec", { following: [{ urbit: "~wes" }, { urbit: "~bus" }] }],
+        ["ab", { following: undefined }],
+      ]),
+    );
+    expect(graph["~nec"]).toEqual([{ urbit: "~wes" }, { urbit: "~bus" }]);
+    expect(suggestFollows(graph, new Set(["~nec"]), parseLists({}), ["~zod"])).toEqual([
+      { id: "~bus", followedBy: 1 },
+      { id: "~wes", followedBy: 1 },
+    ]);
+  });
+});
+
+describe("notification text", () => {
+  test("drops post paths from the yarn", () => {
+    expect(
+      displayYarn([{ ship: "~nec" }, "Reported your post:", "/urbit/~zod/170.141", "spam"]),
+    ).toEqual([{ ship: "~nec" }, "Reported your post:", "spam"]);
   });
 });

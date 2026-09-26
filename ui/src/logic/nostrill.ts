@@ -15,19 +15,24 @@ import { IMAGE_SUBREGEX, URL_REGEX, VIDEO_SUBREGEX } from "./constants";
 import { decodeNostrKey } from "./nostr";
 import { patpToFallbackUID } from "./gw";
 
+// nostr post ids are created_at in ms, so two events from the same second
+// collide: give a newcomer the next free id instead of overwriting. an
+// event we already hold (same hash) keeps its slot.
+// mutates `fc`; callers hand it a feed they own
+function putPoast(fc: FC, p: Poast) {
+  let id = Number(p.id);
+  while (fc.feed[`${id}`] && fc.feed[`${id}`].hash !== p.hash) id++;
+  p.id = `${id}`;
+  fc.feed[p.id] = p;
+  if (!fc.start || id < Number(fc.start)) fc.start = p.id;
+  if (!fc.end || id > Number(fc.end)) fc.end = p.id;
+}
 export function eventsToFc(postEvents: Wevent[]): FC {
-  const fc = postEvents.reduce(
-    (acc: FC, event: Wevent) => {
-      const p = eventToPoast(event);
-      // console.log({ event, p });
-      if (!p) return acc;
-      acc.feed[p.id] = p;
-      if (!acc.start || event.created_at < Number(acc.start)) acc.start = p.id;
-      if (!acc.end || event.created_at > Number(acc.end)) acc.end = p.id;
-      return acc;
-    },
-    { feed: {}, start: null, end: null } as FC,
-  );
+  const fc: FC = { feed: {}, start: null, end: null };
+  for (const event of postEvents) {
+    const p = eventToPoast(event);
+    if (p) putPoast(fc, p);
+  }
   return fc;
 }
 // Merge one sub's per-relay feeds into a single FC, deduping by event id
@@ -54,13 +59,13 @@ export function nostrFeedsToFcMap(nf: NostrFeeds): Record<string, FC> {
     out[name] = sourcedFeedsToFc(sources);
   return out;
 }
+// returns a new FC (never mutates `fc`) so store/state updates re-render
 export function addEventToFc(event: Wevent, fc: FC): FC {
   const p = eventToPoast(event);
   if (!p) return fc;
-  fc.feed[p.id] = p;
-  if (!fc.start || event.created_at < Number(fc.start)) fc.start = p.id;
-  if (!fc.end || event.created_at > Number(fc.end)) fc.end = p.id;
-  return fc;
+  const next = { ...fc, feed: { ...fc.feed } };
+  putPoast(next, p);
+  return next;
 }
 export function extractURLs(text: string): {
   text: Array<{ text: string } | { link: { href: string; show: string } }>;
@@ -72,19 +77,20 @@ export function extractURLs(text: string): {
   const tokens: Array<
     { text: string } | { link: { href: string; show: string } }
   > = [];
-  const sections = text.split(URL_REGEX);
-  for (const sec of sections) {
-    if (!sec) continue;
-    const s = sec.trim();
-    if (!s) continue;
-    if (URL_REGEX.test(s)) {
-      if (IMAGE_SUBREGEX.test(s)) {
-        pics.push(s);
-      } else if (VIDEO_SUBREGEX.test(s)) {
-        vids.push(s);
-      } else tokens.push({ link: { href: s, show: s } });
-    } else tokens.push({ text: s });
+  // matchAll, not split/test: split also emits URL_REGEX's inner capture
+  // group, and .test() on a /g regex carries lastIndex between calls.
+  // text between links is kept verbatim so surrounding spaces survive
+  let last = 0;
+  for (const match of text.matchAll(URL_REGEX)) {
+    const url = match[0];
+    const start = match.index;
+    if (start > last) tokens.push({ text: text.slice(last, start) });
+    if (IMAGE_SUBREGEX.test(url)) pics.push(url);
+    else if (VIDEO_SUBREGEX.test(url)) vids.push(url);
+    else tokens.push({ link: { href: url, show: url } });
+    last = start + url.length;
   }
+  if (last < text.length) tokens.push({ text: text.slice(last) });
 
   return { text: tokens, pics, vids };
 }
@@ -155,14 +161,10 @@ export function eventToPoast(event: Wevent): Poast | null {
         ref: {
           type: "nostr",
           ship: tag[1]!,
-          path: tag[2] || "" + `/${tag[3] || ""}`,
+          path: (tag[2] || "") + `/${tag[3] || ""}`,
         },
       });
     // else console.log("odd tag", tag);
-  }
-  if (!poast.parent && !poast.thread) {
-    const tags = event.tags.filter((t) => t[0] !== "p");
-    // console.log("no parent", { event, poast, tags });
   }
   if (!poast.parent && poast.thread) poast.parent = poast.thread;
   return poast;
@@ -195,14 +197,6 @@ export function stringToUser(s: string): Result<UserType> {
   const dec = decodeNostrKey(s);
   if (dec) return { ok: { nostr: s } };
   else return { error: "invalid user" };
-}
-export function userToString(user: UserType): Result<string> {
-  if ("urbit" in user) {
-    const isValid = isValidPatp(user.urbit.patp);
-    if (isValid) return { ok: user.urbit.patp };
-    else return { error: "invalid @p" };
-  } else if ("nostr" in user) return { ok: user.nostr };
-  else return { error: "unknown user" };
 }
 export function userToStringSafe(user: UserType): string {
   if ("urbit" in user) return user.urbit.patp;
@@ -290,31 +284,6 @@ export function consolidateFeeds(fols: Map<string, FC>): FC {
     start = updateCursor(start, fc.start, true);
     end = updateCursor(end, fc.end, false);
 
-    const poasts = Object.values(fc.feed);
-    for (const p of poasts) {
-      const nid = findId(f, p.id);
-      if ("error" in nid) continue;
-      f[nid.ok] = p;
-    }
-  }
-  return { start, end, feed: f };
-}
-export function disaggregate(
-  fols: Map<string, FC>,
-  choice: "urbit" | "nostr",
-): FC {
-  const f: FlatFeed = {};
-  let start: Cursor = null;
-  let end: Cursor = null;
-  const feeds = fols.entries();
-  for (const [userString, fc] of feeds) {
-    const want =
-      choice === "urbit"
-        ? isValidPatp(userString)
-        : !!decodeNostrKey(userString);
-    if (!want) continue;
-    start = updateCursor(start, fc.start, true);
-    end = updateCursor(end, fc.end, false);
     const poasts = Object.values(fc.feed);
     for (const p of poasts) {
       const nid = findId(f, p.id);

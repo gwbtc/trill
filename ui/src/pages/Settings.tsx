@@ -1,5 +1,8 @@
 import useLocalState from "@/state/state";
-import { useState } from "react";
+import { unwrap } from "@/logic/result";
+import { stringToUser } from "@/logic/nostrill";
+import ConfirmationDialog from "@/components/modals/ConfirmationDialog";
+import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import "@/styles/Settings.css";
 import { WS_URL } from "@/logic/api";
@@ -20,6 +23,7 @@ import {
   Palette,
   Radio,
   RefreshCw,
+  VolumeX,
   X,
 } from "lucide-react";
 
@@ -31,12 +35,15 @@ const BACKLOG_UNITS: TabItem<BacklogUnit>[] = [
 ];
 
 function Settings() {
-  const { key, relays, relayLatency, api, sets } = useLocalState((s) => ({
+  const { key, relays, relayLatency, api, sets, setModal, lists, profiles } = useLocalState((s) => ({
     key: s.pubkey,
     relays: s.relays,
     relayLatency: s.relayLatency,
     api: s.api,
     sets: s.uiSettings,
+    setModal: s.setModal,
+    lists: s.lists,
+    profiles: s.profiles,
   }));
   const [newRelay, setNewRelay] = useState("");
   const [isCyclingKey, setIsCyclingKey] = useState(false);
@@ -44,6 +51,22 @@ function Settings() {
     sets?.relay?.["backlog-size"] || 24,
   );
   const [backlogUnit, setBacklogUnit] = useState<BacklogUnit>("hours");
+  // settings arrive by scry after mount; without this the field keeps the
+  // default and Save would overwrite the stored value with it
+  const savedBacklog: number | undefined = sets?.relay?.["backlog-size"];
+  useEffect(() => {
+    if (!savedBacklog) return;
+    setBacklogSize(savedBacklog);
+    setBacklogUnit("hours");
+  }, [savedBacklog]);
+  // keep the same duration when switching units, not the same number
+  function changeBacklogUnit(next: BacklogUnit) {
+    if (next === backlogUnit) return;
+    setBacklogSize((n) =>
+      next === "days" ? Math.max(1, Math.round(n / 24)) : n * 24,
+    );
+    setBacklogUnit(next);
+  }
   const [threadStyle, setThreadStyleState] = useState<ThreadStyle>(
     () =>
       localStorage.getItem("trill-thread-style") === "linear"
@@ -66,9 +89,10 @@ function Settings() {
   }
 
   async function cycleKey() {
+    if (!api) return;
     setIsCyclingKey(true);
     try {
-      await api?.cycleKeys();
+      unwrap(await api.cycleKeys());
       toast.success("Key cycled successfully");
     } catch (error) {
       toast.error("Failed to cycle key");
@@ -78,13 +102,37 @@ function Settings() {
     }
   }
 
+  async function unmute(id: string) {
+    if (!api) return;
+    const user = stringToUser(id);
+    if ("error" in user) return;
+    const res = await api.mute(user.ok, false);
+    if ("error" in res) toast.error(`Could not unmute ${id}`);
+    else toast.success(`${id} unmuted`);
+  }
+
+  // replacing the keypair changes the user's nostr identity; not a one-click action
+  function confirmCycleKey() {
+    setModal(
+      <ConfirmationDialog
+        message="Replace your Nostr keypair? Your posts will be published under a new identity, and followers of the old key won't see them."
+        onConfirm={async () => {
+          setModal(null);
+          await cycleKey();
+        }}
+        onCancel={() => setModal(null)}
+      />,
+    );
+  }
+
   async function saveBacklogSize() {
     const hours = backlogUnit === "days" ? backlogSize * 24 : backlogSize;
     setMisc("relay", "backlog-size", hours);
   }
   async function setMisc(bucket: string, entry: string, value: any) {
+    if (!api) return;
     try {
-      await api?.setSettings(bucket, entry, value);
+      unwrap(await api.setSettings(bucket, entry, value));
       toast.success("Setting saved");
     } catch (e) {
       toast.error("Failed to save setting");
@@ -132,7 +180,7 @@ function Settings() {
             <div className="settings-key-row">
               <code className="pubkey">{key || "No key generated"}</code>
               <button
-                onClick={cycleKey}
+                onClick={confirmCycleKey}
                 disabled={isCyclingKey}
                 className="cycle-btn secondary"
                 title="Generate new key pair"
@@ -222,7 +270,7 @@ function Settings() {
               <TabStrip
                 items={BACKLOG_UNITS}
                 active={backlogUnit}
-                onChange={setBacklogUnit}
+                onChange={changeBacklogUnit}
                 className="settings-segmented"
               />
               <button onClick={saveBacklogSize} className="settings-save-btn">
@@ -273,6 +321,41 @@ function Settings() {
                 Twitter-style. Flat blocks split by dividers.
               </span>
             </button>
+          </div>
+        </div>
+
+        <div id="settings-muted" className="settings-section">
+          <div className="section-header">
+            <VolumeX size={18} />
+            <h2>Muted accounts</h2>
+          </div>
+          <p className="settings-section-copy">
+            Their posts and notifications are hidden. You can still visit their profile.
+          </p>
+          <div className="settings-panel relay-panel">
+            {lists.muted.size === 0 ? (
+              <div className="no-relays">
+                <VolumeX size={24} />
+                <p>No muted accounts</p>
+              </div>
+            ) : (
+              [...lists.muted].map((id) => (
+                <div key={id} className="relay-item">
+                  <span className="relay-url">{profiles.get(id)?.name || id}</span>
+                  <span className="relay-latency mono">
+                    {id.startsWith("~") ? id : `${id.slice(0, 12)}…`}
+                  </span>
+                  <button
+                    onClick={() => unmute(id)}
+                    className="remove-relay-btn"
+                    title="Unmute"
+                    aria-label={`Unmute ${id}`}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </div>
 

@@ -1,6 +1,5 @@
-import type { NostrMetadata, NostrPost } from "./nostrill";
+import type { NostrMetadata } from "./nostrill";
 import type { Poast } from "./trill";
-import type { Tweet } from "./twatter";
 import type { Ship } from "./urbit";
 export type Result<T> = { ok: T } | { error: string };
 export type AsyncRes<T> = Promise<Result<T>>;
@@ -12,19 +11,13 @@ export interface ComposerData {
   type: "quote" | "reply";
   post: SPID;
 }
-export type SPID = TrillPID | NostrPID | TwatterPID | RumorsPID;
+export type SPID = TrillPID | NostrPID;
 
 export interface TrillPID {
   trill: Poast;
 }
 export interface NostrPID {
   nostr: NostrMetadata;
-}
-export interface TwatterPID {
-  twatter: Tweet;
-}
-export interface RumorsPID {
-  rumors: Poast;
 }
 export interface Guanxi {
   trill: Relationship;

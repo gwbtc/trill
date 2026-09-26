@@ -322,36 +322,6 @@
   color: var(--color-text-secondary, #687684);
 }
 
-.relay-dashboard-mode-controls {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-}
-
-.relay-dashboard-mode-controls button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 50px;
-  padding: 4px 11px;
-  border: 1px solid var(--color-border, #e5e7ea);
-  border-radius: 7px;
-  background: var(--color-background, #fff);
-  color: var(--color-text-muted, #8b95a1);
-  font-family: inherit;
-  font-size: 11.5px;
-  font-weight: 600;
-  line-height: 1.2;
-  transition: all 0.15s ease;
-}
-
-.relay-dashboard-mode-controls button.active {
-  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
-  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-background));
-  color: var(--color-primary, #5b46e5);
-}
-
 @media (max-width: 620px) {
   .relay-dashboard {
     max-width: calc(100vw - 20px);
@@ -360,10 +330,5 @@
   .relay-dashboard-meta {
     flex-wrap: wrap;
     gap: 8px 12px;
-  }
-
-  .relay-dashboard-mode-controls {
-    width: 100%;
-    margin-left: 0;
   }
 }

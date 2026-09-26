@@ -39,22 +39,6 @@ function PostSnippet({ post }: { post: SPID }) {
   try {
     if ("trill" in post) return <Quote data={post.trill} nest={0} />;
     else if ("nostr" in post) return <NostrSnippet meta={post.nostr} />;
-    // else if ("twatter" in post)
-    //   return (
-    //     <div id={`composer-${type}`}>
-    //       <Tweet tweet={post.post} quote={true} />
-    //     </div>
-    //   );
-    // else if ("rumors" in post)
-    //   return (
-    //     <div id={`composer-${type}`}>
-    //       <div className="rumor-quote f1">
-    //         <img src={rumorIcon} alt="" />
-    //         <Body poast={post.post} refetch={() => {}} />
-    //         <span>{date_diff(post.post.time, "short")}</span>
-    //       </div>
-    //     </div>
-    //   );
     else return <div className="snippet-error">Unsupported post type</div>;
   } catch (error) {
     console.error("Error rendering post snippet:", error);

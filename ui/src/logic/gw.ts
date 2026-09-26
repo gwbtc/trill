@@ -1,6 +1,6 @@
 import type { GroundwireID, UrbitID, UserType } from "@/types/nostrill";
 import type IO from "./requests/nostrill";
-import { isValidPatp, patp2bigint } from "urbit-ob";
+import { patp2bigint } from "urbit-ob";
 
 export async function getPatp(api: IO, gwid: string) {
   const patp = await api.scryPatp(gwid);
@@ -9,10 +9,6 @@ export async function getPatp(api: IO, gwid: string) {
 export async function getGwid(api: IO, patp: string) {
   const gwid = await api.scryGwid(patp);
   return gwid
-}
-export async function getOurGwid(api: IO) {
-  const patp = api.airlock!.our!;
-  return await getGwid(api, patp);
 }
 
 export function getPoint(patp: string) {
@@ -64,7 +60,7 @@ export function nymToGwid(nym: string): GroundwireID {
   const idx = nym.indexOf(first);
   const prefix = nym.slice(0, idx);
   const foreshortened = `${prefix}${first}.${second}..${pen}.${last}`;
-  const abridged = `${prefix}$}{first}...${last}`;
+  const abridged = `${prefix}${first}...${last}`;
   return {
     english: { nym, abridged, foreshortened },
     hanzi: { nym: "", abridged: "", foreshortened: "" }
@@ -87,16 +83,9 @@ export async function gwidToUID(api: IO, gwidFull: string) {
 }
 
 export function parseGwid(s: string) {
-  const GWID_REGEX = /^(?:\.[a-z]+){12}$/;
-  const GWID_SHORT = /^(?:\.[a-z]+){2}\.(?:\.[a-z]+){2}$/;
-  const GWID_SHORTER = /^(?:\.[a-z]+)\..(?:\.[a-z]+)$/;
-  // tweaked
+  // tweaked gwids only
   const GWIDT_REGEX = /^\.(?:\.[a-z]+){12}$/;
-  const GWIDT_SHORT = /^\.(?:\.[a-z]+){2}\.(?:\.[a-z]+){2}$/;
-  const GWIDT_SHORTER = /^\.(?:\.[a-z]+)\..(?:\.[a-z]+)$/;
-  //
-  const regex = GWIDT_REGEX;
-  return !!s.match(regex);
+  return GWIDT_REGEX.test(s);
 }
 
 export function isOur(api: IO, pubkey: string, user: UserType) {

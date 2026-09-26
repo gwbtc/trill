@@ -1,117 +1,49 @@
 import { NRelay1 } from "@nostrify/nostrify";
 import useLocalState from "@/state/state";
 import spinner from "@/assets/triangles.svg";
-import { useEffect, useRef, useState } from "react";
-import toast from "react-hot-toast";
+import { useEffect, useState } from "react";
 import type { Wevent } from "@/types/nostr";
-import { createCache } from "@/logic/cache";
 import NostrThread from "./Thread";
 
-const cache = createCache({ dbName: "nostrill", storeName: "nosted" });
-
 export default function Thread({ id }: { id: string }) {
-  const { api, relays, composerData, setComposerData, setModal, lastFact } =
-    useLocalState((s) => ({
-      api: s.api,
-      relays: s.relays,
-      nostrFeed: s.nostrFeed,
-      lastFact: s.lastFact,
-      composerData: s.composerData,
-      setComposerData: s.setComposerData,
-      setModal: s.setModal,
-    }));
-  const relayRef = useRef<NRelay1>(undefined);
+  const relays = useLocalState((s) => s.relays);
+  // TODO iterate over relays; for now the first one is asked
+  const relayUrl = Object.keys(relays)[0];
   const [data, setData] = useState<Wevent>();
+  const [status, setStatus] = useState<"loading" | "done">("loading");
+
+  // depends on the url, not the relays object: that changes on every relay
+  // status fact, and re-running would open (and leak) a socket each time
   useEffect(() => {
-    const relayUrls = Object.keys(relays);
-    // TODO iterate
-    const relay = relayUrls[0];
-    if (!relay) return;
-    const r = new NRelay1(relay);
-    relayRef.current = r;
-    fetchThread();
-  }, [relays]);
-
-  const fetchThread = async () => {
-    setIsLoading(true);
-    // TODO
-    if (!relayRef.current) return;
-    const relay = relayRef.current;
-    const req = relay.req([{ ids: [id] }]);
-    for await (const msg of req) {
-      if (msg[0] === "EVENT") {
-        const event = msg[2];
-        const wevent = { ...event, relays: [relay.socket.url] };
-        setData(wevent);
+    if (!relayUrl) return;
+    const relay = new NRelay1(relayUrl);
+    const ctrl = new AbortController();
+    setStatus("loading");
+    (async () => {
+      try {
+        for await (const msg of relay.req([{ ids: [id] }], { signal: ctrl.signal })) {
+          if (msg[0] === "EVENT") setData({ ...msg[2], relays: [relayUrl] });
+          if (msg[0] === "EOSE" || msg[0] === "CLOSED") break;
+        }
+      } catch {
+        // aborted on unmount, or the relay failed; show what we have
       }
-      if (msg[0] === "EOSE") {
-        setIsLoading(false);
-        break; //closes the subscription
-      }
-    }
-  };
-  const [isLoading, setIsLoading] = useState(false);
-
-  // useEffect(() => {
-  //   if (!lastFact) return;
-  //   if (!("nostr" in lastFact)) return;
-  //   if (!("thread" in lastFact.nostr)) return;
-  //   const thread = lastFact.nostr.thread;
-  //   console.log({ thread, id });
-  //   // TODO
-  //   // thread can be an empty array. relays are unreliable like that
-  //   // nevent to hex conversion works well, that's not the issue
-  //   // might want to track which relay is providing what nostr data in the UI too so we can juggle different ones
-
-  //   // toast.success("thread fetched succesfully, rendering");
-  //   // cache.set("evs", lastFact.nostr.thread);
-  //   // const nodes = lastFact.nostr.thread.map(eventToFn);
-  //   // const ff = eventsToFF(nodes);
-  //   // setData(ff);
-  // }, [lastFact]);
+      if (!ctrl.signal.aborted) setStatus("done");
+    })();
+    return () => {
+      ctrl.abort();
+      relay.close();
+    };
+  }, [relayUrl, id]);
 
   if (data) return <NostrThread event={data} relays={data.relays ?? []} />;
-  // else return <Loader {...props} />;
-}
-type LoaderProps = { id: string };
-function Loader(props: LoaderProps) {
-  const { id } = props;
-  const { api, relays } = useLocalState((s) => ({
-    api: s.api,
-    nostrFeed: s.nostrFeed,
-    lastFact: s.lastFact,
-    composerData: s.composerData,
-    setComposerData: s.setComposerData,
-    setModal: s.setModal,
-    relays: s.relays,
-  }));
-  const [error, setError] = useState("");
-
-  async function tryAgain() {
-    if (!api) return;
-    const rels = Object.values(relays)
-      .map((r) => r.wid)
-      .filter((w): w is number => w != null);
-    setError("");
-    const res = await api.nostrThread(id, rels);
-    if (res) toast.success("Sent request to relay");
-  }
-
-  return !error ? (
-    <div className="text-center m-10 text-2xl">
-      <h2>Error Loading Thread</h2>
-      <p className="error">{error}</p>
-      <button className="cycle-btn mx-auto my-8" onClick={tryAgain}>
-        Try Again
-      </button>
+  if (!relayUrl)
+    return <p className="x-center not-found">Add a Nostr relay to load this thread.</p>;
+  if (status === "done")
+    return <p className="x-center not-found">This note wasn't found on {relayUrl}.</p>;
+  return (
+    <div className="loading-container">
+      <img className="x-center" src={spinner} alt="Loading" />
     </div>
-  ) : (
-    <>
-      <h2 className="text-center my-8">Loading Thread...</h2>
-      <div className="loading-container">
-        <img className="x-center" src={spinner} alt="Loading" />
-      </div>
-      <button onClick={() => setError("timeout")}>Give Up </button>
-    </>
   );
 }

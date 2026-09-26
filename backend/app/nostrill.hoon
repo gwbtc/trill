@@ -1,11 +1,12 @@
 /-  sur=nostrill, nsur=nostr, comms=nostrill-comms, ui=nostrill-ui
-/+  lib=nostrill, sr=sortug, scri,
+/+  lib=nostrill, sr=sortug, scri, nostr-keys,
     ws=websockets,
     nreq=nostr-req,
     nostr-client,
     dbug,
     relay-lib=nostrill-relay,
     posts-lib=nostrill-posts,
+    lists-lib=nostrill-lists,
     reqs-lib=nostrill-reqs,
     profile-lib=nostrill-profile,
     jsonlib=json-nostrill,
@@ -23,6 +24,7 @@
     cards  ~(. cards:lib bowl)
     relay  ~(. relay-lib [state bowl])
     posts  ~(. posts-lib [state bowl])
+    lists  ~(. lists-lib [state bowl])
     reqs   ~(. reqs-lib [state bowl])
     prof   ~(. profile-lib [state bowl])
     scry   ~(. scri [state bowl])
@@ -41,15 +43,18 @@
 ++  on-load
   |~  old-state=vase
   ^-  (quip card:agent:gall agent:gall)
-  =/  maybe-state  %-  (soft state-0:sur)  +.old-state
-  ?~  maybe-state
-    =.  state  *state-0:sur  `this
-
+  ::  no soft-cast-or-bunt fallback: when the old state doesn't fit, that
+  ::  silently replaced everything (feed, follows, profiles) with the bunt,
+  ::  including a zero keypair that can't sign. crash instead, so gall keeps
+  ::  the running agent and its state; add a migration when state changes
   =/  old-state  !<(versioned-state old-state)
-  
   ?-  -.old-state
     %0
       =.  state  old-state
+      ::  heal ships that went through that fallback: schnorr rejects a
+      ::  zero secret key, so every signed (global/relay) post crashed
+      =?  keys.state  =(0 priv.i.keys.state)
+        [(gen-keys:nostr-keys eny.bowl) t.keys.state]
       ::  heal relays whose socket vanished while we were down
       =^  cs  state  reconcile:relay
       :_  this
@@ -167,6 +172,8 @@
       %prof  =^  cs  state  (handle-prof:prof +.u.upoke)
              [cs this]
       %rela  (handle-rela +.u.upoke)
+      %lists  =^  cs  state  (handle:lists +.u.upoke)
+              [cs this]
       %post  =^  cs  state  (handle-post:posts +.u.upoke)
              [cs this]
     ==

@@ -9,16 +9,20 @@ import type { FC, Gate, Poast } from "@/types/trill";
 import type { Notification } from "@/types/notifications";
 import { useShallow } from "zustand/shallow";
 import type { HarkAction, Skein } from "@/types/hark";
-import { isSameNotificationRope, skeinToNote } from "@/logic/notifications";
+import {
+  getNotificationsClearedAt,
+  isSameNotificationRope,
+  skeinToNote,
+} from "@/logic/notifications";
 import { defaultGate } from "@/logic/bunts";
 import { eventsToFc, addEventToFc, eventToProfile, nostrFeedsToFcMap } from "@/logic/nostrill";
-import { parseStateFact, emptyFC, type UserTagged } from "@/logic/stateFact";
+import { parseStateFact, emptyFC, normalizeFact, type UserTagged } from "@/logic/stateFact";
+import { emptyLists, parseLists, type Lists } from "@/logic/lists";
 import { SYNC_SUB_NAME } from "@/logic/constants";
 import type { S3Config, UrbitContacts } from "@/types/urbit";
 import { getPoint } from "@/logic/gw";
 import { fixDMRequests, fixDMs, parseBigint } from "@/logic/utils";
 import { pingRelays } from "@/logic/latency";
-// import contactsSample from "../contacts.json";
 // TODO handle airlock connection issues
 // the SSE pipeline has a "status-update" event FWIW
 // type AirlockState = "connecting" | "connected" | "failed";
@@ -50,6 +54,8 @@ export type LocalState = {
   following: Map<string, FC>;
   timeline: FC;
   followGraph: Record<string, UserTagged[]>;
+  // bookmarks, muted users, reported posts (kept by the agent)
+  lists: Lists;
   followers: string[];
   // Notifications
   notifications: Notification[];
@@ -74,13 +80,16 @@ export type LocalState = {
   our: UrbitID | null;
 };
 
+let initPromise: Promise<void> | null = null;
 const creator = create<LocalState>();
 export const useStore = creator((set, get) => ({
   isNew: false,
   contacts: {},
   s3: null,
   api: null,
-  init: async () => {
+  // memoized: the subscriptions and timers below must only be set up once,
+  // and a second caller (StrictMode, HMR) should wait for the same setup
+  init: () => (initPromise ??= (async () => {
     const airlock = await start();
     const api = new IO(airlock);
     const patp = api.airlock.our!;
@@ -117,10 +126,11 @@ export const useStore = creator((set, get) => ({
     });
 
     api.scryHark().then((r) => {
+      const clearedAt = getNotificationsClearedAt();
       if ("ok" in r) {
         const notifications = r.ok.reduce((acc: Notification[], sk) => {
-          const note = skeinToNote(sk);
-          if ("ok" in note) return [...acc, note.ok];
+          const note = skeinToNote(sk, api.airlock.our ?? undefined);
+          if ("ok" in note && note.ok.timestamp > clearedAt) return [...acc, note.ok];
           else return acc;
         }, []).sort((a, b) => b.timestamp - a.timestamp);
         set((state) => ({
@@ -148,7 +158,7 @@ export const useStore = creator((set, get) => ({
           unread: true,
           count: 0,
         };
-        const note = skeinToNote(skein);
+        const note = skeinToNote(skein, api.airlock.our ?? undefined);
         if ("error" in note) return;
         const notifications = [note.ok, ...nots.filter((item) => item.id !== note.ok.id)];
         set({ notifications, notificationsLoaded: true });
@@ -167,56 +177,101 @@ export const useStore = creator((set, get) => ({
         });
       }
     });
+    // eose fires once per relay per sub, and each one used to start its own
+    // /j/nostr scry whose responses could land out of order. run one at a
+    // time, and once more afterwards if any eose came in meanwhile
+    let nostrScrying = false;
+    let nostrRescry = false;
+    const refreshNostrFeeds = () => {
+      if (nostrScrying) {
+        nostrRescry = true;
+        return;
+      }
+      nostrScrying = true;
+      api.scryNostr()
+        .then((r) => {
+          if ("error" in r) {
+            console.error("error scrying nostr feeds", r);
+            return;
+          }
+          const nostrFeedsRaw = r.ok;
+          const nostrFeeds = nostrFeedsToFcMap(nostrFeedsRaw);
+          set({
+            nostrFeedsRaw,
+            nostrFeeds,
+            nostrFeed: nostrFeeds[SYNC_SUB_NAME] ?? emptyFC(),
+          });
+        })
+        .finally(() => {
+          nostrScrying = false;
+          if (nostrRescry) {
+            nostrRescry = false;
+            refreshNostrFeeds();
+          }
+        });
+    };
     api.subscribeNostrill((data) => {
       if ("state" in data) {
         set(parseStateFact(data.state));
       } else if ("fact" in data) {
-        const fact: Fact = data.fact;
+        const fact: Fact = normalizeFact(data.fact);
         set({ lastFact: fact });
+        // store updates must produce new Map/object references, or
+        // useShallow selectors see no change and nothing re-renders
         if ("fols" in fact) {
-          const { following, profiles } = get();
           if ("new-urbit" in fact.fols) {
             const { user, data } = fact.fols["new-urbit"];
             if (data.data === "maybe") return;
             if (data.data) {
               const { feed, profile } = data.data;
-              following.set(user, feed);
-              if (profile) profiles.set(user, profile);
-              set({ following, profiles });
+              const following = new Map(get().following).set(user, feed);
+              if (profile) {
+                const profiles = new Map(get().profiles).set(user, profile);
+                set({ following, profiles });
+              } else set({ following });
             }
           }
           if ("quit" in fact.fols) {
+            const following = new Map(get().following);
             following.delete(fact.fols.quit);
             set({ following });
           }
         }
         if ("post" in fact) {
-          if ("add" in fact.post) {
-            const post: Poast = fact.post.add.post;
+          // upd (e.g. a parent whose children changed) replaces the post like add
+          if ("add" in fact.post || "upd" in fact.post) {
+            const post: Poast =
+              "add" in fact.post ? fact.post.add.post : fact.post.upd.post;
             const { api, following, myFeed } = get();
             const our = api?.airlock?.our;
             if (post.author === our) {
-              myFeed.feed[post.id] = post;
-              set({ myFeed });
+              set({ myFeed: { ...myFeed, feed: { ...myFeed.feed, [post.id]: post } } });
             } else {
               const curr = following.get(post.author);
               const fc = curr ? curr : { feed: {}, start: null, end: null };
-              fc.feed[post.id] = post;
-              following.set(post.author, fc);
-
-              set({ following });
+              const nf = { ...fc, feed: { ...fc.feed, [post.id]: post } };
+              set({ following: new Map(following).set(post.author, nf) });
             }
           }
           if ("del" in fact.post) {
             const post: Poast = fact.post.del.post;
-            const following = get().following;
-            const curr = following.get(post.author);
-
-            if (curr && curr.feed[post.id]) {
-              delete curr.feed[post.id];
-              following.set(post.author, curr);
-
-              set({ following });
+            const { api, following, myFeed } = get();
+            // our own posts live in myFeed, mirroring the "add" branch
+            if (post.author === api?.airlock?.our) {
+              if (myFeed.feed[post.id]) {
+                const feed = { ...myFeed.feed };
+                delete feed[post.id];
+                set({ myFeed: { ...myFeed, feed } });
+              }
+            } else {
+              const curr = following.get(post.author);
+              if (curr && curr.feed[post.id]) {
+                const feed = { ...curr.feed };
+                delete feed[post.id];
+                set({
+                  following: new Map(following).set(post.author, { ...curr, feed }),
+                });
+              }
             }
           }
         }
@@ -237,19 +292,7 @@ export const useStore = creator((set, get) => ({
             set({ lastEose: fact.nostr.eose });
             // author-filtered subs (incl. %sync) emit no %feed fact at eose;
             // the backlog is only readable through the /x/j/nostr scry
-            api.scryNostr().then((r) => {
-              if ("error" in r) {
-                console.error("error scrying nostr feeds", r);
-                return;
-              }
-              const nostrFeedsRaw = r.ok;
-              const nostrFeeds = nostrFeedsToFcMap(nostrFeedsRaw);
-              set({
-                nostrFeedsRaw,
-                nostrFeeds,
-                nostrFeed: nostrFeeds[SYNC_SUB_NAME] ?? emptyFC(),
-              });
-            });
+            refreshNostrFeeds();
           }
           if ("drop" in fact.nostr) set({ lastDroppedWs: fact.nostr.drop });
           if ("event" in fact.nostr) {
@@ -266,22 +309,21 @@ export const useStore = creator((set, get) => ({
               });
             }
             if (event.kind === 0) {
-              const profiles = get().profiles;
               const prof = eventToProfile(event);
               if (!prof) return;
-              const np = profiles.set(event.pubkey, prof);
-              set({ profiles: np });
+              set({ profiles: new Map(get().profiles).set(event.pubkey, prof) });
             }
           }
           // if ("thread" in data.fact.nostr)
         }
         if ("prof" in fact) {
-          const profiles = get().profiles;
+          const profiles = new Map(get().profiles);
           for (const [user, prof] of Object.entries(fact.prof))
             profiles.set(user, prof);
-          set({ profiles: new Map(profiles) });
+          set({ profiles });
         }
         if ("keys" in fact) set({ pubkey: fact.keys });
+        if ("lists" in fact) set({ lists: parseLists(fact.lists) });
       }
     });
     api.scryDMs().then((r) => {
@@ -296,7 +338,6 @@ export const useStore = creator((set, get) => ({
       });
     });
     api.subscribeDMs((data: DMFact) => {
-      console.log("dm fact", data)
       if ("init" in data) {
         const dms = fixDMs(data.init.dms)
         const dmRequests = fixDMRequests(data.init.requests)
@@ -327,13 +368,11 @@ export const useStore = creator((set, get) => ({
     setTimeout(measureLatency, 3000);
     setInterval(measureLatency, 60_000);
     set({ api });
-  },
+  })()),
   pubkey: "",
   profiles: new Map(),
   addProfile: (key, profile) => {
-    const profiles = get().profiles;
-    profiles.set(key, profile);
-    set({ profiles });
+    set({ profiles: new Map(get().profiles).set(key, profile) });
   },
   setProfiles: (profiles) => set({ profiles }),
   lastFact: null,
@@ -350,6 +389,7 @@ export const useStore = creator((set, get) => ({
   followers: [],
   timeline: { feed: {}, start: null, end: null },
   followGraph: {},
+  lists: emptyLists(),
   uiSettings: {},
   modal: null,
   setModal: (modal) => set({ modal }),

@@ -197,8 +197,10 @@
           =/  pidpath=path  (weld hostpath /[sid])
           =/  parents  (spat pidpath)
           =/  pat  (weld hostpath /[sid]/[ids])
+          ::  same layout as %del-reply; `parents` (spat of a path, so full
+          ::  of /) used to go in as a single knot here as well
           :-  :~([%ship ship] 'Deleted his quote of:' parents)
-              (weld /post/del-quote/(scot %p ship)/[parents] pat)
+              (weld /post/del-quote/(scot %p ship) pat)
         %reaction
           =/  hostpath=path  (user-to-path:lib -.pid.a)
           =/  sid    (scot %ud `@`+.pid.a)
@@ -206,15 +208,29 @@
           =/  pids  (spat pat)
           :-  :~([%ship ship] 'Reacted to post:' pids reaction.a)
               (weld /post/react/(scot %p ship) pat)
+        %report
+          =/  hostpath=path  (user-to-path:lib -.pid.a)
+          =/  sid    (scot %ud `@`+.pid.a)
+          =/  pat  (weld hostpath /[sid])
+          :-  :~([%ship ship] 'Reported your post:' (spat pat) reason.a)
+              (weld /post/report/(scot %p ship) pat)
+        ::  never sent (handle-eng skips hark for it); here for exhaustiveness
+        %del-reaction
+          =/  hostpath=path  (user-to-path:lib -.pid.a)
+          =/  sid    (scot %ud `@`+.pid.a)
+          =/  pat  (weld hostpath /[sid])
+          :-  :~([%ship ship] 'Removed a reaction from post:' (spat pat))
+              (weld /post/unreact/(scot %p ship) pat)
       ==
       %nostr
         ?-  +<.n
           %relay-down
           :-  :~('The relay: ' url.n 'closed the websockets connection. Try to reconnect in the settings page.')
-            /nostr/relay-down/[url.n]
+            ::  the url is not a valid knot (: and /); it is in the text above
+            /nostr/relay-down
           %new-relay
           :-  :~('A new relay has become available: ' url.n 'Try it out some time. You can add it to the settings page.')
-            /nostr/new-relay/[url.n]
+            /nostr/new-relay
           %keys
           =/  ship  (user-to-atom:lib user.n)
           =/  ship-token  [%ship ship]

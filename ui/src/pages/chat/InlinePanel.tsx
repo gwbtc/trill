@@ -1,6 +1,7 @@
+import { safeHref } from "@/logic/utils";
 import { postToText } from "@/logic/search";
 import type { Block, FC, Inline, Poast } from "@/types/trill";
-import { Image, Link as LinkIcon, Search, X } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { useMemo } from "react";
 import { useRenderCount } from "@/logic/renderProfile";
 import type { DmLinkItem, DmMediaItem, DmPanel, DmRichMessage } from "./types";
@@ -105,7 +106,7 @@ export default function DmInlinePanel({
           {mediaItems.map((item) => (
             <a
               className="dm-media-item"
-              href={item.url}
+              href={safeHref(item.url)}
               target="_blank"
               rel="noreferrer"
               key={item.id}
@@ -127,7 +128,7 @@ export default function DmInlinePanel({
           {linkItems.map((item) => (
             <a
               className="dm-link-item"
-              href={item.href}
+              href={safeHref(item.href)}
               target="_blank"
               rel="noreferrer"
               key={item.id}

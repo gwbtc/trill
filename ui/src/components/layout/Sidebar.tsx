@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import useLocalState from "@/state/state";
+import { withoutMuted } from "@/logic/lists";
 import ShipCard from "@/components/ShipCard";
 import { getDmUnreadCount } from "@/logic/dms";
 import "./Sidebar.css";
@@ -34,13 +35,14 @@ function saveDismissedNotices(notices: DismissedNotices) {
 
 function SlidingMenu() {
   const [location, navigate] = useLocation();
-  const { our, notifications, profiles, setModal, dms } =
+  const { our, notifications, profiles, setModal, dms, lists } =
     useLocalState((s) => ({
     our: s.our,
     notifications: s.notifications,
     profiles: s.profiles,
     setModal: s.setModal,
     dms: s.dms,
+    lists: s.lists,
   }));
   const [dismissedNotices, setDismissedNotices] = useState<DismissedNotices>(
     loadDismissedNotices,
@@ -48,16 +50,13 @@ function SlidingMenu() {
 
   const profile = our ? profiles.get(our.patp) : undefined;
   const hasProfileBasics = Boolean(profile?.name?.trim() && profile?.about?.trim());
-  const unread = notifications.reduce((acc, n) => (n.unread ? acc + 1 : acc), 0);
+  const unread = withoutMuted(notifications, lists).reduce(
+    (acc, n) => (n.unread ? acc + 1 : acc),
+    0,
+  );
   const unreadDms = getDmUnreadCount(dms);
 
   function goto(to: string) { navigate(to); }
-
-  function openRelayDash() {
-    import("@/components/RelayDashboard").then(({ default: RelayDashboard }) => {
-      setModal(<RelayDashboard />);
-    });
-  }
 
   function openCompose() {
     import("@/components/modals/ComposerModal").then(({ default: ComposerModal }) => {
@@ -112,7 +111,9 @@ function SlidingMenu() {
     return next.filter((notice) => !dismissedNotices[notice.id]);
   }, [dismissedNotices, hasProfileBasics, our, profile, setModal]);
 
-  const isActive = (prefix: string) => location.startsWith(prefix);
+  // match whole path segments: a bare startsWith("/f") also matches "/fols"
+  const isActive = (prefix: string) =>
+    location === prefix || location.startsWith(`${prefix}/`);
 
   return (
     <aside id="left-rail" className="left-rail">
@@ -198,6 +199,18 @@ function SlidingMenu() {
             </svg>
           </span>
           Follows
+        </a>
+        <a
+          href="#"
+          className={`sidebar-nav-item${isActive("/bookmarks") ? " active" : ""}`}
+          onClick={(e) => { e.preventDefault(); goto("/bookmarks"); }}
+        >
+          <span className="nav-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
+            </svg>
+          </span>
+          Bookmarks
         </a>
         <a
           href="#"

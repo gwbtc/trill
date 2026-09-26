@@ -14,14 +14,24 @@ const queryClient = new QueryClient();
 
 function App() {
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const { init } = useLocalState((s) => ({
     init: s.init,
   }));
   useEffect(() => {
-    init().then((_res: any) => {
-      setLoading(false);
-    });
+    init()
+      .then(() => setLoading(false))
+      // e.g. not logged in to the ship, or the ship is down
+      .catch((e) => setError(`${e}`));
   }, []);
+  if (error)
+    return (
+      <div className="global-center">
+        <h3 style={{ textAlign: "center" }}>Couldn't connect to your Urbit</h3>
+        <p style={{ textAlign: "center" }}>{error}</p>
+        <button onClick={() => location.reload()}>Retry</button>
+      </div>
+    );
   if (loading)
     return (
       <div className="global-center">

@@ -3,12 +3,11 @@ import useLocalState from "@/state/state";
 import { ErrorPage } from "@/pages/Error";
 import "@/styles/trill.css";
 import "@/styles/feed.css";
-import { stringToUser } from "@/logic/nostrill";
 import ComposerModal from "@/components/modals/ComposerModal";
 import TrillThread from "@/components/trill/Thread";
 import NostrThread from "@/components/nostr/Thread";
 import NostrThreadFetcher from "@/components/nostr/Fetcher";
-import { decodeNostrKey } from "@/logic/nostr";
+import { decodeNostrEventId } from "@/logic/nostr";
 import PageHeader from "@/components/layout/PageHeader";
 import { useEffect } from "react";
 
@@ -32,40 +31,36 @@ export default function ThreadLoader() {
   return (
     <div id="screen-thread" className="trill-screen">
       <PageHeader title="Thread" back />
-      <TrillThread feed={feed} profile={profile} host={host} id={id} />
+      {/* keyed so moving between threads drops the previous thread's state */}
+      <TrillThread key={`${host}/${id}`} feed={feed} profile={profile} host={host} id={id} />
     </div>
   );
 }
 
 export function NostrThreadLoader() {
-  const { globalFeed, nostrFeed, composerData } = useLocalState((s) => ({
+  const { globalFeed, nostrFeed } = useLocalState((s) => ({
     globalFeed: s.globalFeed,
     nostrFeed: s.nostrFeed,
-    composerData: s.composerData,
   }));
   const params = useParams<{ id: string }>();
   const { id } = params;
   if (!id) return <ErrorPage msg="No thread id passed" />;
-  const global = globalFeed.feed[id];
-  if (global && global.event)
+  // the route carries the event id (hex, note or nevent); nostr feeds are
+  // keyed by timestamp ids, so look the event up by hash
+  const eventId = decodeNostrEventId(id);
+  if (!eventId) return <ErrorPage msg="Unknown thread id format" />;
+  const known = [globalFeed, nostrFeed]
+    .flatMap((fc) => Object.values(fc.feed))
+    .find((p) => p.hash === eventId && p.event);
+  if (known?.event)
     return (
       <div id="screen-thread" className="trill-screen">
-        <NostrThread event={global.event} relays={global.event.relays ?? []} />
+        <NostrThread event={known.event} relays={known.event.relays ?? []} />
       </div>
     );
-  const nostr = nostrFeed.feed[id];
-  if (nostr && nostr.event)
-    return (
-      <div id="screen-thread" className="trill-screen">
-        <NostrThread event={nostr.event} relays={nostr.event.relays ?? []} />
-      </div>
-    );
-  //
-  const dec = decodeNostrKey(id);
-  if (!dec) return <ErrorPage msg="Unknown thread id format" />;
   return (
     <div id="screen-thread" className="trill-screen">
-      <NostrThreadFetcher id={id} />
+      <NostrThreadFetcher key={eventId} id={eventId} />
     </div>
   );
 }

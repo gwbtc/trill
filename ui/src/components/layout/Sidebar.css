@@ -3,8 +3,7 @@
   50%       { opacity: 0.35; transform: scale(0.78); }
 }
 
-.left-rail,
-.trill-sidebar {
+.left-rail {
   width: 282px;
   flex-shrink: 0;
   padding: 14px 12px 24px;

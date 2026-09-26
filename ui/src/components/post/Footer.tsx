@@ -1,12 +1,13 @@
 import type { PostProps } from "./Post";
 import { useEffect, useRef, useState } from "react";
-import useLocalState from "@/state/state";
+import useLocalState, { useStore } from "@/state/state";
 import { useLocation } from "wouter";
-import { displayCount, getThreadPath } from "@/logic/utils";
+import { displayCount, getThreadPath, repostData } from "@/logic/utils";
 import { TrillReactModal } from "./Reactions";
 import toast from "react-hot-toast";
 import type { SPID } from "@/types/ui";
 import QuoteModal from "@/components/modals/QuoteModal";
+import ComposerModal from "@/components/modals/ComposerModal";
 import ReactionsModal from "@/components/modals/ReactionsModal";
 import ConfirmationDialog from "@/components/modals/ConfirmationDialog";
 import RelayPost from "../modals/RelayPost";
@@ -22,25 +23,26 @@ import PostActionButton from "./PostActionButton";
 import PostActionMenu from "./PostActionMenu";
 import RepostConfirmPopover from "./RepostConfirmPopover";
 import ZapSheet from "@/components/modals/ZapSheet";
+import ReportDialog from "@/components/modals/ReportDialog";
+import { authorId, postRef, refKey } from "@/logic/lists";
 import { getHandleLabel } from "@/logic/userDisplay";
 // TODO abstract this somehow
 
 function Footer({ user, poast, profile, thread, refetch }: PostProps) {
   const [showMenu, setShowMenu] = useState(false);
-  const [bookmarked, setBookmarked] = useState(false);
-  const [muted, setMuted] = useState(false);
   const [repostConfirmOpen, setRepostConfirmOpen] = useState(false);
   const [repostOverride, setRepostOverride] = useState<boolean | null>(null);
   const [repostCountDelta, setRepostCountDelta] = useState(0);
   const [zapCountDelta, setZapCountDelta] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [location, navigate] = useLocation();
+  const [location] = useLocation();
   const [reposting, setReposting] = useState(false);
-  const { api, setComposerData, setModal, relays } = useLocalState((s) => ({
+  const { api, setComposerData, setModal, relays, lists } = useLocalState((s) => ({
     api: s.api,
     setComposerData: s.setComposerData,
     setModal: s.setModal,
     relays: s.relays,
+    lists: s.lists,
   }));
   const our = api!.airlock.our!;
   function getComposerData(): SPID {
@@ -48,23 +50,25 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
       ? { trill: poast }
       : { nostr: { post: poast, pubkey: user.nostr, eventId: poast.hash } };
   }
+  function openComposer(type: "reply" | "quote") {
+    setComposerData({ type, post: getComposerData() });
+    // the feed has an inline composer at the top, and the thread page opens
+    // the composer modal itself when composerData is set. anywhere else
+    // (profiles, search...) nothing would show up, so open the modal here
+    const onFeed = location === "/f" || location.startsWith("/f/");
+    const onThread = location.startsWith("/t/");
+    if (onFeed) window.scrollTo({ top: 0, behavior: "smooth" });
+    else if (!onThread) setModal(<ComposerModal />);
+  }
   function doReply(e: React.MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
-    setComposerData({ type: "reply", post: getComposerData() });
-    // Scroll to top where composer is located
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    // Focus will be handled by the composer component
+    openComposer("reply");
   }
   function doQuote(e: React.MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
-    setComposerData({
-      type: "quote",
-      post: getComposerData(),
-    });
-    // Scroll to top where composer is located
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    openComposer("quote");
   }
   const childrenCount = poast.children
     ? poast.children.length
@@ -101,12 +105,30 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
     );
   }
 
+  // id of our repost of this post (not the post itself). our own feed is
+  // authoritative: it gets a new repost as soon as the backend mints it and
+  // drops it on delete, while engagement.shared can lag or keep entries for
+  // reposts already deleted. fall back to engagement for reposts too old to
+  // be loaded in myFeed
+  function findOurRepostId(): string | null {
+    const feed = useStore.getState().myFeed.feed;
+    const rp = Object.values(feed).find((p) => {
+      const ref = repostData(p);
+      return ref?.ship === poast.host && ref.id === poast.id;
+    });
+    return rp?.id ?? myRP?.pid.id ?? null;
+  }
+
   async function doCancelRP() {
     setRepostConfirmOpen(false);
+    const repostId = findOurRepostId();
+    if (!repostId) {
+      toast.error("Could not find your repost");
+      return;
+    }
     setReposting(true);
-    const repostId = myRP?.pid.id ?? poast.id;
     const r = await api!.deletePost(user, repostId);
-    if (r) {
+    if (!("error" in r)) {
       setRepostOverride(false);
       if (myRP) setRepostCountDelta((count) => count - 1);
       toast.success("Repost removed");
@@ -114,8 +136,6 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
       toast.error("Could not remove repost");
     }
     setReposting(false);
-    setModal(null);
-    if (location.includes(poast.id)) navigate("/");
   }
   function cancelRP(e: React.MouseEvent) {
     e.stopPropagation();
@@ -146,7 +166,7 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
       { duration: 5000, id: `repost-${poast.id}`, position: "bottom-center" },
     );
     const r = await api!.addRP(user, id);
-    if (!r) {
+    if ("error" in r) {
       toast.dismiss(toastId);
       setRepostOverride(false);
       if (!myRP) setRepostCountDelta((count) => count - 1);
@@ -161,11 +181,15 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
   }
   async function undoRepost() {
     setRepostConfirmOpen(false);
+    const repostId = findOurRepostId();
+    if (!repostId) {
+      toast.error("Could not undo repost");
+      return;
+    }
     setRepostOverride(false);
     if (!myRP) setRepostCountDelta((count) => count - 1);
-    const repostId = myRP?.pid.id ?? poast.id;
     const r = await api!.deletePost(user, repostId);
-    if (!r) {
+    if ("error" in r) {
       setRepostOverride(true);
       if (!myRP) setRepostCountDelta((count) => count + 1);
       toast.error("Could not undo repost");
@@ -226,7 +250,8 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
 
   async function doDelete() {
     const r = await api!.deletePost(user, poast.id);
-    toast.success("Post deleted");
+    if ("error" in r) toast.error("Could not delete post");
+    else toast.success("Post deleted");
     setModal(null);
   }
 
@@ -295,31 +320,33 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
     setModal(<PostDetails poast={poast} onClose={() => setModal(null)} />);
   }
 
-  function toggleBookmark(e: React.MouseEvent) {
+  const ref = postRef(poast);
+  const bookmarked = lists.bookmarks.has(refKey(ref));
+  const muted = lists.muted.has(authorId(poast));
+  async function toggleBookmark(e: React.MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
-    setBookmarked((saved) => {
-      toast.success(saved ? "Bookmark removed" : "Post bookmarked");
-      return !saved;
-    });
     setShowMenu(false);
+    const res = await api!.bookmark(ref, !bookmarked);
+    if ("error" in res) toast.error("Could not update bookmark");
+    else toast.success(bookmarked ? "Bookmark removed" : "Post bookmarked");
   }
-
-  function toggleMute(e: React.MouseEvent) {
+  async function toggleMute(e: React.MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
-    setMuted((hidden) => {
-      toast.success(hidden ? `${poast.author} unmuted` : `${poast.author} muted`);
-      return !hidden;
-    });
     setShowMenu(false);
+    const name = getHandleLabel(user);
+    const res = await api!.mute(user, !muted);
+    if ("error" in res) toast.error(`Could not ${muted ? "unmute" : "mute"} ${name}`);
+    else toast.success(muted ? `${name} unmuted` : `${name} muted`);
   }
-
   function reportPost(e: React.MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
-    toast.success("Post reported");
     setShowMenu(false);
+    // nostr posts have no ship to tell
+    const host = "urbit" in ref && ref.urbit.host !== our ? ref.urbit.host : null;
+    setModal(<ReportDialog postRef={ref} host={host} />);
   }
 
   return (

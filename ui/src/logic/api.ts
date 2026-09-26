@@ -1,10 +1,10 @@
 import Urbit from "urbit-api";
 
-export const URL = import.meta.env.PROD ? "" : "http://localhost:8080";
+const devPort = 8900;
+export const URL = import.meta.env.PROD ? "" : `http://localhost:${devPort}`;
 export const WS_URL = !import.meta.env.PROD
-  ? "ws://localhost:8080"
+  ? `ws://localhost:${devPort}`
   : `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`;
-
 
 export async function start(): Promise<Urbit> {
   const airlock = new Urbit(URL, "");

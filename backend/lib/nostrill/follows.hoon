@@ -1,8 +1,29 @@
 ::  nostrill-follows: follow/unfollow engine
 ::
 /-  sur=nostrill, comms=nostrill-comms, ui=nostrill-ui, notif=nostrill-notif
-/+  lib=nostrill, harklib=hark, feedlib=trill-feed
+/+  lib=nostrill, harklib=hark, feedlib=trill-feed, scri
 |_  [=state:sur =bowl:gall]
+::  +push-profile: our follows changed, so refresh the follow fields of
+::  our profile and send it to our followers, whose copies back their
+::  "who to follow" suggestions
+::
+++  push-profile
+  ^-  (quip card:agent:gall _state)
+  =/  fresh  ~(default-profile scri [state bowl])
+  =/  cur  (~(get by profiles.state) [%urbit our.bowl])
+  =/  prof=user-profile:comms
+    ?~  cur  fresh
+    %=  u.cur
+      following        following.fresh
+      following-count  following-count.fresh
+      followers        followers.fresh
+      follower-count   follower-count.fresh
+    ==
+  =?  profiles.state  ?=(^ cur)
+    (~(put by profiles.state) [%urbit our.bowl] prof)
+  :_  state
+  :~  (update-followers:cards:lib [%prof `prof])
+  ==
 ::
 ++  handle-add
   |=  =user:sur
@@ -25,15 +46,16 @@
   =.  follow-graph.state  (~(put by follow-graph.state) [%urbit our.bowl] nset)
   =/  =fact:ui  [%fols %quit user]
   =/  c1  (update-ui:cards:lib fact)
+  =^  pcs  state  push-profile
   ?:  ?=(%urbit -.user)
     :_  state
-    :~  c1
+    :*  c1
         (urbit-leave +.user)
+        pcs
     ==
   ::  TODO close the user's relay subscription
   :_  state
-  :~  c1
-  ==
+  [c1 pcs]
 ::  +handle-res: response to our follow request
 ::
 ++  handle-res
@@ -55,9 +77,11 @@
     =.  follow-graph.state  (~(put by follow-graph.state) [%urbit our.bowl] follows)
     state
   =/  =fact:ui  [%fols %new-urbit enfr]
+  =^  pcs  state  push-profile
   :_  state
-  :~  hark-card
+  :*  hark-card
       (update-ui:cards:lib fact)
+      pcs
   ==
 ::
 ++  handle-refollow
@@ -73,9 +97,9 @@
   ?~  graph  `state
   =/  ngraph  (~(del in u.graph) [%urbit p])
   =.  follow-graph.state  (~(put by follow-graph.state) [%urbit our.bowl] ngraph)
+  =^  pcs  state  push-profile
   :_  state
-  :~  (update-ui:cards:lib [%fols %quit %urbit src.bowl])
-  ==
+  [(update-ui:cards:lib [%fols %quit %urbit src.bowl]) pcs]
 ::
 ++  urbit-leave  |=  sip=@p  ^-  card:agent:gall
   [%pass /follow %agent [sip dap.bowl] %leave ~]

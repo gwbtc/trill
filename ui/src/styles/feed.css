@@ -62,70 +62,9 @@
   width: 100%;
 }
 
-.nostr-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  background: var(--color-surface);
-  border-radius: 8px;
-  margin-bottom: 16px;
-  border: 1px solid var(--color-border);
-}
-
-.feed-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.feed-info h4 {
-  margin: 0;
-  color: var(--color-text);
-  font-size: 18px;
-}
-
-.post-count {
-  color: var(--color-text-secondary);
-  font-size: 14px;
-  background: var(--color-background);
-  padding: 4px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--color-border);
-}
-
-.btn-small {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px;
-  background: var(--color-background);
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  color: var(--color-text);
-}
-
-.btn-small:hover:not(:disabled) {
-  background: var(--color-surface-hover);
-  border-color: var(--color-primary);
-}
-
-.btn-small:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
 .btn-spinner {
   width: 16px;
   height: 16px;
-  animation: spin 1s linear infinite;
-}
-
-.btn-spinner-small {
-  width: 14px;
-  height: 14px;
   animation: spin 1s linear infinite;
 }
 

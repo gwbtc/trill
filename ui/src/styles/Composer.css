@@ -62,7 +62,7 @@
 
   & .reply-context {
     margin-bottom: 12px;
-    background: rgba(42, 157, 143, 0.08);
+    background: color-mix(in srgb, var(--color-accent) 8%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-accent, #2a9d8f) 45%, transparent);
   }
 
@@ -166,7 +166,7 @@
 
     &:empty:before {
       content: attr(data-placeholder);
-      color: #aaa;
+      color: var(--color-text-muted);
     }
 
     &::placeholder {
@@ -188,7 +188,7 @@
     &:hover:not(:disabled) {
       background: var(--color-accent-hover, #238b7f);
       transform: translateY(-1px);
-      box-shadow: 0 2px 8px rgba(42, 157, 143, 0.3);
+      box-shadow: 0 2px 8px color-mix(in srgb, var(--color-accent) 30%, transparent);
     }
 
     &:disabled {
@@ -202,7 +202,7 @@
     bottom: 100%;
     left: 0;
     background: var(--color-surface);
-    border: 1px solid #333;
+    border: 1px solid var(--color-border);
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
     z-index: 100;
@@ -683,4 +683,14 @@
   color: var(--color-text-muted, #9aa2ab);
   font-size: 12px;
   white-space: nowrap;
+}
+
+/* dialogs stacked over the composer (see ComposerLayer.tsx); they share the
+   #modal-background / #modal look from styles.css and sit above them */
+.composer-layer-bg {
+  z-index: 110;
+}
+
+.composer-layer {
+  z-index: 111;
 }

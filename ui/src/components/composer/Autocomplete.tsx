@@ -179,6 +179,8 @@ export function AutocompleteList({
               ? (el) => el?.scrollIntoView({ block: "nearest" })
               : undefined
           }
+          // keep the editor's selection: selectUser edits at the caret
+          onMouseDown={(e) => e.preventDefault()}
           onClick={() => onSelect(user)}
           className={`mention-item ${i === selectedIndex ? "selected" : ""}`}
           style={{

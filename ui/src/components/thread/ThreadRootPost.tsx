@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { unwrap } from "@/logic/result";
 import toast from "react-hot-toast";
 import Body from "@/components/post/Body";
 import Footer from "@/components/post/Footer";
@@ -54,10 +55,10 @@ export default function ThreadRootPost({
     setLoading(true);
     try {
       if (isFollowing) {
-        await api.unfollow(user);
+        unwrap(await api.unfollow(user));
         toast.success(`Unfollowed ${displayName}`);
       } else {
-        await api.follow(user);
+        unwrap(await api.follow(user));
         toast.success(`Following ${displayName}`);
       }
     } catch (error) {

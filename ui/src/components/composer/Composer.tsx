@@ -2,7 +2,7 @@ import "@/styles/Composer.css";
 import useLocalState, { useStore } from "@/state/state";
 import spinner from "@/assets/triangles.svg";
 import Sigil from "@/components/Sigil";
-import { useState, useEffect, useRef, type FormEvent } from "react";
+import { useCallback, useState, useEffect, useRef, type FormEvent } from "react";
 import Snippets, { ReplySnippet } from "./Snippets";
 import toast from "react-hot-toast";
 import Icon from "@/components/Icon";
@@ -21,11 +21,14 @@ import {
   Users,
 } from "lucide-react";
 import S3Browser from "./S3Browser";
+import ComposerLayer from "./ComposerLayer";
 import EmojiPicker from "./EmojiPicker";
 import { UrbitAvatar } from "../Avatar";
 import {
   insertComposerImage,
   insertComposerText,
+  restoreComposerCaret,
+  saveComposerCaret,
   serializeComposerContent,
 } from "./composerDom";
 
@@ -117,13 +120,11 @@ function Composer({
           ? composerData.post.nostr.eventId
           : "";
 
-    const res =
-      composerData.type === "reply"
-        ? api.addReply(content, host, id, thread)
-        : composerData?.type === "quote"
-          ? api.addQuote(content, host, id)
-          : wait(500);
-    return await res;
+    if (composerData.type === "reply")
+      return await api.addReply(content, host, id, thread);
+    if (composerData.type === "quote")
+      return await api.addQuote(content, host, id);
+    return { error: "unknown composer type" };
   }
 
   const newestOwnPostId = () => {
@@ -185,7 +186,11 @@ function Composer({
       return;
     }
     setRelayStatus(`sending to ${wids.length} relay${wids.length > 1 ? "s" : ""}...`);
-    await api!.relayPost(api!.airlock.our!, id, wids);
+    const res = await api!.relayPost(api!.airlock.our!, id, wids);
+    if ("error" in res) {
+      toast.error("Posted, but the relay send failed");
+      return;
+    }
     const sent = await waitForSentPost(id);
     if (sent && sent.length > 0) {
       toast.success(`Sent to ${sent.map(shortRelayUrl).join(", ")}`);
@@ -200,27 +205,36 @@ function Composer({
 
     const content = serializeComposerContent(inputRef.current, input);
     if (!content.trim()) return;
+    // Ctrl+Enter submits via requestSubmit, which skips the disabled button
+    if (remaining < 0) {
+      toast.error(`Posts are limited to ${charMax} characters`);
+      return;
+    }
 
     setLoading(true);
     const isTopLevel = !composerData;
     const prevNewest = isTopLevel ? newestOwnPostId() : null;
-    const res = isTopLevel ? addSimple(content) : addComplex(content);
-    if (await res) {
-      // cross-post to the chosen relays; replies/quotes are
-      // excluded (send-post emits no e-tags yet, which would
-      // break nostr threading)
-      if (isModal && isTopLevel && relayTargets.length > 0) {
-        await crossPost(prevNewest, relayTargets);
-      }
-      setInput("");
-      setComposerData(null); // Clear composer data after successful post
-      toast.success(isModal ? "post sent" : "Posted to your relays");
+    const res = await (isTopLevel ? addSimple(content) : addComplex(content));
+    if (!res || "error" in res) {
+      // keep the draft so the user can retry
+      toast.error("Failed to post");
       setLoading(false);
-      setRelayStatus(null);
-      setIsExpanded(false);
-      if (isModal) setModal(null);
-      if (inputRef.current) inputRef.current.innerText = "";
+      return;
     }
+    // cross-post to the chosen relays; replies/quotes are
+    // excluded (send-post emits no e-tags yet, which would
+    // break nostr threading)
+    if (isModal && isTopLevel && relayTargets.length > 0) {
+      await crossPost(prevNewest, relayTargets);
+    }
+    setInput("");
+    setComposerData(null); // Clear composer data after successful post
+    toast.success(isModal ? "post sent" : "Posted to your relays");
+    setLoading(false);
+    setRelayStatus(null);
+    setIsExpanded(false);
+    if (isModal) setModal(null);
+    if (inputRef.current) inputRef.current.innerText = "";
   }
   const placeholder =
     composerData?.type === "reply"
@@ -240,12 +254,16 @@ function Composer({
     setIsExpanded(false);
   };
 
-  const handleS3Select = (url: string) => {
-    if (!inputRef.current) return;
+  const [s3Open, setS3Open] = useState(false);
+  const caretRef = useRef<Range | null>(null);
+  const closeS3Browser = useCallback(() => setS3Open(false), []);
 
+  const handleS3Select = (url: string) => {
+    setS3Open(false);
+    if (!inputRef.current) return;
+    restoreComposerCaret(inputRef.current, caretRef.current);
     setInput((s) => s + ` ![](${url}) `);
     insertComposerImage(url);
-    setModal(null);
   };
 
   const openS3Browser = () => {
@@ -253,7 +271,8 @@ function Composer({
       toast.error("S3 media is not configured");
       return;
     }
-    setModal(<S3Browser onSelect={handleS3Select} onClose={() => setModal(null)} />);
+    caretRef.current = saveComposerCaret(inputRef.current);
+    setS3Open(true);
   };
 
   const focusAndInsert = (text: string) => {
@@ -494,6 +513,11 @@ function Composer({
           </div>
         )}
       </div>
+      {s3Open && (
+        <ComposerLayer onClose={closeS3Browser}>
+          <S3Browser onSelect={handleS3Select} onClose={closeS3Browser} />
+        </ComposerLayer>
+      )}
     </form>
   );
 }

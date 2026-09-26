@@ -7,14 +7,7 @@ import { ProfValue } from "../modals/UserModal";
 import ConnectionsModal, { type ConnectionTab } from "./ConnectionsModal";
 import { getProfileGalaxy } from "@/logic/profile";
 import { Orbit } from "lucide-react";
-import {
-  getCustomProfileFields,
-  getDisplayName,
-  getFollowerCount,
-  getFollowingCount,
-  getProfileBanner,
-  getUserId,
-} from "@/logic/userDisplay";
+import { getCustomProfileFields, getDisplayName, getFollowerCount, getFollowingCount, getProfileBanner } from "@/logic/userDisplay";
 
 interface Props {
   user: UserType;
@@ -27,7 +20,6 @@ const Loader: React.FC<Props> = (props) => {
   const { profiles } = useLocalState((s) => ({
     profiles: s.profiles,
   }));
-  const { user } = props;
   const profile = profiles.get(props.userString);
   return <Profile profile={profile} {...props} />;
 };

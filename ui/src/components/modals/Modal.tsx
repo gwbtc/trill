@@ -1,6 +1,6 @@
 import useLocalState from "@/state/state";
 import { getFocusWrapTarget } from "@/logic/focusTrap";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 const FOCUSABLE_SELECTOR = [
   "a[href]",
@@ -9,6 +9,7 @@ const FOCUSABLE_SELECTOR = [
   "input:not([disabled])",
   "select:not([disabled])",
   "[tabindex]:not([tabindex='-1'])",
+  "[contenteditable='true']",
 ].join(",");
 
 function Modal({
@@ -25,23 +26,33 @@ function Modal({
     if (close) close();
     setModal(null);
   }
+  // the key handler lives for the modal's whole lifetime; read the latest
+  // close through a ref instead of re-running the effect
+  const closeRef = useRef(closeModal);
+  closeRef.current = closeModal;
 
+  // runs once per mount: re-running it (e.g. on every new `children`
+  // element, which the parent creates on each render) would yank focus
+  // back to the first control while the user is typing
   useEffect(() => {
     const previousFocus = document.activeElement as HTMLElement | null;
     const modal = modalRef.current;
-    const focusable = modal
-      ? Array.from(modal.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
-      : [];
+    const getFocusable = () =>
+      modal
+        ? Array.from(modal.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+        : [];
 
-    (focusable[0] || modal)?.focus();
+    (getFocusable()[0] || modal)?.focus();
 
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.stopPropagation();
-        closeModal();
+        closeRef.current();
         return;
       }
 
+      // queried per keypress so controls rendered after mount are trapped too
+      const focusable = getFocusable();
       if (event.key !== "Tab" || focusable.length === 0) return;
 
       const currentIndex = focusable.indexOf(document.activeElement as HTMLElement);
@@ -61,7 +72,7 @@ function Modal({
       document.removeEventListener("keydown", onKey);
       previousFocus?.focus?.();
     };
-  }, [children]);
+  }, []);
 
   function clickAway(e: React.MouseEvent) {
     if (e.target !== e.currentTarget) return;
@@ -85,17 +96,3 @@ function Modal({
   );
 }
 export default Modal;
-
-export function Tooltip({ children, text, className }: any) {
-  const [show, toggle] = useState(false);
-  return (
-    <div
-      className={"tooltip-wrapper " + (className || "")}
-      onMouseOver={() => toggle(true)}
-      onMouseOut={() => toggle(false)}
-    >
-      {children}
-      {show && <div className="tooltip">{text}</div>}
-    </div>
-  );
-}

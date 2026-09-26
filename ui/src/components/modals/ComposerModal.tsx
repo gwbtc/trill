@@ -3,7 +3,7 @@ import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import { shortRelayUrl } from "@/logic/relayDisplay";
 import useLocalState from "@/state/state";
 import { Check, ChevronDown, Radio } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function ComposerModal() {
   const { relays, setComposerData, setModal } = useLocalState((s) => ({
@@ -62,10 +62,12 @@ export default function ComposerModal() {
     });
   };
 
-  const close = () => {
-    setComposerData(null);
-    setModal(null);
-  };
+  // however the modal goes away (close button, Escape, backdrop click, a
+  // successful post), drop the reply/quote target with it; otherwise the
+  // thread page sees stale composerData and reopens this modal
+  useEffect(() => () => setComposerData(null), [setComposerData]);
+
+  const close = () => setModal(null);
 
   return (
     <div id="compose-modal" className="compose-modal">

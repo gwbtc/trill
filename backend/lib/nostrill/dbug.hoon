@@ -17,6 +17,8 @@
 ::      %feed-print           dump every own-feed post as markdown
 ::      [%thread-print id]    print one thread from own feed
 ::      [%thread-del id]      delete all posts belonging to a thread
+::      %repair-leftovers     one-off: prune own phantom shared/quoted
+::                            entries, restamp zero-hash own posts
 ::    websockets / relays
 ::      %relays-print         print global-relay check + full relays map
 ::      %relays-status        per-url [url wid status] (reconnect state)
@@ -118,6 +120,42 @@
         ~&  id=id.i.ted
         ~&  >>  (content-map-to-md:postlib contents.i.ted)
         $(ted t.ted)
+    %repair-leftovers
+      ::  one-off repair of own-feed data left behind by since-fixed bugs:
+      ::  - shared/quoted entries by us whose repost/quote is gone from our
+      ::    feed (deleting a repost of our own post never removed it)
+      ::  - our posts stamped with a zero hash (pubkey) by the zero keypair
+      ::    the old bunted on-load state had; restamp with the current key
+      ::  entries by other ships can't be checked: their posts live in
+      ::  their feeds
+      =/  our-pub=@uvH  `@uvH`pub.i.keys
+      =/  live
+        |=  sp=signed-pid:tp
+        ^-  ?
+        ?.  =(our.bowl ship.pid.sp)  &
+        (has:orm:tf feed id.pid.sp)
+      =/  posts  (tap:orm:tf feed)
+      =|  pruned=@ud
+      =|  restamped=@ud
+      |-
+      ?~  posts
+        ~&  >  repaired=[pruned-engagement=pruned restamped-hashes=restamped]
+        `state
+      =/  p=post:tp  +.i.posts
+      =/  sh  (silt (skim ~(tap in shared.engagement.p) live))
+      =/  qu  (silt (skim ~(tap in quoted.engagement.p) live))
+      =.  pruned
+        ;:  add  pruned
+          (sub ~(wyt in shared.engagement.p) ~(wyt in sh))
+          (sub ~(wyt in quoted.engagement.p) ~(wyt in qu))
+        ==
+      =/  zero-hash  &(=(0 hash.p) =(our.bowl author.p))
+      =?  restamped  zero-hash  +(restamped)
+      =.  shared.engagement.p  sh
+      =.  quoted.engagement.p  qu
+      =?  hash.p  zero-hash  our-pub
+      =.  feed  (put:orm:tf feed id.p p)
+      $(posts t.posts)
     [%thread-del @]
       =/  posts  (tap:orm:tf feed)
       =.  feed

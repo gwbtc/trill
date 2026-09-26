@@ -9,7 +9,8 @@ export default function({ goto, our }: { goto: (s: string) => void; our: UrbitID
         id="ship-card"
         className="sidebar-ship-card"
         role="link"
-        onClick={() => goto(`/u/${our.gwid.english.nym}`)}
+        // same route as the sidebar's Profile link, so it resolves and highlights
+        onClick={() => goto(`/u/${our.patp}`)}
       >
         <div className="ship-card-top">
           <div className="ship-card-avatar">
