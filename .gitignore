@@ -19,3 +19,6 @@ devenv.local.yaml
 
 # pre-commit
 .pre-commit-config.yaml
+bulk
+bun-deps
+ts-topics

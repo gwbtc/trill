@@ -33,13 +33,13 @@
       %hn
     'https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=30'
   ::
-      %gdelt
-    ::  twenty records over a day: larger scans are slow and are what
-    ::  gdelt sheds with 429
+      %gnews
+    ::  redirects to an opaque /rss/topics/<id> url; iris follows it
     %+  rap  3
-    :~  'https://api.gdeltproject.org/api/v2/doc/doc?query='
-        (query-value (rap 3 ~['(' param.source ') sourcelang:english']))
-        '&mode=artlist&format=json&maxrecords=20&timespan=1d&sort=datedesc'
+    :~  'https://news.google.com/rss/headlines/section/topic/'
+        (query-value param.source)
+        '?hl=en-US&gl=US&ceid='
+        (query-value 'US:en')
     ==
   ==
 ::  +query-value: percent-encoded twice. the runtime's http client
@@ -59,7 +59,7 @@
   ?-  kind
     %gtrends  (parse-gtrends now body)
     %hn       (parse-hn now body)
-    %gdelt    (parse-gdelt now body)
+    %gnews    (parse-gnews now body)
   ==
 ::  +parse-gtrends: google trends' rss, one <item> per search term.
 ::  terms without a usable news link are dropped
@@ -120,30 +120,89 @@
       ?:  =(story thread)  ~[[title story publisher]]
       ~[[title story publisher] ['Hacker News discussion' thread 'Hacker News']]
   ==
-::  +parse-gdelt: the gdelt doc api's article list, english only. it
-::  answers errors, like its rate limit, as plain text, and no matches
-::  as {}
+::  +parse-gnews: a google news topic feed, one <item> per story. the
+::  headline ends in " - <publisher>", which is dropped. the item's
+::  description lists the story's articles as html (see +cluster); they
+::  become its links, and their number its score
 ::
-++  parse-gdelt
+++  parse-gnews
   |=  [now=@da body=@t]
   ^-  (each (list raw) @t)
-  =/  jon  (de:json:html body)
-  =/  excerpt  (rap 3 ~['gdelt: ' (crip (scag 200 (trip body)))])
-  ?~  jon  [%| excerpt]
-  ?.  (~(has by (obj u.jon)) 'articles')  [%| excerpt]
+  =/  doc  (de-xml:html body)
+  ?~  doc  [%| 'google news: not xml']
+  =/  chan  (kids u.doc 'channel')
+  ?~  chan  [%| 'google news: no channel']
   :-  %&
-  %+  murn  (get-a (obj u.jon) 'articles')
-  |=  art=json
+  %+  murn  (kids i.chan 'item')
+  |=  item=manx
   ^-  (unit raw)
-  =/  o  (obj art)
-  =/  lang  (get-s o 'language')
-  ?:  &(?=(^ lang) !=('english' (crip (cass (trip u.lang)))))  ~
-  =/  date  (biff (get-s o 'seendate') gdelt-date)
-  ?~  date  ~
-  =/  link
-    (evidence (fall (get-s o 'title') '') (fall (get-s o 'url') '') (fall (get-s o 'domain') ''))
-  ?~  link  ~
-  `[u.date title.u.link '' `url.u.link ~ ~[u.link]]
+  =/  publisher  (plain (field item 'source'))
+  =/  title  (drop-suffix (plain (field item 'title')) publisher)
+  ?:  |(=('' title) (spam title))  ~
+  =/  link  (trim-url (field item 'link'))
+  =/  links=(list link:sur)
+    =/  articles  (cluster (field item 'description'))
+    ?^  articles  articles
+    (drop (evidence title link publisher))
+  :-  ~
+  :*  (fall (rfc822 (field item 'pubDate')) now)
+      title
+      ''
+      ?:((web link) `link ~)
+      `(lent links)
+      links
+  ==
+::  +cluster: the articles in a google news item's description. it's
+::  html, in one of three shapes: <ol> of <li><a>title</a> <font>
+::  publisher</font></li>; a single <a> and <font>; or plain text. any
+::  <a> directly followed by a <font> is an article, which skips the
+::  "see more headlines" link
+::
+++  cluster
+  |=  desc=@t
+  ^-  (list link:sur)
+  ::  &nbsp; isn't an xml entity
+  =/  fixed=@t
+    %-  crip
+    (rash desc (star ;~(pose (cold ' ' (jest '&nbsp;')) next)))
+  =/  doc  (de-xml:html (rap 3 ~['<div>' fixed '</div>']))
+  ?~  doc  ~
+  (articles u.doc)
+::
+::  +articles: every article link in the tree. plain recursion: passing
+::  this arm to turn from inside itself fails with fuse-loop
+::
+++  articles
+  |=  m=manx
+  ^-  (list link:sur)
+  =/  out=(list link:sur)  (pairs c.m)
+  =/  cs=marl  c.m
+  |-  ^-  (list link:sur)
+  ?~  cs  out
+  $(cs t.cs, out (weld out (articles i.cs)))
+::  +pairs: article links among siblings: an <a> directly followed by a
+::  <font> naming the publisher
+::
+++  pairs
+  |=  cs=marl
+  ^-  (list link:sur)
+  ?~  cs  ~
+  ?.  &(=('a' (tag i.cs)) ?=(^ t.cs) =('font' (tag i.t.cs)))
+    $(cs t.cs)
+  =/  l  (evidence (text i.cs) (attr i.cs 'href') (text i.t.cs))
+  ?~  l  $(cs t.t.cs)
+  [u.l $(cs t.t.cs)]
+::  +drop-suffix: 'Headline - Publisher' to 'Headline'
+::
+++  drop-suffix
+  |=  [t=@t publisher=@t]
+  ^-  @t
+  ?:  =('' publisher)  t
+  =/  suffix  (rap 3 ~[' - ' publisher])
+  =/  n  (met 3 suffix)
+  =/  m  (met 3 t)
+  ?.  &((gth m n) =(suffix (rsh [3 (sub m n)] t)))  t
+  (end [3 (sub m n)] t)
 ::  +evidence: a related-article link, or ~ if it's empty, spam or not
 ::  on the web
 ::
@@ -319,8 +378,23 @@
 ++  tag
   |=  m=manx
   ^-  @t
-  ?@  n.g.m  n.g.m
-  (rap 3 ~[-.n.g.m ':' +.n.g.m])
+  (name n.g.m)
+::
+++  name
+  |=  n=mane
+  ^-  @t
+  ?@  n  n
+  (rap 3 ~[-.n ':' +.n])
+::  +attr: an attribute's value, or ''
+::
+++  attr
+  |=  [m=manx n=@t]
+  ^-  @t
+  =/  as  a.g.m
+  |-
+  ?~  as  ''
+  ?:  =(n (name n.i.as))  (crip v.i.as)
+  $(as t.as)
 ::
 ++  kids
   |=  [m=manx t=@t]
@@ -388,41 +462,42 @@
     ==
     (star lus)
   ==
-::  +rfc822: 'Fri, 25 Sep 2026 20:50:00 -0700' to utc. stud reads the
-::  date but ignores the offset, so it's applied here
+::  +rfc822: an rss date to utc: 'Fri, 25 Sep 2026 20:50:00 -0700' (google
+::  trends), 'Sat, 26 Sep 2026 08:52:37 GMT' (google news). stud rejects
+::  GMT and ignores offsets, so this parses them itself
 ::
 ++  rfc822
   |=  t=@t
   ^-  (unit @da)
-  =/  d  (stud:chrono:userlib t)
-  ?~  d  ~
-  =/  base=@da  (year u.d)
   =/  tt  (trip t)
-  =/  off
-    %+  rush  (crip (slag (sub (lent tt) (min 5 (lent tt))) tt))
-    ;~(plug ;~(pose (cold %.y lus) (cold %.n hep)) dem)
-  ?~  off  `base
-  =/  shift=@dr
-    (add (mul (div +.u.off 100) ~h1) (mul (mod +.u.off 100) ~m1))
-  ?:  -.u.off
-    `(sub base shift)
-  `(add base shift)
-::  +gdelt-date: '20260925T123000Z'
-::
-++  gdelt-date
-  |=  t=@t
-  ^-  (unit @da)
+  ::  the weekday is redundant
+  =/  comma  (find ", " tt)
+  =?  tt  ?=(^ comma)  (slag (add 2 u.comma) tt)
   =/  two  (bass 10 (stun [2 2] dit))
-  %+  rush  t
-  %+  cook
-    |=  [y=@ud m=@ud d=@ud h=@ud n=@ud s=@ud]
-    (year [[%.y y] m [d h n s ~]])
-  ;~  plug
-    (bass 10 (stun [4 4] dit))
-    two
-    two
-    ;~(pfix (just 'T') two)
-    two
-    ;~(sfix two (just 'Z'))
-  ==
+  =/  zone
+    ;~  pose
+      (cold `[? @ud]`[%.y 0] ;~(pose (jest 'GMT') (jest 'UTC') (just 'Z')))
+      ;~(plug ;~(pose (cold %.y lus) (cold %.n hep)) (bass 10 (stun [4 4] dit)))
+    ==
+  =/  parsed
+    %+  rust  tt
+    ;~  plug
+      (bass 10 (stun [1 2] dit))
+      ;~(pfix ace (stun [3 3] alf))
+      ;~(pfix ace (bass 10 (stun [4 4] dit)))
+      ;~(pfix ace two)
+      ;~(pfix col two)
+      ;~(pfix col two)
+      ;~(pfix ace zone)
+    ==
+  ?~  parsed  ~
+  =/  [d=@ud mon=tape y=@ud h=@ud n=@ud s=@ud plus=? off=@ud]  u.parsed
+  =/  months=(list tape)
+    ~["jan" "feb" "mar" "apr" "may" "jun" "jul" "aug" "sep" "oct" "nov" "dec"]
+  =/  m  (find ~[(cass mon)] months)
+  ?~  m  ~
+  =/  base=@da  (year [[%.y y] +(u.m) [d h n s ~]])
+  =/  shift=@dr  (add (mul (div off 100) ~h1) (mul (mod off 100) ~m1))
+  ::  -0700 is seven hours behind utc
+  `?:(plus (sub base shift) (add base shift))
 --

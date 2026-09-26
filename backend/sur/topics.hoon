@@ -17,13 +17,14 @@
   ==
 ::  +kind: which fetcher/parser a source uses
 ::
-+$  kind  ?(%gtrends %hn %gdelt)
++$  kind  ?(%gtrends %hn %gnews)
 ::  +source: a configured feed
 ::
-::    param: %gtrends a region ('US'), %gdelt its OR'd search terms
-::    ('football OR cricket'), %hn unused
-::    hint: category for topics the keyword rules can't place; gdelt
-::    sources take their query's category
+::    param: %gtrends a region ('US'), %gnews a google news topic
+::    ('SPORTS'; the US edition), %hn unused
+::    hint: for %gnews, the category of its section, which every topic
+::    from it gets. otherwise a fallback for topics the keyword rules
+::    can't place
 ::
 +$  source
   $:  =kind
@@ -36,16 +37,19 @@
 +$  link  [title=@t url=@t publisher=@t]
 ::  +topic: one trending item
 ::
-::    classification: how categories were picked. %rules: keywords in
-::    the title and links; %hint: the source's hint; %unclassified: %other
+::    classification: how categories were picked. %source: the source's
+::    own section (google news); %rules: keywords in the title and links;
+::    %hint: the source's fallback; %unclassified: %other
 ::    date: when the source dated it (fetch time if it didn't)
-::    score: google trends' approximate searches, hn points
-::    links: google trends' news items, the hn thread
+::    score: google trends' approximate searches, hn points, the number
+::    of articles in a google news story cluster
+::    links: google trends' news items, the hn story and thread, the
+::    articles in a google news cluster
 ::
 +$  topic
   $:  source=source-id
       categories=(set category)
-      classification=?(%rules %hint %unclassified)
+      classification=?(%source %rules %hint %unclassified)
       date=@da
       title=@t
       content=@t

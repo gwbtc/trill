@@ -1,5 +1,1 @@
-- OK I logged in a second ship, "~nec", and made a few posts. I just tried following it with ~zod in the UI and the UI crashed, got this in the browser console:
-Uncaught TypeError: pubkey.slice is not a function
-    at RightRail.tsx:190:27
-    at Array.map (<anonymous>)
-    at RightRail (RightRail.tsx:183:24)
+Known gap (not a bug): a ship re-sends its profile when its own follows change, not when it gains a follower. Other followers' copies can show a slightly out-of-date follower count. Suggestions aren't affected.
