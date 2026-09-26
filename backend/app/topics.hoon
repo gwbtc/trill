@@ -6,21 +6,40 @@
 ::      /x/topics/<source>  (list topic) from one source
 ::      /x/category/<cat>   (list topic) in a category (%world, %sports..)
 ::      /x/sources          (map source-id source)
-::      /x/status           [every next errors fetched]
+::      /x/status           [every next errors fetched gdelt]
 ::
 ::    e.g. .^((list topic:topics) %gx /=topics=/topics/noun)
+::
+::    :topics %print  logs the saved topics to the terminal
 ::
 /-  sur=topics
 /+  default-agent, dbug, lib=topics
 |%
 +$  card  card:agent:gall
-+$  state-1
-  $:  %1
++$  state-2
+  $:  %2
       sources=(map source-id:sur source:sur)
       snapshots=(map source-id:sur snapshot:sur)
       errors=(map source-id:sur [at=@da msg=@t])  ::  last failed fetch
       every=@dr
       next=(unit @da)                             ::  pending timer
+      gdelt=gdelt-queue
+  ==
+::  +gdelt-queue: gdelt allows one request every five seconds and counts
+::  slow requests still in flight, so its sources are fetched one at a
+::  time, each starting +gdelt-gap after the previous one answered.
+::  busy: a request is in flight or the gap hasn't passed
+::
++$  gdelt-queue  [queue=(list source-id:sur) busy=?]
+++  gdelt-gap  ~s10
+::
++$  state-1
+  $:  %1
+      sources=(map source-id:sur source:sur)
+      snapshots=(map source-id:sur snapshot:sur)
+      errors=(map source-id:sur [at=@da msg=@t])
+      every=@dr
+      next=(unit @da)
   ==
 ::
 ::  +default-sources: trend-collector's set. five google trends regions,
@@ -54,48 +73,55 @@
   ::
     `(list [source-id:sur source:sur])`~[[%hn [%hn '' ~ %.y]]]
   ==
-::
-::  +fetch-card: a %chain fetch starts the next gdelt source once it's
-::  answered (see +fetch-all)
+::  +fetch-card: gdelt fetches are marked on the wire, so their answer
+::  starts the gap even if the source was deleted meanwhile
 ::
 ++  fetch-card
-  |=  [id=source-id:sur =source:sur chain=?]
+  |=  [id=source-id:sur =source:sur]
   ^-  card
-  =/  =wire  ?:(chain /fetch/[id]/chain /fetch/[id])
+  =/  =wire  ?:(?=(%gdelt kind.source) /fetch/[id]/gdelt /fetch/[id])
   [%pass wire %arvo %i %request (request:lib source) *outbound-config:iris]
-::  +fetch-all: every enabled source. gdelt allows one request every
-::  five seconds and counts slow requests still in flight, so its
-::  sources go one at a time: each starts six seconds after the previous
-::  one answers
+::  +fetch-all: every enabled source; gdelt ones through the queue
 ::
 ++  fetch-all
-  |=  sources=(map source-id:sur source:sur)
-  ^-  (list card)
-  =/  first  (next-gdelt sources ~)
-  %+  weld
-    %+  murn  ~(tap by sources)
-    |=  [id=source-id:sur s=source:sur]
-    ?:  |(!enabled.s ?=(%gdelt kind.s))  ~
-    `(fetch-card id s %.n)
-  ?~  first  ~
-  ~[(fetch-card u.first (~(got by sources) u.first) %.y)]
-::  +next-gdelt: the enabled gdelt source after .after, in id order;
-::  the first one if .after is ~
-::
-++  next-gdelt
-  |=  [sources=(map source-id:sur source:sur) after=(unit source-id:sur)]
-  ^-  (unit source-id:sur)
+  |=  s=state-2
+  ^-  (quip card state-2)
+  =/  now=(list card)
+    %+  murn  ~(tap by sources.s)
+    |=  [id=source-id:sur src=source:sur]
+    ?:  |(!enabled.src ?=(%gdelt kind.src))  ~
+    `(fetch-card id src)
   =/  ids=(list source-id:sur)
     %-  sort  :_  aor
-    %+  murn  ~(tap by sources)
-    |=  [id=source-id:sur s=source:sur]
-    ?.  &(enabled.s ?=(%gdelt kind.s))  ~
+    %+  murn  ~(tap by sources.s)
+    |=  [id=source-id:sur src=source:sur]
+    ?.  &(enabled.src ?=(%gdelt kind.src))  ~
     `id
-  ?~  after  ?~(ids ~ `i.ids)
+  =^  later  s  (pump (enqueue s ids))
+  [(weld now later) s]
+::  +enqueue: add gdelt sources to the queue, skipping queued ones
+::
+++  enqueue
+  |=  [s=state-2 ids=(list source-id:sur)]
+  ^-  state-2
+  =/  queued  (silt queue.gdelt.s)
+  =.  queue.gdelt.s
+    (weld queue.gdelt.s (skip ids |=(i=source-id:sur (~(has in queued) i))))
+  s
+::  +pump: start the next queued gdelt source, unless one is in flight or
+::  within the gap. skips sources deleted or disabled since queued
+::
+++  pump
+  |=  s=state-2
+  ^-  (quip card state-2)
+  ?:  busy.gdelt.s  `s
   |-
-  ?~  ids  ~
-  ?.  =(u.after i.ids)  $(ids t.ids)
-  ?~(t.ids ~ `i.t.ids)
+  ?~  queue.gdelt.s  `s
+  =/  src  (~(get by sources.s) i.queue.gdelt.s)
+  ?.  &(?=(^ src) enabled.u.src ?=(%gdelt kind.u.src))
+    $(queue.gdelt.s t.queue.gdelt.s)
+  :-  ~[(fetch-card i.queue.gdelt.s u.src)]
+  s(gdelt [t.queue.gdelt.s %.y])
 ::  +stamp: parsed topics tagged with their source and categories
 ::
 ++  stamp
@@ -123,13 +149,40 @@
   ^-  (list topic:sur)
   (skim topics |=(t=topic:sur (~(has in `(set @tas)`categories.t) cat)))
 ::
-++  newest
-  |=  topics=(list topic:sur)
+::  +saved: every source's topics, newest first
+::
+++  saved
+  |=  snapshots=(map source-id:sur snapshot:sur)
   ^-  (list topic:sur)
-  (sort topics |=([a=topic:sur b=topic:sur] (gth date.a date.b)))
+  ::  typed before sorting: sort over the bare zing fails with fuse-loop
+  =/  all=(list topic:sur)
+    (zing (turn ~(val by snapshots) |=(s=snapshot:sur topics.s)))
+  (sort all |=([a=topic:sur b=topic:sur] (gth date.a date.b)))
+::  +print-topics: one line per topic, for :topics %print
+::
+::    ~2026.9.26..05.47.04  gdelt-sports  sports  Title
+::
+++  print-topics
+  |=  topics=(list topic:sur)
+  ^-  tang
+  :-  leaf+"%topics: {<(lent topics)>} saved"
+  %+  turn  topics
+  |=  t=topic:sur
+  ^-  tank
+  =/  cats=tape
+    %-  zing
+    %+  join  ","
+    (turn ~(tap in categories.t) |=(c=category:sur (trip c)))
+  :-  %leaf
+  ;:  weld
+    (scow %da (sub date.t (mod date.t ~s1)))
+    "  "  (trip source.t)
+    "  "  cats
+    "  "  (trip title.t)
+  ==
 --
 ::
-=|  state-1
+=|  state-2
 =*  state  -
 %-  agent:dbug
 ^-  agent:gall
@@ -140,38 +193,54 @@
 ++  on-init
   ^-  (quip card _this)
   =/  at  (add now.bowl ~h1)
-  :_  this(sources default-sources, every ~h1, next `at)
-  [(timer-card at) (fetch-all default-sources)]
+  =.  state  state(sources default-sources, every ~h1, next `at)
+  =^  cards  state  (fetch-all state)
+  [[(timer-card at) cards] this]
 ::
 ++  on-save  !>(state)
 ::
 ++  on-load
   |=  old=vase
   ^-  (quip card _this)
+  =/  ver  -:;;(^ q.old)
   ::  %0 was a pre-release shape (per-source categories); start over
-  ?:  =(%0 -:;;(^ q.old))  on-init
-  `this(state !<(state-1 old))
+  ?:  =(%0 ver)  on-init
+  ?:  =(%1 ver)
+    =/  o  !<(state-1 old)
+    `this(state [%2 sources.o snapshots.o errors.o every.o next.o [~ %.n]])
+  `this(state !<(state-2 old))
 ::
 ++  on-poke
   |=  [=mark =vase]
   ^-  (quip card _this)
   ?>  =(our src):bowl
   ?.  ?=(%noun mark)  (on-poke:def mark vase)
+  ::  :topics %print  logs the saved topics to the terminal
+  ?@  q.vase
+    ?.  =(%print q.vase)  (on-poke:def mark vase)
+    %-  (slog (print-topics (saved snapshots)))
+    `this
   =/  act  ;;(action:sur q.vase)
   ?-  -.act
-      %fetch  [(fetch-all sources) this]
+      %fetch
+    =^  cards  state  (fetch-all state)
+    [cards this]
   ::
       %add-source
-    :_  this(sources (~(put by sources) id.act source.act))
-    ?.  enabled.source.act  ~
-    ~[(fetch-card id.act source.act %.n)]
+    =.  sources  (~(put by sources) id.act source.act)
+    ?.  enabled.source.act  `this
+    ?.  ?=(%gdelt kind.source.act)
+      [~[(fetch-card id.act source.act)] this]
+    =^  cards  state  (pump (enqueue state ~[id.act]))
+    [cards this]
   ::
       %del-source
     :-  ~
     %=  this
-      sources    (~(del by sources) id.act)
-      snapshots  (~(del by snapshots) id.act)
-      errors     (~(del by errors) id.act)
+      sources      (~(del by sources) id.act)
+      snapshots    (~(del by snapshots) id.act)
+      errors       (~(del by errors) id.act)
+      queue.gdelt  (skip queue.gdelt |=(i=source-id:sur =(i id.act)))
     ==
   ::
       %set-interval
@@ -193,10 +262,10 @@
   ::
       [%x %status ~]
     =/  fetched  (~(run by snapshots) |=(s=snapshot:sur fetched.s))
-    ``noun+!>([every=every next=next errors=errors fetched=fetched])
+    ``noun+!>([every=every next=next errors=errors fetched=fetched gdelt=gdelt])
   ::
       [%x %topics ~]
-    ``noun+!>((newest (zing (turn ~(val by snapshots) |=(s=snapshot:sur topics.s)))))
+    ``noun+!>((saved snapshots))
   ::
       [%x %topics id=@ ~]
     =/  s  (~(get by snapshots) id.pole)
@@ -204,8 +273,7 @@
     ``noun+!>(topics.u.s)
   ::
       [%x %category cat=@ ~]
-    =/  all  (zing (turn ~(val by snapshots) |=(s=snapshot:sur topics.s)))
-    ``noun+!>((newest (in-category cat.pole all)))
+    ``noun+!>((in-category cat.pole (saved snapshots)))
   ==
 ::
 ++  on-arvo
@@ -216,30 +284,32 @@
     ?.  ?=([%behn %wake *] sign-arvo)  `this
     ?.  =(next (slaw %da i.t.wire))  `this
     =/  at  (add now.bowl every)
-    :_  this(next `at)
-    [(timer-card at) (fetch-all sources)]
+    =.  next  `at
+    =^  cards  state  (fetch-all state)
+    [[(timer-card at) cards] this]
   ::
-      [%stagger @ ~]
+  ::  the gap after a gdelt answer has passed
+      [%gdelt-gap ~]
     ?.  ?=([%behn %wake *] sign-arvo)  `this
-    =/  src  (~(get by sources) i.t.wire)
-    ?.  ?=([~ *] src)  `this
-    ?.  enabled.u.src  `this
-    [~[(fetch-card i.t.wire u.src %.y)] this]
+    =.  busy.gdelt  %.n
+    =^  cards  state  (pump state)
+    [cards this]
+  ::
+  ::  state-1's gdelt spacing timers, possibly still pending
+      [%stagger @ ~]  `this
   ::
       [%fetch @ *]
     ?.  ?=([%iris %http-response *] sign-arvo)  `this
+    =/  res=client-response:iris  +>.sign-arvo
+    ?:  ?=(%progress -.res)  `this
+    ::  a gdelt answer, whatever the outcome, starts the gap
+    =/  gap=(list card)
+      ?.  ?=([%fetch @ %gdelt ~] wire)  ~
+      ~[[%pass /gdelt-gap %arvo %b %wait (add now.bowl gdelt-gap)]]
     =/  id=source-id:sur  i.t.wire
     =/  src  (~(get by sources) id)
     ::  deleted while the request was in flight
-    ?~  src  `this
-    =/  res=client-response:iris  +>.sign-arvo
-    ?:  ?=(%progress -.res)  `this
-    ::  answered, whatever the outcome: start the next gdelt source
-    =/  chain=(list card)
-      ?.  ?=([%fetch @ %chain ~] wire)  ~
-      =/  nxt  (next-gdelt sources `id)
-      ?~  nxt  ~
-      ~[[%pass /stagger/[u.nxt] %arvo %b %wait (add now.bowl ~s6)]]
+    ?~  src  [gap this]
     =/  out=(each (list topic:sur) @t)
       ?.  ?=(%finished -.res)  [%| 'request cancelled']
       =/  status  status-code.response-header.res
@@ -252,8 +322,8 @@
       [%& (stamp id u.src p.parsed)]
     ?:  ?=(%| -.out)
       ~&  [%topics-fetch-failed id p.out]
-      [chain this(errors (~(put by errors) id [now.bowl p.out]))]
-    :-  chain
+      [gap this(errors (~(put by errors) id [now.bowl p.out]))]
+    :-  gap
     %=  this
       snapshots  (~(put by snapshots) id [now.bowl p.out])
       errors     (~(del by errors) id)
