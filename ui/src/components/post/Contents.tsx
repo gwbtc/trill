@@ -1,4 +1,4 @@
-import { safeHref } from "@/logic/utils";
+import { linkLabel, safeHref } from "@/logic/utils";
 import type {
   Block,
   Inline,
@@ -149,7 +149,13 @@ function LinkParser({ href, show }: { href: string; show: string }) {
   ) : isImg ? (
     <img className="inline-pic" src={href} />
   ) : (
-    safeHref(href) ? <a href={href}>{show}</a> : <span>{show}</span>
+    safeHref(href) ? (
+      <a href={href} title={href}>
+        {linkLabel(show)}
+      </a>
+    ) : (
+      <span>{linkLabel(show)}</span>
+    )
   );
 }
 function Heading({ string, num }: { string: string; num: number }) {

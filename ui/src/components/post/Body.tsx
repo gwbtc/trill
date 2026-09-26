@@ -1,4 +1,4 @@
-import { safeHref } from "@/logic/utils";
+import { linkLabel, safeHref } from "@/logic/utils";
 import type {
   // TODO ref backend fetching!!
   Reference,
@@ -124,8 +124,8 @@ function Inlin({ i }: { i: Inline }) {
           "text" in t ? (
             <span key={t.text + i}>{t.text}</span>
           ) : (
-            <a key={t.link.href + i} href={t.link.href}>
-              {t.link.show}
+            <a key={t.link.href + i} href={t.link.href} title={t.link.href}>
+              {linkLabel(t.link.show)}
             </a>
           ),
         )}
@@ -181,7 +181,13 @@ function LinkParser({ href, show }: { href: string; show: string }) {
   ) : isImg ? (
     <img className="inline-pic" src={href} />
   ) : (
-    safeHref(href) ? <a href={href}>{show}</a> : <span>{show}</span>
+    safeHref(href) ? (
+      <a href={href} title={href}>
+        {linkLabel(show)}
+      </a>
+    ) : (
+      <span>{linkLabel(show)}</span>
+    )
   );
 }
 function Heading({ string, num }: { string: string; num: number }) {

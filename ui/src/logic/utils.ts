@@ -233,6 +233,15 @@ export function parseBigint(dm: DMRaw): DM {
   return { ...dm, peer, lastId, lastRead, delivery: dm.delivery || {} };
 }
 
+// the text of a link: a bare url is cut to `max` characters with an
+// ellipsis, since long ones only take up space (the href keeps it whole).
+// other link text is left alone
+export function linkLabel(show: string, max = 30): string {
+  const s = show.trim();
+  if (!/^(https?:\/\/|www\.)/i.test(s) || s.length <= max) return show;
+  return `${s.slice(0, max)}…`;
+}
+
 // only http(s) urls from remote content (posts, profiles, DMs) may become
 // hrefs; javascript:, data: etc. are dropped
 export function safeHref(url: string): string | undefined {
