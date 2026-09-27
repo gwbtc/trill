@@ -17,6 +17,9 @@
       hosting=(map @da debate:sur)
       joined=(map key:sur [=debate:sur total=@ud])   ::  mirrors
       invites=(map key:sur invitation:sur)
+      ::  others' presence: the ships the UI asked us to track
+      tracked=(set ship)
+      presences=(map ship presence:sur)
   ==
 --
 ::
@@ -72,6 +75,11 @@
     :_  this
     ~[[%give %fact ~ %json !>((frond:enjs:format %all all:hc))]]
   ::
+      ::  the debate we're in, for anyone who asks (profiles, feeds)
+      [%presence ~]
+    :_  this
+    ~[[%give %fact ~ %noun !>(current:hc)]]
+  ::
       [%debate id=@ ~]
     =/  id  `@da`(slav %ud id.pole)
     =/  d  (~(get by hosting) id)
@@ -92,8 +100,10 @@
         %watch-ack
       ?~  p.sign  `this
       ::  refused: removed, or no such debate
-      :_  this(joined (~(del by joined) key))
-      ~[(ui-card:hc key [%gone ~])]
+      =/  before  current:hc
+      =.  joined  (~(del by joined) key)
+      :_  this
+      [(ui-card:hc key [%gone ~]) (presence-cards:hc before)]
     ::
         %kick
       ?.  (~(has by joined) key)  `this
@@ -103,9 +113,10 @@
         %fact
       ::  from another ship: an untyped noun, so clammed, not !<
       =/  upd  ;;(update:sur q.q.cage.sign)
+      =/  before  current:hc
       =.  joined  (mirror:hc key upd)
       :_  this
-      ~[(ui-card:hc key upd)]
+      [(ui-card:hc key upd) (presence-cards:hc before)]
     ==
   ::
       [%act @ @ ~]
@@ -117,6 +128,29 @@
     ~[(ui-error:hc key (tang-text:hc u.p.sign))]
   ::
       [%invite *]  `this
+  ::
+      ::  a tracked ship's presence
+      [%presence @ ~]
+    =/  who  (slav %p i.t.wire)
+    ?-  -.sign
+      %poke-ack   `this
+      %watch-ack  `this                       ::  a nack: no %debates there
+        %kick
+      ?.  (~(has in tracked) who)  `this
+      :_  this
+      ~[[%pass wire %agent [who %debates] %watch /presence]]
+    ::
+        %fact
+      =/  p  ;;((unit presence:sur) q.q.cage.sign)
+      =.  presences
+        ?~  p  (~(del by presences) who)
+        (~(put by presences) who u.p)
+      :_  this
+      :~  %-  ui-fact:hc
+          %+  frond:enjs:format  %presence
+          (pairs:enjs:format ~[ship+s+(scot %p who) presence+(presence:en:dj p)])
+      ==
+    ==
   ==
 ::
 ++  on-arvo
@@ -155,15 +189,26 @@
       %create
     =/  bad  (valid-config:lib config.cmd now.bowl)
     ?^  bad  ~|(u.bad !!)
+    ::  one debate at a time: hosting counts until it ends
+    ?:  (busy ~)  ~|('you are already in a debate' !!)
+    =/  before  current
     =/  id  (fresh-host-id now.bowl)
     =/  d  (new-debate:lib [our.bowl id] config.cmd)
     =.  invited.d  (~(del in invite.cmd) our.bowl)
     =.  hosting  (~(put by hosting) id d)
     =/  init=(list card)  ~[(ui-card [our.bowl id] [%init (redact:lib d) 0])]
     :_  state
-    :(weld init (timer-cards id config.cmd) (invite-cards d invited.d))
+    ;:  weld
+      init
+      (timer-cards id config.cmd)
+      (invite-cards d invited.d)
+      (presence-cards before)
+    ==
   ::
       %act
+    ::  one debate at a time: no joining another while in one
+    ?:  &(?=(%join -.action.cmd) (busy `key.cmd))
+      ~|('you are already in a debate' !!)
     ?:  =(host.key.cmd our.bowl)
       (host-act our.bowl action.cmd)
     ::  a guest: to the host, and follow the debate if we weren't
@@ -187,9 +232,10 @@
   ::
       %forget
     ?:  =(host.key.cmd our.bowl)  `state
+    =/  before  current
     =.  joined  (~(del by joined) key.cmd)
     :_  state
-    :~  :*  %pass  /act/(scot %p host.key.cmd)/(scot %ud id.key.cmd)
+    :*  :*  %pass  /act/(scot %p host.key.cmd)/(scot %ud id.key.cmd)
             %agent  [host.key.cmd %debates]  %poke
             %noun  !>(`msg:sur`[%action [%leave id.key.cmd]])
         ==
@@ -197,11 +243,63 @@
             %agent  [host.key.cmd %debates]  %leave  ~
         ==
         (ui-card key.cmd [%gone ~])
+        (presence-cards before)
     ==
+  ::
+      %track
+    =/  who  (~(del in who.cmd) our.bowl)
+    =/  new=(list ship)  ~(tap in (~(dif in who) tracked))
+    =/  old=(list ship)  ~(tap in (~(dif in tracked) who))
+    =/  watches=(list card)
+      %+  turn  new
+      |=  s=ship
+      [%pass /presence/(scot %p s) %agent [s %debates] %watch /presence]
+    =/  leaves=(list card)
+      %+  turn  old
+      |=  s=ship
+      [%pass /presence/(scot %p s) %agent [s %debates] %leave ~]
+    =.  tracked  who
+    =.  presences
+      %-  malt
+      ^-  (list [ship presence:sur])
+      %+  skim  ~(tap by presences)
+      |=([s=ship *] (~(has in who) s))
+    [(weld watches leaves) state]
   ::
       %dismiss
     =.  invites  (~(del by invites) key.cmd)
     [~[(ui-fact (frond:enjs:format %dismissed (key:en:dj key.cmd)))] state]
+  ==
+::  +current: the debate we're in, as others see it: the active one we
+::  host, argue in or watch as an onlooker (one at a time)
+::
+++  current
+  ^-  (unit presence:sur)
+  =/  ds=(list debate:sur)
+    (weld ~(val by hosting) (turn ~(val by joined) |=([d=debate:sur *] d)))
+  |-
+  ?~  ds  ~
+  =/  p  (presence-of:lib i.ds our.bowl)
+  ?^  p  p
+  $(ds t.ds)
+::  +busy: whether we're in some other active debate than k
+::
+++  busy
+  |=  k=(unit key:sur)
+  ^-  ?
+  =/  c  current
+  ?~  c  %.n
+  !=(`key.u.c k)
+::  +presence-cards: tell our /presence watchers and our UI, if what we're
+::  in changed since before
+::
+++  presence-cards
+  |=  before=(unit presence:sur)
+  ^-  (list card)
+  =/  now  current
+  ?:  =(now before)  ~
+  :~  [%give %fact ~[/presence] %noun !>(now)]
+      (ui-fact (frond:enjs:format %current (presence:en:dj now)))
   ==
 ::  +host-act: an action on a debate we host, from src
 ::
@@ -219,6 +317,7 @@
 ++  hosted
   |=  [id=@da old=debate:sur new=debate:sur act=action:sur]
   ^-  (quip card _state)
+  =/  before  current
   =.  hosting  (~(put by hosting) id new)
   =/  total  ~(wyt by votes.new)
   =/  meta=update:sur
@@ -243,7 +342,7 @@
   =/  invs=(list card)
     ?.  ?=(%invite -.act)  ~
     (invite-cards new (~(dif in invited.new) invited.old))
-  [:(weld sends kicks invs) state]
+  [:(weld sends kicks invs (presence-cards before)) state]
 ::  +send: an update to the debate's subscribers and our UI
 ::
 ++  send
@@ -373,9 +472,14 @@
     %+  turn  ~(val by joined)
     |=([d=debate:sur t=@ud] (debate:en:dj d t))
   =/  invs=(list json)  (turn ~(val by invites) invitation:en:dj)
+  =/  others=(list [@t json])
+    %+  turn  ~(tap by presences)
+    |=([s=ship p=presence:sur] [(scot %p s) (presence:en:dj `p)])
   %-  pairs:enjs:format
   :~  debates+a+(weld hosted followed)
       invites+a+invs
+      current+(presence:en:dj current)
+      presences+(pairs:enjs:format others)
   ==
 ::  +hark-card: a notification for an invitation
 ::

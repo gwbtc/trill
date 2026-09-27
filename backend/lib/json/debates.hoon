@@ -80,6 +80,20 @@
     ==
   ==
 ::
+::  +presence: the debate a ship is in, or null
+::
+++  presence
+  |=  p=(unit presence:sur)
+  ^-  json
+  ?~  p  ~
+  %-  pairs
+  :~  key+(key key.u.p)
+      topic+s+topic.u.p
+      sides+(pairs ~[a+s+a.sides.u.p b+s+b.sides.u.p])
+      stage+s+stage.u.p
+      role+s+role.u.p
+  ==
+::
 ++  invitation
   |=  i=invitation:sur
   ^-  json
@@ -114,6 +128,7 @@
       watch+key
       forget+key
       dismiss+key
+      track+(ot ~[who+(cu |=(l=(list @p) (silt l)) (ar ship))])
   ==
 ::  +create: the config, and who to invite, in one object
 ::

@@ -73,6 +73,24 @@
       [%watch =key]                         ::  follow one, e.g. from a link
       [%forget =key]                        ::  stop following, leave it
       [%dismiss =key]                       ::  drop an invitation
+      ::  whose presence to follow (replaces the set): the UI sends the
+      ::  ships we follow, and any profile being looked at
+      [%track who=(set ship)]
+  ==
+::
+::  +presence: the debate a ship is in, as it tells anyone who asks
+::  (/presence). a ship is in one debate at a time: the one it hosts or
+::  joined, until that ends or it leaves
+::
+::    role: the side it argues for, %onlooker, or %host for a host that
+::    hasn't taken a side
+::
++$  presence
+  $:  =key
+      topic=@t
+      sides=[a=@t b=@t]
+      =stage
+      role=?(side %onlooker %host)
   ==
 ::
 ::  +invitation: a host telling a ship it's invited

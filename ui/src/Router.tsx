@@ -5,6 +5,7 @@ import { Switch, Router, Redirect, Route } from "wouter";
 import { P404 } from "./pages/Error";
 import { lazy, Suspense, useEffect } from "react";
 import Modal from "./components/modals/Modal";
+import { DebatePresenceSync } from "./components/debates/Presence";
 
 const WELCOME_SHOWN_KEY = "nostrill-welcome-shown";
 const Feed = lazy(() => import("@/pages/Feed"));
@@ -53,6 +54,7 @@ export default function r() {
   return (
     <Router base="/apps/nostrill">
       <div id="trill-app">
+        <DebatePresenceSync />
         <div id="trill-shell" className="app-shell">
           <Sidebar />
           <main id="main-column">

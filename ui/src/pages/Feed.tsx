@@ -15,6 +15,7 @@ import FeedStatusModal from "@/components/modals/FeedStatusModal";
 import { getFeedStatusSummary } from "@/logic/feedStatus";
 import { useRelayActions } from "@/hooks/useRelayActions";
 import { RefreshCw, UserPlus } from "lucide-react";
+import { FollowsDebating } from "@/components/debates/Presence";
 
 type FeedType = "global" | "following" | "nostr";
 
@@ -156,6 +157,9 @@ function FeedPage({ t }: { t: FeedType }) {
       <div id="home-composer-prompt" className="feed-composer-wrap">
         <Composer />
       </div>
+
+      {/* live debates the ships we follow are in */}
+      <FollowsDebating />
 
       {/* Feed content */}
       <div id="home-feed" className="trill-feed">

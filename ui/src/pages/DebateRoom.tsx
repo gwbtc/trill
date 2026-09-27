@@ -9,8 +9,10 @@ import {
   canTakeSide,
   canVote,
   debateKey,
+  debatePath,
   moderates,
   parseShips,
+  presenceLabel,
   relativeTime,
   roleOf,
   tallyOf,
@@ -347,6 +349,8 @@ function Tally({ d, our }: { d: Debate; our: string }) {
 
 function Footer({ d, our, role, act }: { d: Debate; our: string; role: ReturnType<typeof roleOf>; act: Act }) {
   const [text, setText] = useState("");
+  const [, navigate] = useLocation();
+  const current = useLocalState((s) => s.currentDebate);
   const id = d.key.id;
 
   if (d.stage === "ended") {
@@ -426,7 +430,20 @@ function Footer({ d, our, role, act }: { d: Debate; our: string; role: ReturnTyp
     );
   }
 
-  // not in it yet
+  // not in it yet. one debate at a time: in another one, you leave that
+  // first (the agent refuses otherwise)
+  if (current && debateKey(current.key) !== debateKey(d.key))
+    return (
+      <div className="debate-footer join">
+        <span>
+          You're {presenceLabel(current)} in <strong>{current.topic}</strong>. Leave it to join this
+          one.
+        </span>
+        <button type="button" className="debate-btn" onClick={() => navigate(debatePath(current.key))}>
+          Go to it
+        </button>
+      </div>
+    );
   const sides = canTakeSide(d, our);
   return (
     <div className="debate-footer join">

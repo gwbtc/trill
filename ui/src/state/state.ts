@@ -31,6 +31,7 @@ import {
   type Debate,
   type DebatesFact,
   type Invitation,
+  type Presence,
 } from "@/logic/debates";
 // TODO handle airlock connection issues
 // the SSE pipeline has a "status-update" event FWIW
@@ -90,6 +91,9 @@ export type LocalState = {
   debates: Map<string, Debate>;
   debateInvites: Map<string, Invitation>;
   debatesLoaded: boolean;
+  // the debate we're in (one at a time), and the ones others we track are in
+  currentDebate: Presence | null;
+  debatePresences: Map<string, Presence>;
   setDmRequests: (requests: DMRequests) => void;
   lastChatFact: DM | null;
   // 
@@ -256,8 +260,18 @@ export const useStore = creator((set, get) => ({
         set({
           debates: new Map(data.all.debates.map((d) => [debateKey(d.key), d])),
           debateInvites: new Map(data.all.invites.map((i) => [debateKey(i.key), i])),
+          currentDebate: data.all.current,
+          debatePresences: new Map(Object.entries(data.all.presences)),
           debatesLoaded: true,
         });
+      } else if ("current" in data) {
+        set({ currentDebate: data.current });
+      } else if ("presence" in data) {
+        const next = new Map(get().debatePresences);
+        const { ship, presence } = data.presence;
+        if (presence) next.set(ship, presence);
+        else next.delete(ship);
+        set({ debatePresences: next });
       } else if ("update" in data) {
         const { key, update } = data.update;
         set({ debates: applyDebateUpdate(get().debates, key, update, ourPatp) });
@@ -479,6 +493,8 @@ export const useStore = creator((set, get) => ({
   debates: new Map(),
   debateInvites: new Map(),
   debatesLoaded: false,
+  currentDebate: null,
+  debatePresences: new Map(),
   setDmRequests: (dmRequests) => set({ dmRequests }),
   lastChatFact: null,
   our: null,

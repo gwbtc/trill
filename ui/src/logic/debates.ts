@@ -45,9 +45,35 @@ export type DebateUpdate =
   | { tally: { votes: Record<string, Side>; total: number } }
   | { gone: null };
 
+// the debate a ship is in: one at a time, the one it hosts or joined,
+// until it ends or they leave
+export type Presence = {
+  key: DebateKey;
+  topic: string;
+  sides: { a: string; b: string };
+  stage: Stage;
+  role: Side | "onlooker" | "host";
+};
+
+// "arguing for Yes", "watching", "hosting"
+export function presenceLabel(p: Presence): string {
+  if (p.role === "host") return "hosting";
+  if (p.role === "onlooker") return "watching";
+  return `arguing for ${p.sides[p.role]}`;
+}
+
 // what the agent sends on /ui
 export type DebatesFact =
-  | { all: { debates: Debate[]; invites: Invitation[] } }
+  | {
+      all: {
+        debates: Debate[];
+        invites: Invitation[];
+        current: Presence | null;
+        presences: Record<string, Presence>;
+      };
+    }
+  | { current: Presence | null }
+  | { presence: { ship: string; presence: Presence | null } }
   | { update: { key: DebateKey; update: DebateUpdate } }
   | { invited: Invitation }
   | { dismissed: DebateKey }
@@ -202,4 +228,33 @@ export function parseShips(text: string): string[] {
         .map((s) => (s.startsWith("~") ? s : `~${s}`)),
     ),
   ];
+}
+
+// whose debate presence to follow: the urbit ships we follow, and the
+// ship whose profile is open (nostr keys have no %debates)
+export function trackedShips(following: Iterable<string>, location: string): string[] {
+  const ships = new Set([...following].filter((id) => id.startsWith("~")));
+  const m = /^\/u\/(~[a-z-]+)(?:\/|$)/.exec(location);
+  if (m) ships.add(m[1]);
+  return [...ships].sort();
+}
+
+// followed ships in live debates, for the feed: one card per debate,
+// naming who's in it
+export function debatesOfFollows(
+  presences: Map<string, Presence>,
+  following: { has: (id: string) => boolean },
+  current: Presence | null,
+): { presence: Presence; ships: string[] }[] {
+  const byDebate = new Map<string, { presence: Presence; ships: string[] }>();
+  for (const [ship, p] of presences) {
+    if (p.stage !== "live" || !following.has(ship)) continue;
+    // the one we're in already has its bar
+    if (current && debateKey(current.key) === debateKey(p.key)) continue;
+    const k = debateKey(p.key);
+    const entry = byDebate.get(k) ?? { presence: p, ships: [] };
+    entry.ships.push(ship);
+    byDebate.set(k, entry);
+  }
+  return [...byDebate.values()].map((e) => ({ ...e, ships: e.ships.sort() }));
 }

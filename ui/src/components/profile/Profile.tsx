@@ -20,6 +20,7 @@ async function copyNpub(pubkey: string) {
   }
 }
 import { getCustomProfileFields, getDisplayName, getFollowerCount, getFollowingCount, getProfileBanner } from "@/logic/userDisplay";
+import { PresenceChip } from "@/components/debates/Presence";
 
 interface Props {
   user: UserType;
@@ -139,6 +140,7 @@ function Profile({
               )}
             </button>
           </div>
+          {"urbit" in user && <PresenceChip ship={user.urbit.patp} isMe={isMe} />}
 
           {customFields.length > 0 && (
             <div className="profile-custom-fields">

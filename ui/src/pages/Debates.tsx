@@ -9,6 +9,7 @@ import {
   debateKey,
   debatePath,
   groupDebates,
+  presenceLabel,
   relativeTime,
   type Debate,
   type Invitation,
@@ -17,7 +18,8 @@ import "@/styles/Debates.css";
 
 export default function Debates() {
   const [, navigate] = useLocation();
-  const { debates, invites, loaded, api, setModal } = useLocalState((s) => ({
+  const { debates, invites, loaded, api, setModal, current } = useLocalState((s) => ({
+    current: s.currentDebate,
     debates: s.debates,
     invites: s.debateInvites,
     loaded: s.debatesLoaded,
@@ -43,7 +45,14 @@ export default function Debates() {
         title="Debates"
         subtitle="Two sides argue, onlookers vote"
         right={
-          <button type="button" className="debate-new-btn" onClick={() => setModal(<NewDebate />)}>
+          <button
+            type="button"
+            className="debate-new-btn"
+            onClick={() => setModal(<NewDebate />)}
+            // one debate at a time: hosting counts too
+            disabled={!!current}
+            title={current ? `You're ${presenceLabel(current)} in "${current.topic}"` : undefined}
+          >
             <Plus size={16} /> New debate
           </button>
         }

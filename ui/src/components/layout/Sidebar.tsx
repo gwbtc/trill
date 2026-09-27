@@ -15,6 +15,7 @@ import { useLocation } from "wouter";
 import useLocalState from "@/state/state";
 import { withoutMuted } from "@/logic/lists";
 import ShipCard from "@/components/ShipCard";
+import { NowInDebate } from "@/components/debates/Presence";
 import { getDmUnreadCount } from "@/logic/dms";
 import "./Sidebar.css";
 
@@ -232,6 +233,9 @@ function SlidingMenu() {
         <ShipCard our={our} goto={goto}/>
       )}
 
+      {/* the debate we're in, if any: under who we are, above the nav */}
+      <NowInDebate />
+
       {/* Nav. on phones this is the bottom bar: the secondary items move
           into its "More" menu */}
       <nav id="left-nav" className="sidebar-nav">
@@ -287,6 +291,7 @@ function SlidingMenu() {
           )}
         </div>
       </nav>
+
 
       {/* Compose Button: a floating button on phones */}
       <button

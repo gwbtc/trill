@@ -180,6 +180,10 @@ export default class IO {
   async dismissDebateInvite(key: DebateKey) {
     return this.poke({ dismiss: key }, "debates");
   }
+  // whose debate presence to follow (replaces the set)
+  async trackDebates(who: string[]) {
+    return this.poke({ track: { who } }, "debates");
+  }
   // scries
 
   async scryFeed(

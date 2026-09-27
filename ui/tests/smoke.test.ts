@@ -89,6 +89,10 @@ import {
   parseShips,
   roleOf,
   tallyOf,
+  trackedShips,
+  debatesOfFollows,
+  presenceLabel,
+  type Presence,
   type Debate,
 } from "../src/logic/debates";
 import { mentionedPubkeys, shortNote, shortNpub, splitNostrRefs } from "../src/logic/nostrRefs";
@@ -1102,6 +1106,41 @@ describe("debates", () => {
     expect(newDebateProblem({ ...ok, start: 100, end: 50 }, 0)).toBe("It has to end after it starts");
     expect(newDebateProblem({ ...ok, invite: ["~nec", "~NOT A SHIP"] })).toMatch(/isn't a ship name/);
     expect(parseShips("nec, ~bus  ~nec\n~wes")).toEqual(["~nec", "~bus", "~wes"]);
+  });
+});
+
+describe("debate presence", () => {
+  const p = (host: string, id: string, stage: "live" | "scheduled", role: Presence["role"]): Presence => ({
+    key: { host, id },
+    topic: `T${id}`,
+    sides: { a: "Yes", b: "No" },
+    stage,
+    role,
+  });
+
+  test("tracks the ships we follow and the open profile, not nostr keys", () => {
+    expect(trackedShips(["~nec", "abcdef", "~bus"], "/u/~wes")).toEqual(["~bus", "~nec", "~wes"]);
+    expect(trackedShips(["~nec"], "/u/~nec/posts")).toEqual(["~nec"]);
+    expect(trackedShips([], "/f")).toEqual([]);
+  });
+
+  test("groups follows by live debate, skipping ours and ones not live", () => {
+    const presences = new Map([
+      ["~nec", p("~nec", "1", "live", "host")],
+      ["~bus", p("~nec", "1", "live", "onlooker")],
+      ["~wes", p("~wes", "2", "scheduled", "host")],
+      ["~sev", p("~sev", "3", "live", "a")],
+      ["~per", p("~per", "4", "live", "host")], // not followed
+    ]);
+    const following = new Set(["~nec", "~bus", "~wes", "~sev"]);
+    const cards = debatesOfFollows(presences, following, p("~sev", "3", "live", "b"));
+    expect(cards.map((c) => [c.presence.key.id, c.ships])).toEqual([["1", ["~bus", "~nec"]]]);
+  });
+
+  test("says what they're doing", () => {
+    expect(presenceLabel(p("~nec", "1", "live", "host"))).toBe("hosting");
+    expect(presenceLabel(p("~nec", "1", "live", "onlooker"))).toBe("watching");
+    expect(presenceLabel(p("~nec", "1", "live", "b"))).toBe("arguing for No");
   });
 });
 

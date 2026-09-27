@@ -92,6 +92,28 @@
     [%& d(invited (~(uni in invited.d) who.act))]
   ==
 ::
+::  +active: not over. a ship is in at most one active debate
+::
+++  active
+  |=  d=debate
+  ^-  ?
+  !?=(%ended stage.d)
+::  +presence-of: who's in debate d, as they tell others: a debater, an
+::  onlooker, or its host; ~ if not in it or it's over
+::
+++  presence-of
+  |=  [d=debate who=ship]
+  ^-  (unit presence)
+  ?.  (active d)  ~
+  =/  role=(unit ?(side %onlooker %host))
+    =/  side  (~(get by debaters.d) who)
+    ?^  side  `u.side
+    ?:  (~(has in onlookers.d) who)  `%onlooker
+    ?:  =(who host.key.d)  `%host
+    ~
+  ?~  role  ~
+  `[key.d topic.config.d sides.config.d stage.d u.role]
+::
 ::  +action-id: the debate an action is for. it's every action's first
 ::  field, but id.act doesn't resolve through the union (find-fork), and
 ::  where it sits depends on the shape: [%end id] vs [%say id text]
