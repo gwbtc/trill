@@ -247,13 +247,27 @@
   ?~  last  ~
   +.u.last
 
+::  +content-list-to-md: blocks trimmed and joined by one blank line. the
+::  parser leaves empty paragraphs and trailing breaks between blocks,
+::  which used to pile up into runs of blank lines
 ++  content-list-to-md
 |=  =content-list:tp  ^-  tape
-  %^  foldi:sr  content-list  ""  |=  [i=@ud b=block:tp acc=tape]
-  =/  block-tape  (block-to-md b)
-  ?:  .=(+(i) (lent content-list))
-  "{acc}{block-tape}"
-  "{acc}{block-tape}\0a\0a"
+  =/  parts=(list tape)
+    %+  murn  content-list
+    |=  b=block:tp
+    =/  t=tape  (trim-ws (block-to-md b))
+    ?~(t ~ `t)
+  (zing (join "\0a\0a" parts))
+::  +trim-ws: without leading or trailing spaces and newlines
+++  trim-ws
+|=  t=tape  ^-  tape
+  =/  ltrim
+    |=  s=tape
+    |-  ^-  tape
+    ?~  s  ~
+    ?.  |(=(' ' i.s) =('\0a' i.s))  s
+    $(s t.s)
+  (flop (ltrim (flop (ltrim t))))
 ++  inline-to-tape
 |=  i=inline:tp  ^-  tape
   ?+  -.i  ""
@@ -263,7 +277,9 @@
   %strike   "~~{(trip p.i)}~~"
   %ship     (scow %p p.i)
   %codespan   "`{(trip p.i)}`"  
-  %link   "[{(trip show.i)}]({(trip href.i)})"
+  ::  a bare url stays bare: "[url](url)" is noise in nostr clients
+  %link   ?:  =(show.i href.i)  (trip href.i)
+          "[{(trip show.i)}]({(trip href.i)})"
   :: %img    "![{(trip alt.i)}]({(trip src.i)})"
   %break  "\0a"
   ==

@@ -8,7 +8,7 @@
   ?-  -.n
     %prof
       =/  ship  (user-to-atom:lib user.n)
-      :-  :~([%ship ship] 'Changed his profile')  /prof/(scot %p ship)
+      :-  :~([%ship ship] 'Changed their profile')  /prof/(scot %p ship)
     %req
       =/  ship  (user-to-atom:lib user.n)
       =/  ship-token  [%ship ship]
@@ -24,7 +24,7 @@
         ::
         ?.  approved.u.solved.n
           :-  :~  ship-token
-                  'Tried to follow you but you rejected his request'
+                  'Tried to follow you but you rejected their request'
               ==
               /req/fols/(scot %p ship)/ng
         ::
@@ -45,7 +45,7 @@
         ::
           ?.  approved.u.solved.n
             :-  :~  ship-token
-                  'Requested access to your feed but you rejected his request'
+                  'Requested access to your feed but you rejected their request'
               ==
               /req/begs/feed/(scot %p ship)/ng
           ::
@@ -69,7 +69,7 @@
             :-  :~  ship-token
                     'Requested access to your thread with id: '
                     ids
-                    ', but you rejected his request'
+                    ', but you rejected their request'
                 ==
                 /req/begs/thread/(scot %p ship)/[ids]/ng
           ::
@@ -106,37 +106,37 @@
         %feed
           ?@  p.+.res
             :-  :~  ship-token
-                    ' received your request to access his feed, but hasn\'t responded yet.'
+                    ' received your request to access their feed, but hasn\'t responded yet.'
                 ==
                 /res/begs/feed/(scot %p ship)/maybe
           ?^  +.p.+.res
             :-  :~  ship-token
-                    ' accepted your request to access his feed'
+                    ' accepted your request to access their feed'
                 ==
                 /res/begs/feed/(scot %p ship)/ok
           ::
             :-  :~  ship-token
-                    ' rejected your request to access his feed'
+                    ' rejected your request to access their feed'
                 ==
                 /res/begs/feed/(scot %p ship)/ng
         %thread
           =/  ids  (scot %ud `@ud`id.res)
          ?@  p.+.res
          :-  :~  ship-token
-                 ' received your request to access his thread of id: '
+                 ' received your request to access their thread of id: '
                  ids
                  ' but hasn\'t responded yet.'
              ==
              /res/begs/thread/(scot %p ship)/[ids]/maybe
        ?^  +.p.+.res
          :-  :~  ship-token
-                 ' accepted your request to access his thread of id:'
+                 ' accepted your request to access their thread of id:'
                  ids
              ==
              /res/begs/thread/(scot %p ship)/[ids]/ok
        :: ::
          :-  :~  ship-token
-                 ' rejected your request to access his thread of id:'
+                 ' rejected your request to access their thread of id:'
                  ids
              ==
              /res/begs/thread/(scot %p ship)/[ids]/ng
@@ -188,7 +188,7 @@
           =/  parents  (spat pidpath)
           =/  ids    (scot %ud `@`child.a)
           =/  pat  (weld hostpath /[sid]/[ids])
-          :-  :~([%ship ship] 'Deleted his reply on:' parents)
+          :-  :~([%ship ship] 'Deleted their reply on:' parents)
               (weld /post/del-reply/(scot %p ship) pat)
         %del-quote
           =/  hostpath=path  (user-to-path:lib -.src.a)
@@ -199,7 +199,7 @@
           =/  pat  (weld hostpath /[sid]/[ids])
           ::  same layout as %del-reply; `parents` (spat of a path, so full
           ::  of /) used to go in as a single knot here as well
-          :-  :~([%ship ship] 'Deleted his quote of:' parents)
+          :-  :~([%ship ship] 'Deleted their quote of:' parents)
               (weld /post/del-quote/(scot %p ship) pat)
         %reaction
           =/  hostpath=path  (user-to-path:lib -.pid.a)
@@ -236,7 +236,7 @@
           =/  ship-token  [%ship ship]
           =/  pubkey  (crip (scow:sr %ux pubkey.n))
           :-  :~  ship-token
-                 ' has changed his Nostr pubkey. The new value is: '
+                 ' has changed their Nostr pubkey. The new value is: '
                 pubkey
               ==
               /nostr/keys/(scot %p ship)/[pubkey]
