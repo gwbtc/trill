@@ -30,7 +30,9 @@ export type NotificationType =
   | { req: Req }
   | { res: Req }
   | { post: Post }
-  | { nostr: Nostr };
+  | { nostr: Nostr }
+  // %debates: a host inviting us
+  | { debate: { invite: { host: Ship; id: string } } };
 
 export interface Notification {
   id: string;

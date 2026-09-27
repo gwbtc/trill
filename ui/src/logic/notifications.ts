@@ -23,13 +23,15 @@ export type NotificationKind =
   | "mention"
   | "deletion"
   | "relay"
-  | "keys";
+  | "keys"
+  | "debate";
 
 export function getNotificationKind(type: NotificationType): NotificationKind {
   if ("req" in type) return "request";
   if ("res" in type) return "response";
   if ("prof" in type) return "profile";
   if ("nostr" in type) return "keys" in type.nostr ? "keys" : "relay";
+  if ("debate" in type) return "debate";
 
   const post = type.post;
   if ("reply" in post) return "reply";
@@ -68,6 +70,10 @@ export function notificationPath(notification: Notification) {
     if (notification.from && "urbit" in notification.from) {
       return `/t/u/${notification.from.urbit.patp}/${notification.postId}`;
     }
+  }
+  if ("debate" in notification.type) {
+    const { host, id } = notification.type.debate.invite;
+    return `/debates/${host}/${id}`;
   }
   if ("post" in notification.type) {
     const post = notification.type.post;
@@ -177,6 +183,11 @@ export function skeinToNote(skein: Skein, our?: string): Result<Notification> {
       const pubkey = path[3];
       type = { nostr: { keys: { user: ship, pubkey } } };
     }
+  }
+  // %debates invitations: /debates/invite/<host>/<dotted @ud id>
+  if (key === "debates" && path[1] === "invite" && path[2] && path[3]) {
+    from = { urbit: patpToFallbackUID(path[2]) };
+    type = { debate: { invite: { host: path[2], id: path[3].replaceAll(".", "") } } };
   }
   if (!type) return { error: "bad skein" };
 

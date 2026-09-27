@@ -47,6 +47,7 @@ const NOTIFICATION_ICONS: Record<NotificationKind, IconName> = {
   deletion: "trash",
   relay: "radio",
   keys: "key",
+  debate: "messages",
 };
 
 export default function NotificationCenter() {

@@ -33,6 +33,7 @@ import type {
 import type { AsyncRes } from "@/types/ui";
 import type { Rope, Skein } from "@/types/hark";
 import type { TopicPrefs } from "@/logic/topics";
+import type { DebateKey, NewDebate } from "@/logic/debates";
 
 // the UI carries full UrbitIDs, but the backend's user decoder
 // (user:de:common) only takes { urbit: "~ship" } | { nostr: "hex" }; an
@@ -157,6 +158,27 @@ export default class IO {
   async subscribeHark(handler: Handler) {
     const res = await this.sub("/ui", handler, "hark");
     return res;
+  }
+  // debates (%debates agent): everything we host or follow, live
+  async subscribeDebates(handler: Handler) {
+    return await this.sub("/ui", handler, "debates");
+  }
+  async createDebate(config: NewDebate) {
+    return this.poke({ create: config }, "debates");
+  }
+  // an action on a debate; guests' go to its host, whose refusals come
+  // back on /ui as { error }
+  async debateAct(key: DebateKey, action: Record<string, unknown>) {
+    return this.poke({ act: { host: key.host, action } }, "debates");
+  }
+  async watchDebate(key: DebateKey) {
+    return this.poke({ watch: key }, "debates");
+  }
+  async forgetDebate(key: DebateKey) {
+    return this.poke({ forget: key }, "debates");
+  }
+  async dismissDebateInvite(key: DebateKey) {
+    return this.poke({ dismiss: key }, "debates");
   }
   // scries
 
@@ -353,13 +375,16 @@ export default class IO {
   }
 
   //
+  // plain hark-action, not hark-action-1: %hark re-dispatches every
+  // non-%new-yarn action-1 as %hark-action with the action-1-typed vase,
+  // which fails its cast (nest-fail), so marking read never worked
   async dismissAllNotifications() {
     const json = { "saw-seam": { desk: "nostrill" } };
-    return this.poke(json, "hark", "hark-action-1");
+    return this.poke(json, "hark", "hark-action");
   }
   async dismissNotification(rope: Rope) {
     const json = { "saw-rope": rope };
-    return this.poke(json, "hark", "hark-action-1");
+    return this.poke(json, "hark", "hark-action");
   }
   //
 

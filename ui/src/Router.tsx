@@ -16,6 +16,8 @@ const DMIndex = lazy(() => import("@/pages/chat/Index"));
 const DMShow = lazy(() => import("@/pages/chat/User"));
 const Wallet = lazy(() => import("@/pages/Wallet"));
 const Bookmarks = lazy(() => import("@/pages/Bookmarks"));
+const Debates = lazy(() => import("@/pages/Debates"));
+const DebateRoom = lazy(() => import("@/pages/DebateRoom"));
 const NotificationCenter = lazy(() => import("@/components/NotificationCenter"));
 const Thread = lazy(() => import("@/pages/Thread"));
 const NostrThreadLoader = lazy(() =>
@@ -60,6 +62,8 @@ export default function r() {
                 <Route path="/sets" component={Settings} />
                 <Route path="/fols" component={Follows} />
                 <Route path="/bookmarks" component={Bookmarks} />
+                <Route path="/debates" component={Debates} />
+                <Route path="/debates/:host/:id" component={DebateRoom} />
                 <Route path="/notif" component={NotificationCenter} />
                 <Route path="/dms" component={DMIndex} />
                 <Route path="/dms/:id" component={DMShow} />

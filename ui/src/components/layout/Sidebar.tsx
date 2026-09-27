@@ -5,6 +5,7 @@ import {
   MessageSquare,
   MoreHorizontal,
   Search,
+  Swords,
   UserRound,
   X,
 } from "lucide-react";
@@ -95,7 +96,7 @@ function saveDismissedNotices(notices: DismissedNotices) {
 
 function SlidingMenu() {
   const [location, navigate] = useLocation();
-  const { our, notifications, profiles, setModal, dms, lists } =
+  const { our, notifications, profiles, setModal, dms, lists, debates, debateInvites } =
     useLocalState((s) => ({
     our: s.our,
     notifications: s.notifications,
@@ -103,6 +104,8 @@ function SlidingMenu() {
     setModal: s.setModal,
     dms: s.dms,
     lists: s.lists,
+    debates: s.debates,
+    debateInvites: s.debateInvites,
   }));
   const [dismissedNotices, setDismissedNotices] = useState<DismissedNotices>(
     loadDismissedNotices,
@@ -190,6 +193,13 @@ function SlidingMenu() {
     { to: "/wallet", label: "Wallet", icon: <CreditCard size={22} strokeWidth={1.9} />, badge: 0 },
     { to: "/fols", label: "Follows", icon: <FollowsIcon />, badge: 0 },
     { to: "/bookmarks", label: "Bookmarks", icon: <BookmarkIcon />, badge: 0 },
+    {
+      to: "/debates",
+      label: "Debates",
+      icon: <Swords size={22} strokeWidth={1.9} />,
+      // invitations to debates we don't follow yet
+      badge: [...debateInvites.keys()].filter((k) => !debates.has(k)).length,
+    },
     { to: our ? `/u/${our.patp}` : "/f", label: "Profile", icon: <ProfileIcon />, badge: 0, primary: true },
     { to: "/sets", label: "Settings", icon: <SettingsIcon />, badge: 0 },
   ];

@@ -24,6 +24,14 @@ import { getPoint } from "@/logic/gw";
 import { fixDMRequests, fixDMs, parseBigint } from "@/logic/utils";
 import { pingRelays } from "@/logic/latency";
 import { mentionedPubkeys } from "@/logic/nostrRefs";
+import toast from "react-hot-toast";
+import {
+  applyDebateUpdate,
+  debateKey,
+  type Debate,
+  type DebatesFact,
+  type Invitation,
+} from "@/logic/debates";
 // TODO handle airlock connection issues
 // the SSE pipeline has a "status-update" event FWIW
 // type AirlockState = "connecting" | "connected" | "failed";
@@ -78,6 +86,10 @@ export type LocalState = {
   dms: DMs;
   dmRequests: DMRequests;
   dmJail:DMJail;
+  // debates (%debates), keyed by debateKey
+  debates: Map<string, Debate>;
+  debateInvites: Map<string, Invitation>;
+  debatesLoaded: boolean;
   setDmRequests: (requests: DMRequests) => void;
   lastChatFact: DM | null;
   // 
@@ -234,6 +246,32 @@ export const useStore = creator((set, get) => ({
           }
         });
     };
+    // debates: everything we host or follow, kept current by the agent
+    const ourPatp = (() => {
+      const o = api.airlock.our ?? "";
+      return o.startsWith("~") ? o : `~${o}`;
+    })();
+    api.subscribeDebates((data: DebatesFact) => {
+      if ("all" in data) {
+        set({
+          debates: new Map(data.all.debates.map((d) => [debateKey(d.key), d])),
+          debateInvites: new Map(data.all.invites.map((i) => [debateKey(i.key), i])),
+          debatesLoaded: true,
+        });
+      } else if ("update" in data) {
+        const { key, update } = data.update;
+        set({ debates: applyDebateUpdate(get().debates, key, update, ourPatp) });
+      } else if ("invited" in data) {
+        const i = data.invited;
+        set({ debateInvites: new Map(get().debateInvites).set(debateKey(i.key), i) });
+      } else if ("dismissed" in data) {
+        const next = new Map(get().debateInvites);
+        next.delete(debateKey(data.dismissed));
+        set({ debateInvites: next });
+      } else if ("error" in data) {
+        toast.error(data.error.msg);
+      }
+    });
     api.subscribeNostrill((data) => {
       if ("state" in data) {
         set({ ...parseStateFact(data.state), stateLoaded: true });
@@ -437,6 +475,10 @@ export const useStore = creator((set, get) => ({
   dms: {},
   dmRequests: {},
   dmJail: {muted: [], blocked: []},
+  // debates
+  debates: new Map(),
+  debateInvites: new Map(),
+  debatesLoaded: false,
   setDmRequests: (dmRequests) => set({ dmRequests }),
   lastChatFact: null,
   our: null,

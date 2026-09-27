@@ -77,6 +77,20 @@ import { encodeSharedCard, parseSharedCard } from "../src/logic/cards";
 import { linkLabel, middleTruncate } from "../src/logic/utils";
 import { countHashtags, postHashtags } from "../src/logic/hashtags";
 import { userFromPost } from "../src/logic/trill/helpers";
+import {
+  applyDebateUpdate,
+  canSpeak,
+  canTakeSide,
+  canVote,
+  debateKey,
+  groupDebates,
+  moderates,
+  newDebateProblem,
+  parseShips,
+  roleOf,
+  tallyOf,
+  type Debate,
+} from "../src/logic/debates";
 import { mentionedPubkeys, shortNote, shortNpub, splitNostrRefs } from "../src/logic/nostrRefs";
 
 describe("right rail search routing", () => {
@@ -995,6 +1009,99 @@ describe("shared cards", () => {
     expect(parseSharedCard("not json")).toBeNull();
     expect(parseSharedCard(JSON.stringify({ ...card, v: 2 }))).toBeNull();
     expect(parseSharedCard(JSON.stringify({ ...card, items: [] }))).toBeNull();
+  });
+});
+
+describe("debates", () => {
+  const key = { host: "~zod", id: "1" };
+  const base: Debate = {
+    key,
+    topic: "Cats or dogs?",
+    sides: { a: "Cats", b: "Dogs" },
+    moderator: "~bus",
+    start: null,
+    end: null,
+    debaters: "invite",
+    revote: false,
+    tally: "hidden",
+    stage: "live",
+    members: { "~nec": "a" },
+    onlookers: ["~wes"],
+    invited: ["~nec"],
+    muted: [],
+    votes: {},
+    total: 0,
+    messages: [],
+    ended: null,
+  };
+  const at = (debates: Map<string, Debate>) => debates.get(debateKey(key))!;
+
+  test("a hidden tally keeps our own vote; a revealed one replaces it", () => {
+    let m = new Map([[debateKey(key), { ...base, votes: { "~wes": "b" as const } }]]);
+    m = applyDebateUpdate(m, key, { tally: { votes: {}, total: 3 } }, "~wes");
+    expect(at(m).votes).toEqual({ "~wes": "b" });
+    expect(at(m).total).toBe(3);
+    m = applyDebateUpdate(m, key, { tally: { votes: { "~a": "a", "~wes": "b" }, total: 2 } }, "~wes");
+    expect(at(m).votes).toEqual({ "~a": "a", "~wes": "b" });
+  });
+
+  test("messages are appended once, in order; gone removes the debate", () => {
+    let m = new Map([[debateKey(key), base]]);
+    const said = (id: string, time: number) => ({ said: { id, time, author: "~nec", side: "a" as const, text: id } });
+    m = applyDebateUpdate(m, key, said("2", 20), "~zod");
+    m = applyDebateUpdate(m, key, said("1", 10), "~zod");
+    m = applyDebateUpdate(m, key, said("2", 20), "~zod");
+    expect(at(m).messages.map((x) => x.id)).toEqual(["1", "2"]);
+    expect(applyDebateUpdate(m, key, { gone: null }, "~zod").size).toBe(0);
+  });
+
+  test("offers only what the host would accept", () => {
+    expect(canTakeSide(base, "~nec")).toBe(true);
+    expect(canTakeSide(base, "~wes")).toBe(false); // invite only
+    expect(canTakeSide(base, "~zod")).toBe(true); // the host
+    expect(canSpeak(base, "~nec")).toBe(true);
+    expect(canSpeak({ ...base, muted: ["~nec"] }, "~nec")).toBe(false);
+    expect(canSpeak({ ...base, stage: "scheduled" }, "~nec")).toBe(false);
+    expect(canVote(base, "~wes")).toBe(true);
+    expect(canVote({ ...base, votes: { "~wes": "a" } }, "~wes")).toBe(false); // final
+    expect(canVote({ ...base, revote: true, votes: { "~wes": "a" } }, "~wes")).toBe(true);
+    expect(moderates(base, "~bus")).toBe(true);
+    expect(roleOf(base, "~nec")).toEqual({ kind: "debater", side: "a" });
+    expect(roleOf(base, "~wes")).toEqual({ kind: "onlooker" });
+  });
+
+  test("tallies only what's shown", () => {
+    const votes = { "~a": "a" as const, "~b": "a" as const, "~c": "b" as const };
+    expect(tallyOf({ ...base, votes, total: 3 })).toEqual({ a: 0, b: 0, total: 3, known: false });
+    expect(tallyOf({ ...base, votes, total: 3, stage: "ended" })).toEqual({ a: 2, b: 1, total: 3, known: true });
+  });
+
+  test("groups by stage, upcoming soonest first", () => {
+    const d = (id: string, stage: Debate["stage"], start: number | null = null) =>
+      ({ ...base, key: { host: "~zod", id }, stage, start });
+    const g = groupDebates([d("1", "live"), d("3", "live"), d("4", "scheduled", 50), d("5", "scheduled", 20), d("2", "ended")]);
+    expect(g.live.map((x) => x.key.id)).toEqual(["3", "1"]);
+    expect(g.scheduled.map((x) => x.key.id)).toEqual(["5", "4"]);
+    expect(g.ended.map((x) => x.key.id)).toEqual(["2"]);
+  });
+
+  test("checks the form like the agent does", () => {
+    const ok = {
+      topic: "T",
+      sides: { a: "A", b: "B" },
+      moderator: null,
+      start: null,
+      end: null,
+      debaters: "open" as const,
+      revote: true,
+      tally: "live" as const,
+      invite: [],
+    };
+    expect(newDebateProblem(ok)).toBeNull();
+    expect(newDebateProblem({ ...ok, sides: { a: "A", b: " " } })).toBe("Both sides need a name");
+    expect(newDebateProblem({ ...ok, start: 100, end: 50 }, 0)).toBe("It has to end after it starts");
+    expect(newDebateProblem({ ...ok, invite: ["~nec", "~NOT A SHIP"] })).toMatch(/isn't a ship name/);
+    expect(parseShips("nec, ~bus  ~nec\n~wes")).toEqual(["~nec", "~bus", "~wes"]);
   });
 });
 
