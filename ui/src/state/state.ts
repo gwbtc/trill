@@ -67,6 +67,9 @@ export type LocalState = {
   contacts: UrbitContacts;
   s3: S3Config | null;
   lastEose: string;
+  // the /ui subscription's first state fact has landed: until then empty
+  // relays, follows etc. mean "not loaded", not "none"
+  stateLoaded: boolean;
   setEose: (s: string) => void;
   lastNostrEventTime: number;
   lastDroppedWs: string;
@@ -233,7 +236,7 @@ export const useStore = creator((set, get) => ({
     };
     api.subscribeNostrill((data) => {
       if ("state" in data) {
-        set(parseStateFact(data.state));
+        set({ ...parseStateFact(data.state), stateLoaded: true });
       } else if ("fact" in data) {
         const fact: Fact = normalizeFact(data.fact);
         set({ lastFact: fact });
@@ -425,6 +428,7 @@ export const useStore = creator((set, get) => ({
   },
   feedPerms: defaultGate,
   lastEose: "",
+  stateLoaded: false,
   setEose: (lastEose) => set({ lastEose }),
   lastNostrEventTime: 0,
   lastDroppedWs: "",

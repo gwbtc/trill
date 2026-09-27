@@ -640,6 +640,23 @@
   letter-spacing: 0;
 }
 
+/* the thread's root post isn't a .trill-post, so it gets none of the feed's
+   nested post styles: quotes and links need their own */
+.thread-root-content blockquote {
+  margin: 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--color-border, #dfe3e7);
+}
+
+.thread-root-content blockquote span {
+  color: var(--color-text-secondary, #566069);
+}
+
+.thread-root-content .body-text a:not(.nostr-mention) {
+  color: var(--color-primary, #543fd7);
+  text-decoration: underline;
+}
+
 .thread-root-meta {
   padding: 0;
 }

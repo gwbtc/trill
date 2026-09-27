@@ -1,5 +1,4 @@
 import useLocalState from "@/state/state";
-import Icon from "@/components/Icon";
 import type { FullNode } from "@/types/trill";
 import ComposerModal from "@/components/modals/ComposerModal";
 import type { UserProfile } from "@/types/nostrill";
@@ -35,24 +34,7 @@ export default function Thread({ event, relays }: Props) {
 
   return (
     <>
-      <div className="thread-header">
-        <div className="thread-nav">
-          <button
-            className="back-btn"
-            onClick={() => window.history.back()}
-            title="Go back"
-          >
-            <Icon name="reply" size={16} />
-            <span>Back to Feed</span>
-          </button>
-        </div>
-        <h2>Nostr Thread</h2>
-        <div className="thread-info">
-          <span className="thread-host">{relays[0]}</span>
-          <span className="thread-separator">•</span>
-          <span className="thread-id">#{event.id}</span>
-        </div>
-      </div>
+      {/* the page header has the title and the back arrow */}
       <div id="feed-proper">
         <Head node={fn} profile={profile} relay={relays[0]} />
       </div>

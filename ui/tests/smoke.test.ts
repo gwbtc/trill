@@ -58,6 +58,7 @@ import {
   notificationPath,
   skeinToNote,
   displayYarn,
+  withoutActor,
 } from "../src/logic/notifications";
 import type { DMs, UserProfile } from "../src/types/nostrill";
 import type { Notification } from "../src/types/notifications";
@@ -992,6 +993,21 @@ describe("shared cards", () => {
     expect(parseSharedCard("not json")).toBeNull();
     expect(parseSharedCard(JSON.stringify({ ...card, v: 2 }))).toBeNull();
     expect(parseSharedCard(JSON.stringify({ ...card, items: [] }))).toBeNull();
+  });
+});
+
+describe("notification rows", () => {
+  test("drop the actor, and capitalize what was a sentence about them", () => {
+    expect(withoutActor([{ ship: "~nec" }, " accepted your follow request."], "~nec")).toEqual([
+      "Accepted your follow request.",
+    ]);
+    // already written for the row: unchanged
+    expect(withoutActor([{ ship: "~nec" }, "Reacted to post:", "🔥"], "~nec")).toEqual([
+      "Reacted to post:",
+      "🔥",
+    ]);
+    // someone else named: kept, nothing capitalized
+    expect(withoutActor(["see ", { ship: "~bus" }], "~nec")).toEqual(["see ", { ship: "~bus" }]);
   });
 });
 

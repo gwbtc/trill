@@ -5,6 +5,7 @@ import {
 import type { PostProps } from "./Post";
 import useLocalState from "@/state/state";
 import UserModal from "../modals/UserModal";
+import { shortNpub } from "@/logic/nostrRefs";
 
 function Header(props: PostProps) {
   const setModal = useLocalState((s) => s.setModal);
@@ -17,9 +18,12 @@ function Header(props: PostProps) {
   }
 
   const { poast } = props;
-  const handle = props.poast.authorFull.author.gwid.english.abridged
-  // const displayName = profile?.name ?? abbreviatePatp(handle);
-  const displayName = profile?.name ?? handle
+  // nostr notes carry a placeholder urbit id (blank gwid, "~zod"), so their
+  // fallback is the author's npub, not that
+  const handle = poast.event
+    ? shortNpub(poast.event.pubkey)
+    : poast.authorFull.author.gwid.english.abridged || poast.author;
+  const displayName = profile?.name?.trim() || handle;
 
   return (
     <header>
@@ -28,7 +32,7 @@ function Header(props: PostProps) {
       </div>
     {handle !== displayName && 
       <span className="post-handle mono cp" role="link" onClick={go}>
-        {abbreviatePatp(handle)}
+        {handle.startsWith("~") ? abbreviatePatp(handle) : handle}
       </span>
       }
       <div className="date">

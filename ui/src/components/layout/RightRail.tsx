@@ -24,6 +24,7 @@ export default function RightRail() {
     lists,
     our,
     pubkey,
+    stateLoaded,
   } = useLocalState((s) => ({
     relays: s.relays,
     relayLatency: s.relayLatency,
@@ -35,6 +36,7 @@ export default function RightRail() {
     lists: s.lists,
     our: s.api?.airlock.our,
     pubkey: s.pubkey,
+    stateLoaded: s.stateLoaded,
   }));
 
   const relayModels = buildRelayModels(relays, relayLatency);
@@ -159,7 +161,12 @@ export default function RightRail() {
           </button>
         </div>
 
-        {relayModels.length === 0 ? (
+        {!stateLoaded ? (
+          <div className="rail-loading" aria-label="Loading relays">
+            <span />
+            <span />
+          </div>
+        ) : relayModels.length === 0 ? (
           <button className="rail-relay-empty" onClick={openRelayDashboard}>
             <span>No relays configured</span>
             <small>Add a relay to connect to the network.</small>
@@ -194,7 +201,11 @@ export default function RightRail() {
         <h2 className="rail-card-title">Fleet online</h2>
         <div className="rail-fleet-row">
           <span className="status-pulse" />
-          <span>{following.size} known contacts</span>
+          <span>
+            {!stateLoaded
+              ? "…"
+              : `${following.size} known ${following.size === 1 ? "contact" : "contacts"}`}
+          </span>
         </div>
       </div>
 

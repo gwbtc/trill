@@ -1,5 +1,4 @@
 import useLocalState from "@/state/state";
-import Icon from "@/components/Icon";
 import spinner from "@/assets/triangles.svg";
 import { toFlat } from "@/logic/trill/helpers";
 import type { FC, FullNode, Poast } from "@/types/trill";
@@ -29,24 +28,7 @@ export default function Thread({
   const poast = feed?.feed[id];
   return (
     <>
-      <div className="thread-header">
-        <div className="thread-nav">
-          <button
-            className="back-btn"
-            onClick={() => window.history.back()}
-            title="Go back"
-          >
-            <Icon name="reply" size={16} />
-            <span>Back to Feed</span>
-          </button>
-        </div>
-        <h2>Thread</h2>
-        <div className="thread-info">
-          <span className="thread-host">{host}</span>
-          <span className="thread-separator">•</span>
-          <span className="thread-id">#{id}</span>
-        </div>
-      </div>
+      {/* the page header has the title and the back arrow */}
       <div id="feed-proper">
         {/* always fetch: a cached copy with no children may just not have
             synced its replies yet. Loader shows the cached post meanwhile */}

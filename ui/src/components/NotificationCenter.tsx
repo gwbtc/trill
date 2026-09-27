@@ -11,6 +11,7 @@ import type { Notification } from "@/types/notifications";
 import type { UserProfile } from "@/types/nostrill";
 import {
   displayYarn,
+  withoutActor,
   filterNotifications,
   formatNotificationTimestamp,
   getNotificationKind,
@@ -253,15 +254,9 @@ function NotificationRow({
   const actorHandle = notification.from
     ? getHandleLabel(notification.from, actorId)
     : "";
-  const message = displayYarn(notification.message).filter(
-    (part) =>
-      !(
-        notification.from &&
-        typeof part !== "string" &&
-        "ship" in part &&
-        part.ship === actorId
-      ),
-  );
+  const message = notification.from
+    ? withoutActor(displayYarn(notification.message), actorId)
+    : displayYarn(notification.message);
 
   return (
     <article

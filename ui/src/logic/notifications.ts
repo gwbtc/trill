@@ -124,6 +124,19 @@ export function displayYarn(con: YarnContent[]): YarnContent[] {
   return con.filter((part) => !(typeof part === "string" && part.startsWith("/")));
 }
 
+// the yarn without its actor, who's shown as the row's name. some yarns are
+// sentences about the actor ("~nec accepted your…"): what's left then
+// starts lowercase, so it's capitalized
+export function withoutActor(con: YarnContent[], actorId: string): YarnContent[] {
+  const rest = con.filter(
+    (part) => !(typeof part !== "string" && "ship" in part && part.ship === actorId),
+  );
+  const [first, ...more] = rest;
+  if (typeof first !== "string" || rest.length === con.length) return rest;
+  const t = first.trimStart();
+  return [t.charAt(0).toUpperCase() + t.slice(1), ...more];
+}
+
 // `our` fills in the host of quote notifications, which is always us and
 // so is left out of the path
 export function skeinToNote(skein: Skein, our?: string): Result<Notification> {

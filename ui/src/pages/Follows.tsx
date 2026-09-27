@@ -123,12 +123,14 @@ function FollowEntry({
       <div className="follow-card-stats">
         <div className="stat-item">
           <span className="stat-value">{postCount}</span>
-          <span className="stat-label">posts</span>
+          <span className="stat-label">{postCount === 1 ? "post" : "posts"}</span>
         </div>
         {profile && (
           <div className="stat-item">
             <span className="stat-value">{getFollowerCount(profile)}</span>
-            <span className="stat-label">followers</span>
+            <span className="stat-label">
+              {getFollowerCount(profile) === 1 ? "follower" : "followers"}
+            </span>
           </div>
         )}
       </div>
