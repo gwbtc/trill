@@ -3,7 +3,7 @@ import { date_diff, getThreadPath } from "@/logic/utils";
 import { useLocation } from "wouter";
 import Body from "./Body";
 import Sigil from "../Sigil";
-import { userFromPost } from "@/logic/trill/helpers";
+import { usePostUser } from "@/hooks/usePostUser";
 
 function Quote({
   data,
@@ -15,6 +15,7 @@ function Quote({
   nest: number;
 }) {
   const [_, navigate] = useLocation();
+  const userFromPost = usePostUser();
   function gotoQuote(e: React.MouseEvent) {
     e.stopPropagation();
     navigate(getThreadPath(data));

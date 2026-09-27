@@ -8,7 +8,8 @@ import Post from "@/components/post/Post";
 import PostData from "@/components/post/Loader";
 import { toFlat } from "@/components/post/RP";
 import { refKey, type PostRef } from "@/logic/lists";
-import { userFromAuthor, userFromPost } from "@/logic/trill/helpers";
+import { userFromAuthor } from "@/logic/trill/helpers";
+import { usePostUser } from "@/hooks/usePostUser";
 import type { FullNode, Poast } from "@/types/trill";
 
 export default function Bookmarks() {
@@ -42,6 +43,7 @@ function BookmarkedPost({ postRef }: { postRef: PostRef }) {
     nostrFeeds: s.nostrFeeds,
     globalFeed: s.globalFeed,
   }));
+  const userFromPost = usePostUser();
 
   if ("urbit" in postRef) {
     const { host, id } = postRef.urbit;

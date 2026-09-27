@@ -18,11 +18,14 @@ function Header(props: PostProps) {
   }
 
   const { poast } = props;
-  // nostr notes carry a placeholder urbit id (blank gwid, "~zod"), so their
-  // fallback is the author's npub, not that
-  const handle = poast.event
-    ? shortNpub(poast.event.pubkey)
-    : poast.authorFull.author.gwid.english.abridged || poast.author;
+  // from the post's user, not its authorFull: nostr notes carry a
+  // placeholder urbit id (blank gwid, "~zod"), and our own notes are
+  // attributed to our ship (usePostUser)
+  const { user } = props;
+  const handle =
+    "nostr" in user
+      ? shortNpub(user.nostr)
+      : user.urbit.gwid?.english?.abridged || user.urbit.patp;
   const displayName = profile?.name?.trim() || handle;
 
   return (

@@ -75,6 +75,8 @@ import {
 } from "../src/logic/topics";
 import { encodeSharedCard, parseSharedCard } from "../src/logic/cards";
 import { linkLabel, middleTruncate } from "../src/logic/utils";
+import { countHashtags, postHashtags } from "../src/logic/hashtags";
+import { userFromPost } from "../src/logic/trill/helpers";
 import { mentionedPubkeys, shortNote, shortNpub, splitNostrRefs } from "../src/logic/nostrRefs";
 
 describe("right rail search routing", () => {
@@ -993,6 +995,46 @@ describe("shared cards", () => {
     expect(parseSharedCard("not json")).toBeNull();
     expect(parseSharedCard(JSON.stringify({ ...card, v: 2 }))).toBeNull();
     expect(parseSharedCard(JSON.stringify({ ...card, items: [] }))).toBeNull();
+  });
+});
+
+describe("post authors", () => {
+  test("our own nostr notes are ours; other notes' patp tags aren't trusted", () => {
+    const our = patpToFallbackUID("~zod");
+    const note = (pubkey: string) =>
+      eventToPoast({
+        id: "e",
+        pubkey,
+        created_at: 1,
+        kind: 667,
+        content: "hi",
+        sig: "",
+        tags: [["patp", "~zod"]],
+      } as any)!;
+    expect(userFromPost(note("aa"), { pubkey: "aa", our })).toEqual({ urbit: our });
+    expect(userFromPost(note("bb"), { pubkey: "aa", our })).toEqual({ nostr: "bb" });
+    expect(userFromPost(note("bb"))).toEqual({ nostr: "bb" });
+  });
+});
+
+describe("hashtags", () => {
+  test("counts each post's tags once, case-insensitively, from text and t tags", () => {
+    expect(
+      countHashtags([
+        { text: "gm #Nostr #nostr and #urbit" },
+        { text: "more #nostr", tTags: ["nostr", "Photography"] },
+        { text: "no tags, a url https://x.org/#frag and an issue #42" },
+        { text: "", tTags: ["#Photography"] },
+      ]),
+    ).toEqual([
+      { tag: "nostr", count: 2 },
+      { tag: "photography", count: 2 },
+      { tag: "urbit", count: 1 },
+    ]);
+  });
+
+  test("reads tags in other scripts, skips html entities and anchors", () => {
+    expect([...postHashtags("#日本語 &#39; a/#b")]).toEqual(["日本語"]);
   });
 });
 

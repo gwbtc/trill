@@ -1,7 +1,7 @@
 import TrillPost from "@/components/post/Post";
 import type { FC } from "@/types/trill";
 import useLocalState from "@/state/state";
-import { userFromPost } from "@/logic/trill/helpers";
+import { usePostUser } from "@/hooks/usePostUser";
 import { getUserId } from "@/logic/userDisplay";
 // import { useEffect } from "react";
 // import { useQueryClient } from "@tanstack/react-query";
@@ -17,6 +17,7 @@ function TrillFeed({
   spine?: boolean;
 }) {
   const { profiles } = useLocalState((s) => ({ profiles: s.profiles }));
+  const userFromPost = usePostUser();
   return (
     <>
       {Object.keys(data.feed)

@@ -6,7 +6,8 @@ import TabStrip, { type TabItem } from "@/components/ui/TabStrip";
 import useLocalState from "@/state/state";
 import { consolidateFeeds, stringToUser } from "@/logic/nostrill";
 import { postToText, profileSearchText } from "@/logic/search";
-import { userFromPost } from "@/logic/trill/helpers";
+import { countHashtags, type HashtagCount } from "@/logic/hashtags";
+import { usePostUser } from "@/hooks/usePostUser";
 import { getHandleLabel, getUserId, getUserKind } from "@/logic/userDisplay";
 import type { Poast } from "@/types/trill";
 import type { UserProfile, UserType } from "@/types/nostrill";
@@ -26,21 +27,16 @@ const SEARCH_TABS: TabItem<SearchTab>[] = [
   { key: "top", label: "Top" },
   { key: "people", label: "People" },
   { key: "posts", label: "Posts" },
-  { key: "channels", label: "Channels" },
+  { key: "channels", label: "Hashtags" },
 ];
 
 const RECENT_KEY = "trill-search-recent";
-const CHANNELS = [
-  { name: "#hoon", posts: "1.2k posts" },
-  { name: "#nostr", posts: "880 posts" },
-  { name: "#runtime", posts: "440 posts" },
-  { name: "#design", posts: "310 posts" },
-];
 
 const SEARCH_TAB_KEYS: SearchTab[] = ["top", "people", "posts", "channels"];
 
 export default function SearchPage() {
   const [_, navigate] = useLocation();
+  const userFromPost = usePostUser();
   const searchString = useSearch();
   const params = new URLSearchParams(searchString);
   const initialQuery = params.get("q") || "";
@@ -150,14 +146,26 @@ export default function SearchPage() {
       })
       .sort((a, b) => b.time - a.time)
       .slice(0, 12);
-  }, [feed, profiles, hasQuery, searchableQuery, lowerQuery]);
+  }, [feed, profiles, hasQuery, searchableQuery, lowerQuery, userFromPost]);
 
+  // hashtags actually used in the posts we have (these used to be a
+  // hard-coded list with made-up counts)
+  const hashtags = useMemo(
+    () =>
+      countHashtags(
+        Object.values(feed.feed)
+          .filter((post): post is Poast => Boolean(post && post.contents))
+          .map((post) => ({
+            text: postToText(post),
+            tTags: (post.event?.tags ?? []).filter((t) => t[0] === "t").map((t) => t[1] ?? ""),
+          })),
+      ),
+    [feed],
+  );
   const channelResults = useMemo(() => {
     if (!hasQuery) return [];
-    return CHANNELS.filter((channel) =>
-      channel.name.toLowerCase().includes(searchableQuery),
-    );
-  }, [hasQuery, searchableQuery]);
+    return hashtags.filter((h) => h.tag.includes(searchableQuery)).slice(0, 12);
+  }, [hashtags, hasQuery, searchableQuery]);
 
   const pickQuery = (next: string) => {
     setQuery(next);
@@ -283,6 +291,7 @@ export default function SearchPage() {
           }}
           onClear={clearRecent}
           onPickChannel={pickQuery}
+          hashtags={hashtags}
         />
       ) : (
         <div className="search-results">
@@ -324,14 +333,14 @@ export default function SearchPage() {
           {(tab === "top" || tab === "channels") &&
             channelResults.length > 0 && (
               <section className="search-section">
-                <h2>Channels</h2>
-                {channelResults.map((channel) => (
+                <h2>Hashtags</h2>
+                {channelResults.map((h) => (
                   <ChannelRow
-                    key={channel.name}
-                    channel={channel}
+                    key={h.tag}
+                    hashtag={h}
                     onClick={() => {
-                      commitRecent(channel.name);
-                      pickQuery(channel.name);
+                      commitRecent(`#${h.tag}`);
+                      pickQuery(`#${h.tag}`);
                     }}
                   />
                 ))}
@@ -363,7 +372,7 @@ export default function SearchPage() {
               <strong>No results for "{cleanQuery}"</strong>
               <span>
                 Try a different term, a <span className="mono">~ship</span>, or
-                a #channel.
+                a #hashtag.
               </span>
             </div>
           )}
@@ -379,7 +388,9 @@ function SearchEmpty({
   onRemove,
   onClear,
   onPickChannel,
+  hashtags,
 }: {
+  hashtags: HashtagCount[];
   recent: string[];
   onPick: (term: string) => void;
   onRemove: (term: string) => void;
@@ -413,35 +424,35 @@ function SearchEmpty({
           <div className="search-section-break" />
         </section>
       )}
-      <section>
-        <div className="search-empty-head">
-          <h2>Trending channels</h2>
-        </div>
-        {CHANNELS.map((channel) => (
-          <ChannelRow
-            key={channel.name}
-            channel={channel}
-            onClick={() => onPickChannel(channel.name)}
-          />
-        ))}
-      </section>
+      {hashtags.length > 0 && (
+        <section>
+          <div className="search-empty-head">
+            <h2>Hashtags in your feeds</h2>
+          </div>
+          {hashtags.slice(0, 8).map((h) => (
+            <ChannelRow key={h.tag} hashtag={h} onClick={() => onPickChannel(`#${h.tag}`)} />
+          ))}
+        </section>
+      )}
     </div>
   );
 }
 
 function ChannelRow({
-  channel,
+  hashtag,
   onClick,
 }: {
-  channel: { name: string; posts: string };
+  hashtag: HashtagCount;
   onClick: () => void;
 }) {
   return (
     <button className="search-channel-row" onClick={onClick}>
       <span className="search-channel-icon">#</span>
       <span className="search-channel-copy">
-        <strong className="mono">{channel.name}</strong>
-        <span>{channel.posts}</span>
+        <strong className="mono">#{hashtag.tag}</strong>
+        <span>
+          {hashtag.count} {hashtag.count === 1 ? "post" : "posts"}
+        </span>
       </span>
       <ChevronRight size={16} />
     </button>
