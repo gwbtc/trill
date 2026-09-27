@@ -46,6 +46,9 @@ export default function SearchPage() {
   const initialQuery = params.get("q") || "";
   const initialTab = (params.get("tab") as SearchTab) || "top";
   const [query, setQuery] = useState(initialQuery);
+  // the page's own search box (narrow screens), kept in step with the url
+  const [draft, setDraft] = useState(initialQuery);
+  useEffect(() => setDraft(query), [query]);
   const [tab, setTab] = useState<SearchTab>(
     SEARCH_TAB_KEYS.includes(initialTab)
       ? initialTab
@@ -237,6 +240,26 @@ export default function SearchPage() {
             </button>
           )}
         </div>
+        {/* the right rail's search box, for screens where the rail is
+            hidden (styles: max-width 1080px) */}
+        <form
+          className="search-page-form"
+          role="search"
+          onSubmit={(e) => {
+            e.preventDefault();
+            pickQuery(draft);
+            commitRecent(draft);
+          }}
+        >
+          <SearchIcon size={17} aria-hidden="true" />
+          <input
+            type="search"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Search Trill"
+            aria-label="Search Trill"
+          />
+        </form>
         {hasQuery && (
           <TabStrip
             id="search-tabs"

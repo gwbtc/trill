@@ -327,6 +327,24 @@ main {
   }
 }
 
+/* phones: the sidebar is a fixed bottom bar (Sidebar.css), so the column
+   takes the width and leaves room under its last post for the bar */
+@media (max-width: 600px) {
+  #main-column {
+    width: 100%;
+    border-right: 0;
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+
+  /* the nostr activity dot (NostrSignals) sat on the bar's "More": bottom
+     left instead, above the bar, clear of the compose button */
+  div.nostr-signal.fixed {
+    right: auto;
+    left: 16px;
+    bottom: calc(74px + env(safe-area-inset-bottom));
+  }
+}
+
 /* modal */
 .sr-only {
   position: absolute;
