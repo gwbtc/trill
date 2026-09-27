@@ -940,3 +940,21 @@
 .ship-card-debate:hover .status-label {
   text-decoration: underline;
 }
+
+.debate-log-older {
+  align-self: center;
+  margin: 0 auto 10px;
+  padding: 5px 14px;
+  border: 1px solid var(--color-border, #e1e5e9);
+  border-radius: 999px;
+  background: var(--color-background, #fff);
+  color: var(--color-text-secondary, #5f6b76);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.debate-log-older:disabled {
+  cursor: default;
+  opacity: 0.7;
+}

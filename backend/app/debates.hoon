@@ -15,7 +15,8 @@
 +$  state-0
   $:  %0
       hosting=(map @da debate:sur)
-      joined=(map key:sur [=debate:sur total=@ud])   ::  mirrors
+      ::  mirrors: from the latest page on; more: the host has older
+      joined=(map key:sur [=debate:sur total=@ud more=?])
       invites=(map key:sur invitation:sur)
       ::  others' presence: the ships the UI asked us to track
       tracked=(set ship)
@@ -85,8 +86,22 @@
     =/  d  (~(get by hosting) id)
     ?~  d  ~|(%no-such-debate !!)
     ?<  (~(has in removed.u.d) src.bowl)
+    =/  [t=debate:sur more=?]  (trim:lib (redact:lib u.d))
     :_  this
-    ~[[%give %fact ~ %noun !>(`update:sur`[%init (redact:lib u.d) ~(wyt by votes.u.d)])]]
+    ~[[%give %fact ~ %noun !>(`update:sur`[%init t ~(wyt by votes.u.d) more])]]
+  ::
+      ::  a page of older messages, then a kick
+      [%debate id=@ %older before=@ ~]
+    =/  id  `@da`(slav %ud id.pole)
+    =/  d  (~(get by hosting) id)
+    ?~  d  ~|(%no-such-debate !!)
+    ?<  (~(has in removed.u.d) src.bowl)
+    =/  [ms=(list message:sur) more=?]
+      (page:lib messages.u.d `(unit @da)``(slav %ud before.pole))
+    :_  this
+    :~  [%give %fact ~ %noun !>(`update:sur`[%page ms more])]
+        [%give %kick ~ ~]
+    ==
   ==
 ::
 ++  on-agent
@@ -125,6 +140,23 @@
       :*  (ui-card:hc key upd)
           (weld started (presence-cards:hc before))
       ==
+    ==
+  ::
+      ::  a page of older messages we asked for
+      [%older @ @ @ ~]
+    =/  =key:sur  [(slav %p i.t.wire) `@da`(slav %ud i.t.t.wire)]
+    ?+  -.sign  `this
+        %watch-ack
+      ?~  p.sign  `this
+      :_  this
+      ~[(ui-error:hc key 'couldn\'t load older messages')]
+    ::
+        %fact
+      =/  upd  ;;(update:sur q.q.cage.sign)
+      ?.  ?=(%page -.upd)  `this
+      =.  joined  (mirror:hc key upd)
+      :_  this
+      ~[(ui-card:hc key upd)]
     ==
   ::
       [%act @ @ ~]
@@ -207,7 +239,7 @@
     =/  d  (new-debate:lib [our.bowl id] config.cmd)
     =.  invited.d  (~(del in invite.cmd) our.bowl)
     =.  hosting  (~(put by hosting) id d)
-    =/  init=(list card)  ~[(ui-card [our.bowl id] [%init (redact:lib d) 0])]
+    =/  init=(list card)  ~[(ui-card [our.bowl id] [%init (redact:lib d) 0 %.n])]
     :_  state
     ;:  weld
       init
@@ -230,9 +262,9 @@
       ==
     ::  a hidden tally never tells us our own vote: keep it ourselves
     =?  joined  &(?=(%vote -.action.cmd) (~(has by joined) key.cmd))
-      =/  [d=debate:sur t=@ud]  (~(got by joined) key.cmd)
+      =/  [d=debate:sur t=@ud m=?]  (~(got by joined) key.cmd)
       ?>  ?=(%vote -.action.cmd)
-      (~(put by joined) key.cmd [d(votes (~(put by votes.d) our.bowl side.action.cmd)) t])
+      (~(put by joined) key.cmd [d(votes (~(put by votes.d) our.bowl side.action.cmd)) t m])
     :_  state
     ?:  (~(has by joined) key.cmd)  ~[poke]
     ~[(watch-card key.cmd) poke]
@@ -280,6 +312,21 @@
       %dismiss
     =.  invites  (~(del by invites) key.cmd)
     [~[(ui-fact (frond:enjs:format %dismissed (key:en:dj key.cmd)))] state]
+  ::
+      %older
+    ?:  =(host.key.cmd our.bowl)
+      =/  d  (~(get by hosting) id.key.cmd)
+      ?~  d  `state
+      =/  [ms=(list message:sur) more=?]  (page:lib messages.u.d `before.cmd)
+      [~[(ui-card key.cmd [%page ms more])] state]
+    ::  the host has them all; our mirror may not
+    :_  state
+    :~  :*  %pass
+            /older/(scot %p host.key.cmd)/(scot %ud id.key.cmd)/(scot %ud before.cmd)
+            %agent  [host.key.cmd %debates]
+            %watch  /debate/(scot %ud id.key.cmd)/older/(scot %ud before.cmd)
+        ==
+    ==
   ==
 ::  +current: the debate we're in, as others see it: the active one we
 ::  host, argue in or watch as an onlooker (one at a time)
@@ -369,7 +416,7 @@
   |=  [=key:sur u=update:sur]
   ^+  joined
   ?:  ?=(%init -.u)
-    (~(put by joined) key [debate.u total.u])
+    (~(put by joined) key [debate.u total.u more.u])
   =/  cur  (~(get by joined) key)
   ?~  cur  joined
   =/  d  debate.u.cur
@@ -377,11 +424,25 @@
       %gone  (~(del by joined) key)
       %said
     %+  ~(put by joined)  key
-    [d(messages (put:mon:sur messages.d id.message.u message.u)) total.u.cur]
+    [d(messages (put:mon:sur messages.d id.message.u message.u)) total.u.cur more.u.cur]
+  ::
+      %page
+    ::  nothing before it: we have them all. a page older than all we
+    ::  have says whether there's more; a newer one, that we knew
+    =/  first  (pry:mon:sur messages.d)
+    =/  more
+      ?~  messages.u  %.n
+      ?~  first  more.u
+      ?:  (lte id.i.messages.u key.u.first)  more.u
+      more.u.cur
+    =/  ms
+      %+  gas:mon:sur  messages.d
+      (turn messages.u |=(m=message:sur [id.m m]))
+    (~(put by joined) key [d(messages ms) total.u.cur more])
   ::
       %meta
     %+  ~(put by joined)  key
-    :_  total.u.cur
+    :_  [total.u.cur more.u.cur]
     %=  d
       stage      stage.u
       debaters   debaters.u
@@ -398,7 +459,7 @@
       ::  a live tally says it all; a hidden one says nothing
       ?.  =(~ votes.u)  votes.u
       (~(put by votes.u) our.bowl u.mine)
-    (~(put by joined) key [d(votes votes) total.u])
+    (~(put by joined) key [d(votes votes) total.u more.u.cur])
   ==
 ::  +invited: a host inviting us
 ::
@@ -478,10 +539,15 @@
   ^-  json
   =/  hosted=(list json)
     %+  turn  ~(val by hosting)
-    |=(d=debate:sur (debate:en:dj (redact:lib d) ~(wyt by votes.d)))
+    |=  d=debate:sur
+    =/  [p=debate:sur more=?]  (trim:lib (redact:lib d))
+    (debate:en:dj p ~(wyt by votes.d) more)
+  ::  the UI starts from the latest page too
   =/  followed=(list json)
     %+  turn  ~(val by joined)
-    |=([d=debate:sur t=@ud] (debate:en:dj d t))
+    |=  [d=debate:sur t=@ud m=?]
+    =/  [p=debate:sur more=?]  (trim:lib d)
+    (debate:en:dj p t |(m more))
   =/  invs=(list json)  (turn ~(val by invites) invitation:en:dj)
   =/  others=(list [@t json])
     %+  turn  ~(tap by presences)

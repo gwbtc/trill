@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import toast from "react-hot-toast";
 import { Link2, LogOut, MicOff, Play, Share2, Square, UserMinus, UserPlus, Volume2 } from "lucide-react";
@@ -84,9 +84,33 @@ function Room({ d, our }: { d: Debate; our: string }) {
   const id = d.key.id;
 
   const log = useRef<HTMLDivElement>(null);
+  const newest = d.messages[d.messages.length - 1]?.id;
+  const oldest = d.messages[0]?.id;
+  // follow new messages to the bottom
   useEffect(() => {
     log.current?.scrollTo({ top: log.current.scrollHeight, behavior: "smooth" });
-  }, [d.messages.length]);
+  }, [newest]);
+  // older ones go on top: keep what was on screen where it was
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const heightBefore = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const el = log.current;
+    if (!el || heightBefore.current === null) return;
+    el.scrollTop += el.scrollHeight - heightBefore.current;
+    heightBefore.current = null;
+    setLoadingOlder(false);
+  }, [oldest, d.more]);
+  async function loadOlder() {
+    if (!api || !oldest || loadingOlder) return;
+    heightBefore.current = log.current?.scrollHeight ?? 0;
+    setLoadingOlder(true);
+    const res = await api.olderDebateMessages(d.key, oldest);
+    if ("error" in res) {
+      heightBefore.current = null;
+      setLoadingOlder(false);
+      toast.error("Couldn't load older messages");
+    }
+  }
 
   const status =
     d.stage === "live"
@@ -224,6 +248,11 @@ function Room({ d, our }: { d: Debate; our: string }) {
       </div>
 
       <div className="debate-log" ref={log}>
+        {d.more && (
+          <button type="button" className="debate-log-older" onClick={loadOlder} disabled={loadingOlder}>
+            {loadingOlder ? "Loading…" : "Load earlier messages"}
+          </button>
+        )}
         {d.messages.length === 0 ? (
           <p className="debate-log-empty">
             {d.stage === "scheduled"

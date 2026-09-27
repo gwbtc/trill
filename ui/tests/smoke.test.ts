@@ -1039,10 +1039,32 @@ describe("debates", () => {
     muted: [],
     votes: {},
     total: 0,
+    more: false,
     messages: [],
     ended: null,
   };
   const at = (debates: Map<string, Debate>) => debates.get(debateKey(key))!;
+
+  test("older pages go on top; a resubscription keeps them", () => {
+    const msg = (n: number) => ({ id: String(n), time: n, author: "~nec", side: "a" as const, text: `m${n}` });
+    const ids = (d: Debate) => d.messages.map((m) => m.id);
+    let m = new Map([[debateKey(key), { ...base, messages: [msg(5), msg(6)], more: true }]]);
+    // a page from further back, with more behind it
+    m = applyDebateUpdate(m, key, { page: { messages: [msg(3), msg(4)], more: true } }, "~wes");
+    expect(ids(at(m))).toEqual(["3", "4", "5", "6"]);
+    expect(at(m).more).toBe(true);
+    // an overlapping page inside what we have doesn't settle it
+    m = applyDebateUpdate(m, key, { page: { messages: [msg(4)], more: false } }, "~wes");
+    expect(at(m).more).toBe(true);
+    // nothing older
+    m = applyDebateUpdate(m, key, { page: { messages: [], more: false } }, "~wes");
+    expect(at(m).more).toBe(false);
+    // kicked and back: the host sends its latest page, we keep the rest
+    const init = { ...base, messages: [msg(6), msg(7)], more: true };
+    m = applyDebateUpdate(m, key, { init }, "~wes");
+    expect(ids(at(m))).toEqual(["3", "4", "5", "6", "7"]);
+    expect(at(m).more).toBe(false);
+  });
 
   test("a shared debate card keeps its key, and only a real one", () => {
     const live = { ...base, tally: "live" as const, votes: { "~wes": "b" as const } };

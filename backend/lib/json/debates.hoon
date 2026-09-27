@@ -33,10 +33,11 @@
       side+s+side.m
       text+s+text.m
   ==
-::  +debate: votes as given (already redacted if need be), with the total
+::  +debate: votes as given (already redacted if need be), with the total,
+::  and whether there are older messages than those given
 ::
 ++  debate
-  |=  [d=debate:sur total=@ud]
+  |=  [d=debate:sur total=@ud more=?]
   ^-  json
   =/  c  config.d
   %-  pairs
@@ -56,6 +57,7 @@
       muted+(ships muted.d)
       votes+(sided votes.d)
       total+(numb total)
+      more+b+more
       messages+a+(turn (tap:mon:sur messages.d) |=([@da m=message:sur] (message m)))
       ended+?~(ended.d ~ (time u.ended.d))
   ==
@@ -65,7 +67,8 @@
   ^-  json
   %+  frond  -.u
   ?-  -.u
-    %init   (debate debate.u total.u)
+    %init   (debate debate.u total.u more.u)
+    %page   (pairs ~[messages+a+(turn messages.u message) more+b+more.u])
     %said   (message message.u)
     %tally  (pairs ~[votes+(sided votes.u) total+(numb total.u)])
     %gone   ~
@@ -129,6 +132,7 @@
       forget+key
       dismiss+key
       track+(ot ~[who+(cu |=(l=(list @p) (silt l)) (ar ship))])
+      older+(ot ~[key+key before+id])
   ==
 ::  +create: the config, and who to invite, in one object
 ::

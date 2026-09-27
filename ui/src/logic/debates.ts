@@ -25,7 +25,10 @@ export type Debate = {
   // else only ours
   votes: Record<string, Side>;
   total: number;
+  // the latest page of them, and any older ones we asked for
   messages: DebateMessage[];
+  // there are older messages than these (ask with api.olderDebateMessages)
+  more: boolean;
   ended: number | null;
 };
 export type Invitation = { key: DebateKey; topic: string; sides: { a: string; b: string }; at: number };
@@ -33,6 +36,8 @@ export type Invitation = { key: DebateKey; topic: string; sides: { a: string; b:
 export type DebateUpdate =
   | { init: Debate }
   | { said: DebateMessage }
+  // older messages, oldest first
+  | { page: { messages: DebateMessage[]; more: boolean } }
   | {
       meta: {
         stage: Stage;
@@ -97,7 +102,17 @@ export function applyDebateUpdate(
     const mine = debates.get(k)?.votes[our];
     const votes = { ...u.init.votes };
     if (mine && !(our in votes) && Object.keys(votes).length === 0) votes[our] = mine;
-    next.set(k, { ...u.init, votes });
+    // a resubscription starts from the latest page again: keep the
+    // older ones we had loaded
+    const had = debates.get(k);
+    const oldest = u.init.messages[0];
+    const kept = had && oldest ? had.messages.filter((m) => byTime(m, oldest) < 0) : [];
+    next.set(k, {
+      ...u.init,
+      votes,
+      messages: kept.length > 0 ? mergeMessages(kept, u.init.messages) : u.init.messages,
+      more: kept.length > 0 ? had!.more : u.init.more,
+    });
     return next;
   }
   if ("gone" in u) {
@@ -109,6 +124,17 @@ export function applyDebateUpdate(
   if ("said" in u) {
     if (d.messages.some((m) => m.id === u.said.id)) return debates;
     next.set(k, { ...d, messages: [...d.messages, u.said].sort(byTime) });
+  } else if ("page" in u) {
+    const oldest = d.messages[0];
+    // an empty page: nothing older. one reaching past what we have says
+    // whether there's more; one inside it doesn't change that
+    const more =
+      u.page.messages.length === 0
+        ? false
+        : !oldest || byTime(u.page.messages[0], oldest) <= 0
+          ? u.page.more
+          : d.more;
+    next.set(k, { ...d, messages: mergeMessages(d.messages, u.page.messages), more });
   } else if ("meta" in u) {
     next.set(k, { ...d, ...u.meta });
   } else if ("tally" in u) {
@@ -121,7 +147,13 @@ export function applyDebateUpdate(
 }
 
 const byTime = (a: DebateMessage, b: DebateMessage) =>
-  a.time - b.time || (BigInt(a.id) < BigInt(b.id) ? -1 : 1);
+  a.time - b.time || (BigInt(a.id) < BigInt(b.id) ? -1 : BigInt(a.id) > BigInt(b.id) ? 1 : 0);
+
+function mergeMessages(a: DebateMessage[], b: DebateMessage[]): DebateMessage[] {
+  const byId = new Map(a.map((m) => [m.id, m]));
+  for (const m of b) byId.set(m.id, m);
+  return [...byId.values()].sort(byTime);
+}
 
 export type Role = { kind: "debater"; side: Side } | { kind: "onlooker" } | { kind: "none" };
 

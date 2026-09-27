@@ -145,6 +145,29 @@
   ^-  (map ship side)
   ?:  |(?=(%live tally.config.d) ?=(%ended stage.d))  votes.d
   ~
+::  +page: up to page-size messages before `before` (~: the latest),
+::  oldest first, and whether there are older ones
+::
+++  page-size  100
+++  page
+  |=  [ms=((mop @da message) lth) before=(unit @da)]
+  ^-  [(list message) ?]
+  =/  older=(list message)
+    %+  murn  (bap:mon ms)
+    |=  [k=@da m=message]
+    ?~  before  `m
+    ?:((lth k u.before) `m ~)
+  :-  (flop (scag page-size older))
+  (gth (lent older) page-size)
+::  +trim: a debate with only its latest page of messages, and whether
+::  it had more
+::
+++  trim
+  |=  d=debate
+  ^-  [debate ?]
+  =/  [ms=(list message) more=?]  (page messages.d ~)
+  :_  more
+  d(messages (gas:mon *((mop @da message) lth) (turn ms |=(m=message [id.m m]))))
 ::  +redact: the debate as subscribers get it
 ::
 ++  redact

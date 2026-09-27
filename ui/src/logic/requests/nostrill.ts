@@ -177,6 +177,10 @@ export default class IO {
   async forgetDebate(key: DebateKey) {
     return this.poke({ forget: key }, "debates");
   }
+  // the page of messages before `before` (a message id); arrives as an update
+  async olderDebateMessages(key: DebateKey, before: string) {
+    return this.poke({ older: { key, before } }, "debates");
+  }
   async dismissDebateInvite(key: DebateKey) {
     return this.poke({ dismiss: key }, "debates");
   }

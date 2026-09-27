@@ -76,6 +76,7 @@
       ::  whose presence to follow (replaces the set): the UI sends the
       ::  ships we follow, and any profile being looked at
       [%track who=(set ship)]
+      [%older =key before=@da]             ::  the page of messages before
   ==
 ::
 ::  +presence: the debate a ship is in, as it tells anyone who asks
@@ -107,12 +108,15 @@
 ::
 ::  +update: what a host sends its subscribers
 ::
-::    %init: the whole debate, on subscribing. votes are only who voted
+::    %init: the debate, on subscribing, with only its latest page of
+::    messages (more: there are older ones). votes are only who voted
 ::    for what when the tally is live or the debate is over; otherwise
 ::    just the count (see %tally)
+::    %page: older messages, oldest first, for /debate/<id>/older/<@da>
 ::
 +$  update
-  $%  [%init =debate total=@ud]
+  $%  [%init =debate total=@ud more=?]
+      [%page messages=(list message) more=?]
       [%said =message]
       $:  %meta
           =stage
