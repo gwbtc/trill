@@ -301,3 +301,13 @@ export function consolidateFeeds(fols: Map<string, FC>): FC {
   }
   return { start, end, feed: f };
 }
+
+// the oldest note's created_at (unix seconds), where paging back starts
+export function oldestNoteTime(fc: FC | undefined): number | null {
+  let oldest: number | null = null;
+  for (const p of Object.values(fc?.feed ?? {})) {
+    const t = p.event?.created_at;
+    if (typeof t === "number" && (oldest === null || t < oldest)) oldest = t;
+  }
+  return oldest;
+}

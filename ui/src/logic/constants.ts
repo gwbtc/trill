@@ -26,5 +26,7 @@ export const VIDEO_SUBREGEX = new RegExp(/.*(mov|mp4|ogv|mkv|m3uv)$/);
 // events under these names in nostr-feeds
 export const SYNC_SUB_NAME = "timeline";
 export const PROFILES_SUB_NAME = "profiles";
+// notes per "load older" request; relays cap a req at a few hundred anyway
+export const NOSTR_PAGE_SIZE = 200;
 export const GLOBAL_RELAY_URL = "wss://nostr.sortug.com";
 // export const GLOBAL_RELAY_URL = "ws://192.168.1.110:8080";

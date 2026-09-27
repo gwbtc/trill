@@ -69,7 +69,8 @@ export async function fetchFollows(relayURL: string, pubkey: string) {
   for await (const msg of res) {
     if (msg[0] === "EVENT") {
       //
-      ret = msg[2].tags.map((t) => t[1]);
+      // only p tags are follows; contact lists can carry others (t, r…)
+      ret = msg[2].tags.filter((t) => t[0] === "p" && t[1]).map((t) => t[1]);
     }
     if (msg[0] === "EOSE") {
       break;

@@ -6,7 +6,19 @@ import ProfileEditor from "./Editor";
 import { ProfValue } from "../modals/UserModal";
 import ConnectionsModal, { type ConnectionTab } from "./ConnectionsModal";
 import { getProfileGalaxy } from "@/logic/profile";
-import { Orbit } from "lucide-react";
+import { Copy, Orbit } from "lucide-react";
+import { npubEncode } from "nostr-tools/nip19";
+import toast from "react-hot-toast";
+import { middleTruncate } from "@/logic/utils";
+
+async function copyNpub(pubkey: string) {
+  try {
+    await navigator.clipboard.writeText(npubEncode(pubkey));
+    toast.success("npub copied");
+  } catch {
+    toast.error("Couldn't copy the npub");
+  }
+}
 import { getCustomProfileFields, getDisplayName, getFollowerCount, getFollowingCount, getProfileBanner } from "@/logic/userDisplay";
 
 interface Props {
@@ -88,7 +100,20 @@ function Profile({
 
         <div className="profile-info">
           <h2>{displayName}</h2>
-          <div className="profile-handle mono">{userString}</div>
+          {"nostr" in user ? (
+            // nostr users go by their npub, not the hex key in the url
+            <button
+              type="button"
+              className="profile-handle profile-npub mono"
+              title="Copy npub"
+              onClick={() => copyNpub(user.nostr)}
+            >
+              {middleTruncate(npubEncode(user.nostr), 14, 8)}
+              <Copy size={13} aria-hidden="true" />
+            </button>
+          ) : (
+            <div className="profile-handle mono">{userString}</div>
+          )}
           {profile?.about && <p className="profile-about">{profile.about}</p>}
           {galaxy && (
             <div className="profile-meta">
@@ -103,7 +128,15 @@ function Profile({
               <b>{followingCount.toLocaleString()}</b> Following
             </button>
             <button type="button" onClick={() => openConnections("followers")}>
-              <b>{followerCount.toLocaleString()}</b> Followers
+              {/* a nostr user's followers aren't in their own data; the
+                  list loads from a relay when opened */}
+              {"nostr" in user && followerCount === 0 ? (
+                "Followers"
+              ) : (
+                <>
+                  <b>{followerCount.toLocaleString()}</b> Followers
+                </>
+              )}
             </button>
           </div>
 

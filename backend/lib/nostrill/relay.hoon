@@ -331,7 +331,9 @@
         parse-metadata
       ?:  .=(kind.event 1)  ::  a poast
         parse-poast
-      ::  TODO kinds 3 (follow lists), 6 (reposts), 7 (reactions)
+      ?:  .=(kind.event 3)  ::  follow list
+        parse-follows
+      ::  TODO kinds 6 (reposts), 7 (reactions)
       `state
     [(weld cs1 cs) state]
     ::
@@ -343,7 +345,37 @@
       =/  umeta  (user-meta:de:njs u.ujon)
       ?~  umeta  ~&  >>  failed-dejs-metadata=ujon  `state
       =/  prof  (empty-nostr-profile:scri pubkey.event u.umeta)
+      ::  keep the follow list if their kind 3 came first
+      =/  old  (~(get by profiles.state) [%nostr pubkey.event])
+      =?  prof  ?=(^ old)
+        prof(following following.u.old, following-count following-count.u.old)
       =.  profiles.state  (~(put by profiles.state) [%nostr pubkey.event] prof)
+      `state
+    ::  +parse-follows: a kind 3 contact list, whose p tags are who they
+    ::  follow. replaceable, so the latest one simply replaces the last.
+    ::  their followers would need everyone else's lists; not tracked
+    ::
+    ++  parse-follows
+      ^-  (quip card _state)
+      =/  follows=(set user:sur)
+        %-  silt
+        %+  murn  tags.event
+        |=  tag=(list @t)
+        ^-  (unit user:sur)
+        ?~  tag  ~
+        ?.  =('p' i.tag)  ~
+        ?~  t.tag  ~
+        ::  a bare hex pubkey, no 0x
+        =/  pk  (rush i.t.tag hex)
+        ?~  pk  ~
+        `[%nostr `@ux`u.pk]
+      =/  key  [%nostr pubkey.event]
+      =/  prof
+        %+  ~(gut by profiles.state)  key
+        (empty-nostr-profile:scri pubkey.event *user-meta:nsur)
+      =.  following.prof  follows
+      =.  following-count.prof  ~(wyt in follows)
+      =.  profiles.state  (~(put by profiles.state) key prof)
       `state
     ::
     ++  parse-poast

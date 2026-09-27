@@ -5,7 +5,7 @@ import Icon from "@/components/Icon";
 import toast from "react-hot-toast";
 import type { FC } from "@/types/trill";
 import PostList from "@/components/feed/PostList";
-import { addEventToFc, eventsToFc } from "@/logic/nostrill";
+import { addEventToFc, eventsToFc, oldestNoteTime } from "@/logic/nostrill";
 
 export default function NostrUser({
   userString,
@@ -35,7 +35,8 @@ export default function NostrUser({
     storedUserFeed: s.nostrFeeds[`user/${pubkey}`],
   }));
   const [fc, setFC] = useState<FC>();
-  const shownFeed = fc || storedUserFeed;
+  // the store's copy first: it's what older pages land in
+  const shownFeed = storedUserFeed || fc;
   const wids = Object.values(relays)
     .map((r) => r.wid)
     .filter((w): w is number => w != null);
@@ -47,6 +48,37 @@ export default function NostrUser({
     fetchedFor.current = pubkey;
     handleRequestAccess();
   }, [api, feed, pubkey, wids.length]);
+
+  // paging back: ask for notes before the oldest we have. done when the
+  // feed grows; a page that adds nothing (after a while) means there are
+  // no older notes on these relays
+  const noteCount = Object.keys(shownFeed?.feed ?? {}).length;
+  const countRef = useRef(noteCount);
+  countRef.current = noteCount;
+  const [olderFrom, setOlderFrom] = useState<number | null>(null);
+  const [noOlder, setNoOlder] = useState(false);
+  useEffect(() => {
+    if (olderFrom !== null && noteCount > olderFrom) setOlderFrom(null);
+  }, [noteCount, olderFrom]);
+  useEffect(() => {
+    if (olderFrom === null) return;
+    const t = setTimeout(() => {
+      if (countRef.current <= olderFrom) setNoOlder(true);
+      setOlderFrom(null);
+    }, 15000);
+    return () => clearTimeout(t);
+  }, [olderFrom]);
+  async function loadOlder() {
+    const oldest = oldestNoteTime(shownFeed);
+    if (!api || oldest === null || wids.length === 0) return;
+    setOlderFrom(noteCount);
+    try {
+      await api.nostrFeed(pubkey, wids, oldest - 1);
+    } catch {
+      toast.error("Couldn't load older posts");
+      setOlderFrom(null);
+    }
+  }
 
   useEffect(() => {
     if (!lastFact) return;
@@ -152,7 +184,23 @@ export default function NostrUser({
       {(feed || shownFeed) && (
         <div id="feed-proper">
           {Object.values((feed || shownFeed)!.feed).some((post) => !post.parent) ? (
-            <PostList data={(feed || shownFeed)!} refetch={refetch} spine={false} />
+            <>
+              <PostList data={(feed || shownFeed)!} refetch={refetch} spine={false} />
+              {/* followed users' feeds come through the follow, not this sub */}
+              {!feed && !noOlder && (
+                <button
+                  type="button"
+                  className="load-older-btn"
+                  onClick={loadOlder}
+                  disabled={olderFrom !== null}
+                >
+                  {olderFrom !== null ? "Loading…" : "Load older posts"}
+                </button>
+              )}
+              {!feed && noOlder && (
+                <p className="load-older-end">No older posts on your relays.</p>
+              )}
+            </>
           ) : (
             <div className="profile-tab-empty">
               <Icon name="messages" size={38} color="textMuted" />

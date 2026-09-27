@@ -108,6 +108,26 @@
   font-size: 14px;
 }
 
+/* a nostr user's npub, click to copy */
+.profile-npub {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.profile-npub svg {
+  opacity: 0.6;
+}
+
+.profile-npub:hover svg {
+  opacity: 1;
+}
+
 .profile-about {
   margin: 13px 0 0;
   color: var(--color-text-secondary, #566069);

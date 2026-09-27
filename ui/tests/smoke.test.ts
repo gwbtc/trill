@@ -12,6 +12,7 @@ import {
   sourcedFeedsToFc,
   stringToUser,
   userToStringSafe,
+  oldestNoteTime,
 } from "../src/logic/nostrill";
 import { parseStateFact } from "../src/logic/stateFact";
 import { getHandleLabel, getUserId } from "../src/logic/userDisplay";
@@ -72,7 +73,7 @@ import {
   topicPublisher,
 } from "../src/logic/topics";
 import { encodeSharedCard, parseSharedCard } from "../src/logic/cards";
-import { linkLabel } from "../src/logic/utils";
+import { linkLabel, middleTruncate } from "../src/logic/utils";
 import { mentionedPubkeys, shortNote, shortNpub, splitNostrRefs } from "../src/logic/nostrRefs";
 
 describe("right rail search routing", () => {
@@ -1059,6 +1060,24 @@ describe("nostr references (NIP-27)", () => {
   test("shortens what it can't name", () => {
     expect(shortNpub(pk)).toBe("npub1dergg…xzpc");
     expect(shortNote(pk)).toBe("note1derg…9lcs");
+  });
+});
+
+describe("nostr profile pages", () => {
+  test("pages back from the oldest note", () => {
+    const fc = eventsToFc([
+      { id: "a", pubkey: "p", created_at: 300, kind: 1, content: "x", tags: [], sig: "" },
+      { id: "b", pubkey: "p", created_at: 100, kind: 1, content: "y", tags: [], sig: "" },
+      { id: "c", pubkey: "p", created_at: 200, kind: 1, content: "z", tags: [], sig: "" },
+    ] as any);
+    expect(oldestNoteTime(fc)).toBe(100);
+    expect(oldestNoteTime(undefined)).toBeNull();
+  });
+
+  test("truncates long ids in the middle", () => {
+    const npub = "npub1dergggklka99wwrs92yz8wdjs952h2ux2ha2ed598ngwu9w7a6fsh9xzpc";
+    expect(middleTruncate(npub, 14, 8)).toBe("npub1dergggklk…fsh9xzpc");
+    expect(middleTruncate("short", 14, 8)).toBe("short");
   });
 });
 

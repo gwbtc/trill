@@ -252,3 +252,8 @@ export function safeHref(url: string): string | undefined {
     return undefined;
   }
 }
+
+// "npub1abcdefgh…stuvwxyz": keeps both ends of a long identifier
+export function middleTruncate(s: string, head: number, tail: number): string {
+  return s.length <= head + tail + 1 ? s : `${s.slice(0, head)}…${s.slice(-tail)}`;
+}

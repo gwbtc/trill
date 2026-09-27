@@ -13,6 +13,7 @@ import type {
 import {
   FeedPostCount,
   PROFILES_SUB_NAME,
+  NOSTR_PAGE_SIZE,
   SYNC_SUB_NAME,
 } from "../constants";
 import type {
@@ -441,13 +442,18 @@ export default class IO {
   async syncRelays(relays: number[]) {
     return await this.relayGet(relays, SYNC_SUB_NAME, { sync: null });
   }
-  // a user's notes, and their profile: the backend pushes profiles to the
-  // UI at eose when a req asked for kind 0
-  async nostrFeed(pubkey: string, relays: number[]) {
-    const filters = [
-      { kinds: [1], authors: [pubkey] },
-      { kinds: [0], authors: [pubkey] },
-    ];
+  // a user's notes, their profile and follow list (kinds 0 and 3; the
+  // backend pushes profiles to the UI at eose when a req asked for kind 0).
+  // with `until` (unix seconds): one page of notes older than that, filed
+  // into the same feed
+  async nostrFeed(pubkey: string, relays: number[], until?: number) {
+    const filters =
+      until === undefined
+        ? [
+            { kinds: [1], authors: [pubkey] },
+            { kinds: [0, 3], authors: [pubkey] },
+          ]
+        : [{ kinds: [1], authors: [pubkey], until, limit: NOSTR_PAGE_SIZE }];
     return await this.relayCustom(relays, `user/${pubkey}`, filters);
   }
   async nostrThread(id: string, relays: number[]) {

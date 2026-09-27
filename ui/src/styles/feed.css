@@ -77,3 +77,34 @@
     transform: rotate(360deg);
   }
 }
+
+/* paging back through a nostr user's notes (components/nostr/User.tsx) */
+.load-older-btn {
+  display: block;
+  margin: 16px auto 24px;
+  padding: 9px 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.load-older-btn:hover:not(:disabled) {
+  background: var(--color-surface);
+}
+
+.load-older-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.load-older-end {
+  margin: 16px 0 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
