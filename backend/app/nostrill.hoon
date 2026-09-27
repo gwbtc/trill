@@ -237,6 +237,7 @@
       =/  msg  ?~  rest.pole  ''  -.rest.pole
       =^  cs  state  (handle-req:reqs [msg %fols] pole)
       [cs this]
+    [%profile ~]  [give-prof:prof this]
     [%beg %feed rest=*]
       =/  msg  ?~  rest.pole  ''  -.rest.pole
       =^  cs  state  (handle-req:reqs [msg %begs %feed] pole)
@@ -304,6 +305,13 @@
           %post  (handle-post-fact:posts +.fact)
           %prof  (handle-prof-fact:prof +.fact)
         ==
+      [cs this]
+    ::  one-shot profile fetch, see %fetch in +handle-prof
+    [%profile ship=@ ~]
+      ?.  ?=(%fact -.sign)  `this
+      =/  ufact  %-  (soft fact:comms)  q.q.cage.sign
+      ?.  ?=([~ %prof *] ufact)  `this
+      =^  cs  state  (handle-prof-fact:prof +.u.ufact)
       [cs this]
   ==
 ::

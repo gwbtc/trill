@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { Swords } from "lucide-react";
 import useLocalState from "@/state/state";
+import ShipName from "./ShipName";
 import {
   debateKey,
   debatePath,
@@ -95,7 +96,12 @@ export function FollowsDebating() {
           <span className="debate-live-dot" aria-hidden="true" />
           <span className="follows-debating-text">
             <span className="follows-debating-who">
-              <span className="mono">{ships.slice(0, 2).join(", ")}</span>
+              {ships.slice(0, 2).map((s, i) => (
+                <span key={s}>
+                  {i > 0 && ", "}
+                  <ShipName ship={s} />
+                </span>
+              ))}
               {ships.length > 2 && ` and ${ships.length - 2} more`}
               {ships.length === 1 ? ` is ${presenceLabel(presence)}` : " are in a debate"}
             </span>

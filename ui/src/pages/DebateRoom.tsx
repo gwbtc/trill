@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import toast from "react-hot-toast";
-import { Link2, LogOut, MicOff, Play, Square, UserMinus, UserPlus, Volume2 } from "lucide-react";
+import { Link2, LogOut, MicOff, Play, Share2, Square, UserMinus, UserPlus, Volume2 } from "lucide-react";
 import useLocalState from "@/state/state";
 import ConfirmationDialog from "@/components/modals/ConfirmationDialog";
+import ShipName from "@/components/debates/ShipName";
+import ComposerModal from "@/components/modals/ComposerModal";
 import {
   canSpeak,
   canTakeSide,
   canVote,
+  debateCard,
   debateKey,
   debatePath,
   moderates,
@@ -108,6 +111,12 @@ function Room({ d, our }: { d: Debate; our: string }) {
     navigate("/debates");
   }
   const setModal = useLocalState((s) => s.setModal);
+  const setComposerData = useLocalState((s) => s.setComposerData);
+  // into a post, as a card that opens the debate
+  function share() {
+    setComposerData({ type: "card", card: debateCard(d) });
+    setModal(<ComposerModal />);
+  }
   // the app's confirmation dialog, then the action
   const confirm: Confirm = (message, then) =>
     setModal(
@@ -139,11 +148,11 @@ function Room({ d, our }: { d: Debate; our: string }) {
           <h1>{d.topic}</h1>
           <p>
             <span className={`debate-stage ${d.stage}`}>{status}</span> · hosted by{" "}
-            <span className="mono">{d.key.host}</span>
+            <ShipName ship={d.key.host} />
             {d.moderator && (
               <>
                 {" "}
-                · moderated by <span className="mono">{d.moderator}</span>
+                · moderated by <ShipName ship={d.moderator} />
               </>
             )}
           </p>
@@ -178,6 +187,9 @@ function Room({ d, our }: { d: Debate; our: string }) {
               <UserPlus size={16} />
             </button>
           )}
+          <button type="button" className="debate-btn icon" title="Share in a post" aria-label="Share in a post" onClick={share}>
+            <Share2 size={16} />
+          </button>
           <button type="button" className="debate-btn icon" title="Copy link" aria-label="Copy link" onClick={copyLink}>
             <Link2 size={16} />
           </button>
@@ -224,7 +236,7 @@ function Room({ d, our }: { d: Debate; our: string }) {
           d.messages.map((m) => (
             <div key={m.id} className={`debate-msg ${m.side}${m.author === our ? " mine" : ""}`}>
               <div className="debate-msg-head">
-                <span className="mono">{m.author}</span>
+                <ShipName ship={m.author} />
                 <time title={new Date(m.time).toLocaleString()}>
                   {new Date(m.time).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
                 </time>
@@ -274,7 +286,7 @@ function SideColumn({
             const muted = d.muted.includes(ship);
             return (
               <li key={ship} className={`debate-member${muted ? " muted" : ""}`}>
-                <span className="mono">{ship}</span>
+                <ShipName ship={ship} />
                 {ship === our && <span className="debate-you">you</span>}
                 {muted && <MicOff size={13} aria-label="muted" />}
                 {isMod && ship !== our && d.stage !== "ended" && (

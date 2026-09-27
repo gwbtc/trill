@@ -91,6 +91,7 @@ import {
   tallyOf,
   trackedShips,
   debatesOfFollows,
+  debateCard,
   presenceLabel,
   type Presence,
   type Debate,
@@ -262,6 +263,9 @@ describe("notification helpers", () => {
     const da = "~2026.9.26..12.00.00";
 
     expect(path(`/post/mention/~bus/~bus/1.234/${da}`)).toBe("/t/u/~bus/1234");
+    // %debates: invitations, and a debate we're in starting
+    expect(path("/debates/invite/~nec/170.141")).toBe("/debates/~nec/170141");
+    expect(path("/debates/start/~bus/170.141")).toBe("/debates/~bus/170141");
     expect(path(`/post/reply/~bus/~sampel/1.234/5.678/${da}`)).toBe("/t/u/~sampel/1234");
     expect(path(`/post/quote/~bus/1.234/~bus/5.678/${da}`)).toBe("/t/u/~sampel/1234");
     expect(path(`/post/react/~bus/urbit/~sampel/1.234/${da}`)).toBe("/t/u/~sampel/1234");
@@ -1039,6 +1043,21 @@ describe("debates", () => {
     ended: null,
   };
   const at = (debates: Map<string, Debate>) => debates.get(debateKey(key))!;
+
+  test("a shared debate card keeps its key, and only a real one", () => {
+    const live = { ...base, tally: "live" as const, votes: { "~wes": "b" as const } };
+    const card = debateCard(live, 1000);
+    expect(card.items.map((i) => [i.title, i.meta])).toEqual([
+      ["Cats", "0 votes"],
+      ["Dogs", "1 vote"],
+    ]);
+    expect(parseSharedCard(encodeSharedCard(card))).toEqual(card);
+    // a hidden tally shares no counts
+    expect(debateCard(base, 1000).items.every((i) => i.meta === "")).toBe(true);
+    // a forged key is dropped, the card still shows
+    const forged = parseSharedCard(JSON.stringify({ ...card, debate: { host: "../x", id: "1" } }));
+    expect(forged && "debate" in forged).toBe(false);
+  });
 
   test("a hidden tally keeps our own vote; a revealed one replaces it", () => {
     let m = new Map([[debateKey(key), { ...base, votes: { "~wes": "b" as const } }]]);

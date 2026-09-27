@@ -46,8 +46,25 @@
       :~  (update-followers:cards:lib [%prof ~])
       ==
     %fetch
-      ::  TODO
-      `state
+      ::  urbit profiles only, one-shot watches of /profile (answered
+      ::  in +on-agent); the frontend asks relays for nostr ones
+      :_  state
+      %+  murn  p.poke
+      |=  =user:sur
+      ?.  ?=(%urbit -.user)  ~
+      ?:  =(our.bowl +.user)  ~
+      =/  =wire  /profile/(scot %p +.user)
+      `[%pass wire %agent [+.user dap.bowl] %watch /profile]
+  ==
+::  +give-prof: our profile to anyone who asks, then kick
+::
+++  give-prof
+  ^-  (list card)
+  =/  uprof  (~(get by profiles.state) [%urbit our.bowl])
+  =/  prof  ?^  uprof  u.uprof  default-profile:scry
+  =/  =fact:comms  [%prof `prof]
+  :~  [%give %fact ~ %noun !>(fact)]
+      [%give %kick ~ ~]
   ==
 ::  +handle-prof-fact: profile update from a ship we follow
 ::

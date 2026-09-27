@@ -1,3 +1,4 @@
+import type { SharedCard } from "./cards";
 // debates, from the %debates agent (backend/app/debates.hoon): two sides
 // argue, onlookers vote. the ship that created a debate hosts it
 
@@ -257,4 +258,31 @@ export function debatesOfFollows(
     byDebate.set(k, entry);
   }
   return [...byDebate.values()].map((e) => ({ ...e, ships: e.ships.sort() }));
+}
+
+// a debate as a shareable card, frozen as it is now; the key lets the
+// card open it later
+export function debateCard(d: Debate, now = Date.now()): SharedCard {
+  const t = tallyOf(d);
+  const votes = (n: number) => (t.known ? `${n} ${n === 1 ? "vote" : "votes"}` : "");
+  const status =
+    d.stage === "live"
+      ? "live"
+      : d.stage === "scheduled"
+        ? d.start
+          ? `starts ${relativeTime(d.start, now)}`
+          : "upcoming"
+        : "ended";
+  return {
+    v: 1,
+    kind: "debate",
+    title: d.topic,
+    subtitle: `${d.key.host}'s debate · ${status}`,
+    at: now,
+    items: [
+      { title: d.sides.a, url: null, meta: votes(t.a), pic: null },
+      { title: d.sides.b, url: null, meta: votes(t.b), pic: null },
+    ],
+    debate: { host: d.key.host, id: d.key.id },
+  };
 }

@@ -14,6 +14,7 @@ import {
   type Debate,
   type Invitation,
 } from "@/logic/debates";
+import ShipName from "@/components/debates/ShipName";
 import "@/styles/Debates.css";
 
 export default function Debates() {
@@ -82,7 +83,7 @@ export default function Debates() {
                     <span className="debate-card-topic">{i.topic}</span>
                     <Sides a={i.sides.a} b={i.sides.b} />
                     <span className="debate-card-meta">
-                      <span className="mono">{i.key.host}</span> invited you ·{" "}
+                      <ShipName ship={i.key.host} /> invited you ·{" "}
                       {relativeTime(i.at)}
                     </span>
                   </button>
@@ -139,7 +140,7 @@ function DebateCard({ d }: { d: Debate }) {
         </span>
         <Sides a={d.sides.a} b={d.sides.b} />
         <span className="debate-card-meta">
-          <span className="mono">{d.key.host}</span> · {when} · {debaters}{" "}
+          <ShipName ship={d.key.host} /> · {when} · {debaters}{" "}
           {debaters === 1 ? "debater" : "debaters"} · {d.onlookers.length}{" "}
           {d.onlookers.length === 1 ? "onlooker" : "onlookers"}
         </span>

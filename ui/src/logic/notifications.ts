@@ -72,7 +72,7 @@ export function notificationPath(notification: Notification) {
     }
   }
   if ("debate" in notification.type) {
-    const { host, id } = notification.type.debate.invite;
+    const { host, id } = notification.type.debate;
     return `/debates/${host}/${id}`;
   }
   if ("post" in notification.type) {
@@ -184,10 +184,11 @@ export function skeinToNote(skein: Skein, our?: string): Result<Notification> {
       type = { nostr: { keys: { user: ship, pubkey } } };
     }
   }
-  // %debates invitations: /debates/invite/<host>/<dotted @ud id>
-  if (key === "debates" && path[1] === "invite" && path[2] && path[3]) {
+  // %debates: /debates/<invite or start>/<host>/<dotted @ud id>
+  const dkind = path[1];
+  if (key === "debates" && (dkind === "invite" || dkind === "start") && path[2] && path[3]) {
     from = { urbit: patpToFallbackUID(path[2]) };
-    type = { debate: { invite: { host: path[2], id: path[3].replaceAll(".", "") } } };
+    type = { debate: { kind: dkind, host: path[2], id: path[3].replaceAll(".", "") } };
   }
   if (!type) return { error: "bad skein" };
 

@@ -114,9 +114,17 @@
       ::  from another ship: an untyped noun, so clammed, not !<
       =/  upd  ;;(update:sur q.q.cage.sign)
       =/  before  current:hc
+      =/  was  (~(get by joined) key)
       =.  joined  (mirror:hc key upd)
+      =/  started=(list card)
+        ?.  ?=(%meta -.upd)  ~
+        ?~  was  ~
+        ?.  &(?=(%scheduled stage.debate.u.was) ?=(%live stage.upd))  ~
+        ~[(start-card:hc key topic.config.debate.u.was)]
       :_  this
-      [(ui-card:hc key upd) (presence-cards:hc before)]
+      :*  (ui-card:hc key upd)
+          (weld started (presence-cards:hc before))
+      ==
     ==
   ::
       [%act @ @ ~]
@@ -167,6 +175,9 @@
     ::  already started or ended by hand
     ?:  ?=(%| -.res)  `this
     =^  cards  state  (hosted:hc id u.d p.res act)
+    ::  we didn't press start, so tell us
+    =?  cards  ?=(%start -.act)
+      [(start-card:hc [our.bowl id] topic.config.u.d) cards]
     [cards this]
   ==
 ::
@@ -486,12 +497,27 @@
 ++  hark-card
   |=  i=invitation:sur
   ^-  card
-  =/  pat=path  /debates/invite/(scot %p host.key.i)/(scot %ud id.key.i)
+  %^  notify  %invite  key.i
+  ~[[%ship host.key.i] ' invited you to a debate: ' [%emph topic.i]]
+::  +start-card: a notification that a debate we're in went live
+::
+++  start-card
+  |=  [=key:sur topic=@t]
+  ^-  card
+  %^  notify  %start  key
+  ?:  =(our.bowl host.key)
+    ~['Your debate has started: ' [%emph topic]]
+  ~[[%ship host.key] ' opened the floor: ' [%emph topic]]
+::
+++  notify
+  |=  [kind=?(%invite %start) =key:sur con=(list content:hark)]
+  ^-  card
+  =/  pat=path  /debates/[kind]/(scot %p host.key)/(scot %ud id.key)
   =/  =yarn:hark
-    :*  (sham i)
+    :*  (sham kind key now.bowl)
         [~ ~ q.byk.bowl pat]
         now.bowl
-        ~[[%ship host.key.i] ' invited you to a debate: ' [%emph topic.i]]
+        con
         pat
         ~
     ==

@@ -2,6 +2,8 @@
 // as a %json block with origin "card" and rendered as a card in the feed.
 // the JSON comes from other ships, so parsing trusts nothing
 
+import { isValidPatp } from "urbit-ob";
+
 export type CardItem = {
   title: string;
   url: string | null;
@@ -19,6 +21,8 @@ export type SharedCard = {
   // when it was shared, ms
   at: number;
   items: CardItem[];
+  // kind "debate": which one, so the card can open it (the host serves it)
+  debate?: { host: string; id: string };
 };
 
 const MAX_ITEMS = 10;
@@ -46,7 +50,15 @@ export function parseSharedCard(content: string): SharedCard | null {
     .filter((i: CardItem) => i.title !== "");
   const title = str(raw.title, 80);
   if (!title || items.length === 0) return null;
+  const debate =
+    typeof raw.debate?.host === "string" &&
+    isValidPatp(raw.debate.host) &&
+    typeof raw.debate?.id === "string" &&
+    /^\d{1,60}$/.test(raw.debate.id)
+      ? { debate: { host: raw.debate.host as string, id: raw.debate.id as string } }
+      : {};
   return {
+    ...debate,
     v: 1,
     kind: str(raw.kind, 40),
     title,
