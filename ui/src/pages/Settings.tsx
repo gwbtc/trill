@@ -8,6 +8,7 @@ import "@/styles/Settings.css";
 import { WS_URL } from "@/logic/api";
 import PageHeader from "@/components/layout/PageHeader";
 import TopicsSettings from "@/components/settings/TopicsSettings";
+import AiProvidersSettings from "@/components/settings/AiProvidersSettings";
 import TabStrip, { type TabItem } from "@/components/ui/TabStrip";
 import { useTheme } from "@/styles/ThemeProvider";
 import { themeSwatches } from "@/styles/themeMetadata";
@@ -326,6 +327,8 @@ function Settings() {
         </div>
 
         <TopicsSettings />
+
+        <AiProvidersSettings />
 
         <div id="settings-muted" className="settings-section">
           <div className="section-header">

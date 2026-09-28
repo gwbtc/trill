@@ -325,6 +325,21 @@ export default class IO {
   async scryTopics() {
     return await this.scry("/j/topics");
   }
+  // AI model providers, from %trill-ai-client (logic/aiClient.ts). errors
+  // when it isn't running
+  async scryAiProviders() {
+    return await this.scry("/providers", "trill-ai-client");
+  }
+  async scryAiSuggestions() {
+    return await this.scry("/suggestions", "trill-ai-client");
+  }
+  // apiKey null keeps the key the provider has; "" removes it
+  async setAiProvider(name: string, baseUrl: string, apiKey: string | null) {
+    return this.poke({ "set-provider": { name, baseUrl, apiKey } }, "trill-ai-client");
+  }
+  async deleteAiProvider(name: string) {
+    return this.poke({ "del-provider": { name } }, "trill-ai-client");
+  }
   // %topics refetches everything for the new prefs; %nostrill forwards them
   async setTopicPrefs(prefs: TopicPrefs) {
     return this.poke({ topics: prefs });

@@ -74,6 +74,7 @@ import {
   topicPublisher,
 } from "../src/logic/topics";
 import { encodeSharedCard, parseSharedCard } from "../src/logic/cards";
+import { baseUrlProblem, parseProviders, providerNameProblem } from "../src/logic/aiClient";
 import { linkLabel, middleTruncate } from "../src/logic/utils";
 import { countHashtags, postHashtags } from "../src/logic/hashtags";
 import { userFromPost } from "../src/logic/trill/helpers";
@@ -1384,5 +1385,33 @@ describe("posting about a topic", () => {
     const topic = parsed.sources.x.topics[0];
     expect(topic.content).toBe("term");
     expect(topic.links).toEqual([{ title: "ok", url: "https://a.example", publisher: "A", pic: null }]);
+  });
+});
+
+describe("AI providers", () => {
+  test("names and urls follow the agent's rules", () => {
+    expect(providerNameProblem("openrouter")).toBeNull();
+    expect(providerNameProblem("my-local-2")).toBeNull();
+    expect(providerNameProblem("")).not.toBeNull();
+    expect(providerNameProblem("2fast")).not.toBeNull();
+    expect(providerNameProblem("Open AI")).not.toBeNull();
+    expect(baseUrlProblem("https://api.openai.com/v1/")).toBeNull();
+    expect(baseUrlProblem("http://localhost:11434/v1")).toBeNull();
+    expect(baseUrlProblem("ftp://nope")).not.toBeNull();
+    expect(baseUrlProblem("https://")).not.toBeNull();
+    expect(baseUrlProblem("https:///v1")).not.toBeNull();
+  });
+
+  test("parsing keeps well-formed providers, sorted, and never a key", () => {
+    const raw = [
+      { name: "zeta", baseUrl: "https://z.example/v1", hasKey: true, apiKey: "leak" },
+      { name: "alpha", baseUrl: "http://localhost/v1", hasKey: false },
+      { name: 3 },
+    ];
+    expect(parseProviders(raw)).toEqual([
+      { name: "alpha", baseUrl: "http://localhost/v1", hasKey: false },
+      { name: "zeta", baseUrl: "https://z.example/v1", hasKey: true },
+    ]);
+    expect(parseProviders(null)).toEqual([]);
   });
 });
