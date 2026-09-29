@@ -69,12 +69,34 @@
           step=?(%quoting %waiting %minting)
           outputs=(list output)
       ==
+      ::  a token someone gave us, swapped for proofs of our own
+      $:  %receive
+          mint=@t
+          inputs=(list proof)
+          outputs=(list output)
+      ==
+      ::  ecash to hand over: our proofs swapped into the amount (the
+      ::  first sends outputs) and change for us
+      $:  %send
+          mint=@t
+          amount=@ud
+          memo=(unit @t)
+          inputs=(list proof)
+          outputs=(list output)
+          sends=@ud
+      ==
   ==
+::  +sent: a token we made, to copy and hand over; its proofs are
+::  someone else's once they swap it
+::
++$  sent  [at=@da mint=@t amount=@ud token=@t]
 ::  +action: pokes from our own ship (%noun; the UI's %json later)
 ::
 +$  action
   $%  [%add-mint url=@t]
       [%deposit mint=@t amount=@ud]             ::  in sats
+      [%receive token=@t]                       ::  cashuA... or cashuB...
+      [%send mint=@t amount=@ud memo=(unit @t)]
   ==
 ::  +token: ecash to hand over, from one mint in one unit (NUT-00 V3/V4)
 ::

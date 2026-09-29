@@ -33,6 +33,7 @@
       proofs=(map @t (list proof:sur))          ::  spendable, by mint
       ops=(map @ud op:sur)
       next-op=@ud
+      sent=(list sent:sur)                      ::  tokens we made, newest first
       log=(list [at=@da what=@t])               ::  newest first, 50 kept
   ==
 ::  +poll-every: how often a deposit's quote is checked
@@ -127,6 +128,57 @@
       %-  pairs:enjs:format
       ~[amount+(numb:enjs:format amount.a) unit+s+'sat']
     [~[(post id /quote (cat 3 url '/v1/mint/quote/bolt11') body)] state]
+  ::
+      %receive
+    =/  tok  (decode-token:cw token.a)
+    ?~  tok  ~|('that isn\'t a cashu token' !!)
+    =/  url  mint.u.tok
+    =/  m  (~(get by mints) url)
+    ?~  m  ~|((cat 3 'add its mint first: ' url) !!)
+    ?.  =('sat' unit.u.tok)  ~|('only tokens in sats, for now' !!)
+    =/  ins  (resolve proofs.u.tok ~(tap in ~(key by keysets.u.m)))
+    ?~  ins  ~|('the token uses a keyset its mint doesn\'t list' !!)
+    ?.  (dleqs-ok u.m u.ins)  ~|('a proof in the token fails its DLEQ check' !!)
+    =/  fee  (need (fee:cw keysets.u.m u.ins))
+    =/  total  (sum u.ins)
+    ?:  (lte total fee)  ~|('the token is worth no more than the fee' !!)
+    =/  ks  (active-keyset url 'sat')
+    ?~  ks  ~|('the mint has no active keyset for sats' !!)
+    =/  amounts  (need (denominations:cw (sub total fee) keys.u.ks))
+    =/  id  next-op
+    =.  next-op  +(next-op)
+    =^  outs  state  (new-outputs id.u.ks amounts)
+    =.  ops  (~(put by ops) id [%receive url u.ins outs])
+    [~[(swap-card id url u.ins outs)] state]
+  ::
+      %send
+    =/  url  (strip-slash:cw mint.a)
+    =/  m  (~(get by mints) url)
+    ?~  m  ~|('add the mint first' !!)
+    ?:  =(0 amount.a)  ~|('send at least 1 sat' !!)
+    =/  have=(list proof:sur)  (fall (~(get by proofs) url) ~)
+    =/  pick  (select have amount.a keysets.u.m)
+    ?~  pick  ~|('not enough ecash at that mint, with fees' !!)
+    =/  ins=(list proof:sur)  ins.u.pick
+    ::  the proofs are reserved: out of the wallet until this is done
+    =/  used  (silt (turn ins |=(p=proof:sur secret.p)))
+    =.  proofs
+      (~(put by proofs) url (skip have |=(p=proof:sur (~(has in used) secret.p))))
+    ::  they add up exactly: they're the token, as they are, fee-free
+    ?:  exact.u.pick
+      (made url amount.a memo.a ins)
+    =/  ks  (active-keyset url 'sat')
+    ?~  ks  ~|('the mint has no active keyset for sats' !!)
+    =/  send-amounts  (need (denominations:cw amount.a keys.u.ks))
+    =/  change
+      (need (denominations:cw (sub (sum ins) (add amount.a fee.u.pick)) keys.u.ks))
+    =/  id  next-op
+    =.  next-op  +(next-op)
+    =^  outs  state  (new-outputs id.u.ks (weld send-amounts change))
+    =.  ops
+      %+  ~(put by ops)  id
+      [%send url amount.a memo.a ins outs (lent send-amounts)]
+    [~[(swap-card id url ins outs)] state]
   ==
 ::  +heard: an http response for an operation, on the wire it went out on
 ::
@@ -139,6 +191,8 @@
   ?-  -.u.o
     %add-mint  (heard-add-mint id u.o tag got)
     %deposit   (heard-deposit id u.o tag got)
+    %receive   (heard-swap id u.o got)
+    %send      (heard-swap id u.o got)
   ==
 ::  +parse: a 2xx json body, or why not
 ::
@@ -238,6 +292,129 @@
     =.  ops  (~(del by ops) id)
     %-  note
     (rap 3 ~['deposited ' (crip (a-co:co amount.o)) ' sats at ' mint.o])
+  ==
+::
+::  swapping: a received token for our own proofs, or ours into a token
+::  to send and change
+::
+++  heard-swap
+  |=  [id=@ud o=op:sur got=(each json @t)]
+  ^-  (quip card _state)
+  ::  one kind at a time: their fields sit in different places
+  ?+  -.o  `state
+      %receive
+    =/  new  (swapped mint.o outputs.o got)
+    ?:  ?=(%| -.new)  (fail id (cat 3 'receiving failed: ' p.new))
+    =.  ops  (~(del by ops) id)
+    =.  proofs  (~(put by proofs) mint.o (weld p.new (fall (~(get by proofs) mint.o) ~)))
+    (note (rap 3 ~['received ' (crip (a-co:co (sum p.new))) ' sats']))
+  ::
+      %send
+    =/  new  (swapped mint.o outputs.o got)
+    ?:  ?=(%| -.new)
+      ::  our reserved proofs come back, unless the mint says they're
+      ::  spent (a check of their state sorts out the rest)
+      =?  proofs  ?=(~ (find "spent" (cass (trip p.new))))
+        (~(put by proofs) mint.o (weld inputs.o (fall (~(get by proofs) mint.o) ~)))
+      (fail id (cat 3 'sending failed: ' p.new))
+    =.  ops  (~(del by ops) id)
+    ::  the first sends proofs are the token; the rest are our change
+    =/  change  (slag sends.o p.new)
+    =.  proofs  (~(put by proofs) mint.o (weld change (fall (~(get by proofs) mint.o) ~)))
+    (made mint.o amount.o memo.o (scag sends.o p.new))
+  ==
+::  +swapped: a swap's answer as proofs on our outputs, or why not
+::
+++  swapped
+  |=  [url=@t outs=(list output:sur) got=(each json @t)]
+  ^-  (each (list proof:sur) @t)
+  ?:  ?=(%| -.got)  got
+  =/  sigs  (signatures:de:cw p.got)
+  ?~  sigs  [%| 'the mint\'s signatures didn\'t parse']
+  (unblind-all url outs u.sigs)
+::  +made: a token of these proofs, kept to hand over
+::
+++  made
+  |=  [url=@t amount=@ud memo=(unit @t) ps=(list proof:sur)]
+  ^-  (quip card _state)
+  =/  token  (encode-token:cw [url 'sat' memo ps])
+  =/  entries=(list sent:sur)  [[now.bowl url amount token] sent]
+  =.  sent  entries
+  (note (rap 3 ~['made a token for ' (crip (a-co:co amount)) ' sats']))
+::
+++  swap-card
+  |=  [id=@ud url=@t ins=(list proof:sur) outs=(list output:sur)]
+  ^-  card
+  %:  post  id  /swap  (cat 3 url '/v1/swap')
+    %-  pairs:enjs:format
+    :~  inputs+(proofs:en:cw ins)
+        outputs+(outputs:en:cw (turn outs blinded))
+    ==
+  ==
+::
+++  sum
+  |=  ps=(list proof:sur)
+  ^-  @ud
+  (roll ps |=([p=proof:sur n=@ud] (add n amount.p)))
+::  +select: proofs for an amount. first, largest first, any that add up
+::  to it exactly: sent as they are, no swap, no fee. else, largest first
+::  until they cover the amount and the fee of swapping them
+::
+++  select
+  |=  [have=(list proof:sur) amount=@ud keysets=(map @t keyset:sur)]
+  ^-  (unit [ins=(list proof:sur) fee=@ud exact=?])
+  =/  big=(list proof:sur)
+    (sort have |=([a=proof:sur b=proof:sur] (gth amount.a amount.b)))
+  =/  exact=(list proof:sur)
+    =|  out=(list proof:sur)
+    =/  left  amount
+    =/  ps  big
+    |-
+    ?~  ps  ?:(=(0 left) out ~)
+    ?:  =(0 left)  out
+    ?:  (gth amount.i.ps left)  $(ps t.ps)
+    $(ps t.ps, left (sub left amount.i.ps), out [i.ps out])
+  ?^  exact  `[exact 0 &]
+  =|  out=(list proof:sur)
+  =/  ps  big
+  |-
+  =/  fee  (fall (fee:cw keysets out) 0)
+  ?:  &(?=(^ out) (gte (sum out) (add amount fee)))  `[out fee |]
+  ?~  ps  ~
+  $(ps t.ps, out [i.ps out])
+::  +resolve: a token's proofs with their keyset ids made full; ~ if one
+::  isn't among the mint's
+::
+++  resolve
+  |=  [ps=(list proof:sur) ids=(list @t)]
+  ^-  (unit (list proof:sur))
+  =|  out=(list proof:sur)
+  |-
+  ?~  ps  `(flop out)
+  =/  full  (full-id:cw id.i.ps ids)
+  ?~  full  ~
+  $(ps t.ps, out [i.ps(id u.full) out])
+::  +dleqs-ok: a token's DLEQ proofs, where it gives them with their
+::  blinding factors, check out against the mint's keys (NUT-12)
+::
+++  dleqs-ok
+  |=  [m=mint:sur ps=(list proof:sur)]
+  ^-  ?
+  %+  levy  ps
+  |=  p=proof:sur
+  ?~  dleq.p  &
+  ?~  r.u.dleq.p  &
+  =/  ks  (~(get by keysets.m) id.p)
+  ?~  ks  |
+  =/  k  (~(get by keys.u.ks) amount.p)
+  ?~  k  |
+  %:  proof-dleq-ok:cashu
+    (as-octs:mimes:html secret.p)
+    c.p
+    u.k
+    e.u.dleq.p
+    s.u.dleq.p
+    u.r.u.dleq.p
   ==
 ::  +mint-outputs: blind the amount into outputs on an active keyset,
 ::  save them and advance the counter, then ask the mint to sign them
@@ -408,7 +585,19 @@
             step+s+step.o
             invoice+s+request.o
         ==
+      ::
+          %receive
+        (pairs ~[id+(numb id) kind+s+'receive' mint+s+mint.o amount+(numb (sum inputs.o))])
+      ::
+          %send
+        (pairs ~[id+(numb id) kind+s+'send' mint+s+mint.o amount+(numb amount.o)])
       ==
+    ::
+      :-  %sent
+      :-  %a
+      %+  turn  sent
+      |=  s=sent:sur
+      (pairs ~[at+(sect at.s) mint+s+mint.s amount+(numb amount.s) token+s+token.s])
     ::
       :-  %log
       a+(turn log |=([at=@da what=@t] (pairs ~[at+(sect at) what+s+what])))
