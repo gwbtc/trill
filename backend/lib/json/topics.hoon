@@ -6,7 +6,7 @@
 ++  en
 =,  enjs:format
 |%
-::  +trending: the prefs, and each source's leading topics in the
+::  +trending: the prefs, and each source's topics in the
 ::  source's own order, with when the source was last fetched
 ::
 ::    spam: who judges it, and the topics Jev flagged or the owner had
@@ -53,18 +53,43 @@
   |=  t=topic:tsur
   ^-  json
   =/  url=(unit @t)  ?^(url.t url.t ?~(links.t ~ `url.i.links.t))
+  ::  who published the url: google news' are all its own redirects
+  =/  by=(unit link:tsur)
+    ?~  url  ~
+    (find-link links.t u.url)
   %-  pairs
+  ::  no related articles: they're most of the weight (google news
+  ::  urls run to 270 characters). the topic's modal asks for them by id
   :~  source+s+source.t
+      id+s+(topic-id:tsur title.t)
       title+s+title.t
       url+?~(url ~ s+u.url)
+      publisher+s+?~(by '' publisher.u.by)
       pic+?~(pic.t ~ s+u.pic.t)
       score+?~(score.t ~ (numb u.score.t))
       date+(time date.t)
       categories+a+(turn ~(tap in categories.t) |=(c=category:tsur s+c))
       content+s+content.t
-      ::  the related articles, for the topic's modal
-      links+a+(turn (scag 5 links.t) link)
   ==
+::
+++  find-link
+  |=  [ls=(list link:tsur) url=@t]
+  ^-  (unit link:tsur)
+  ?~  ls  ~
+  ?:  =(url url.i.ls)  `i.ls
+  $(ls t.ls)
+::  +links: a topic's related articles, for its modal, but the one it
+::  links to itself
+::
+++  links
+  |=  t=topic:tsur
+  ^-  json
+  =/  url=(unit @t)  ?^(url.t url.t ?~(links.t ~ `url.i.links.t))
+  :-  %a
+  %+  turn
+    %+  scag  5
+    (skip links.t |=(l=link:tsur =(`url.l url)))
+  link
 ::
 ++  flagged-topic
   |=  [key=@t t=topic:tsur v=verdict:tsur]

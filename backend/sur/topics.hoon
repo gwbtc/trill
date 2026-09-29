@@ -109,6 +109,13 @@
   |=  title=@t
   ^-  @t
   (crip (cass (trip title)))
+::  +topic-id: a short handle on a topic within its source, for asking
+::  for its links later (%nostrill's /j/topic-links/<source>/<id>)
+::
+++  topic-id
+  |=  title=@t
+  ^-  @t
+  (crip ((x-co:co 8) (end [3 4] (sham title))))
 ::  +action: pokes, %noun mark, from our own ship only
 ::
 +$  action

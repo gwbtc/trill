@@ -68,6 +68,7 @@ import {
   availableTabs,
   escapeMarkdown,
   parseTrending,
+  parseTopicLinks,
   pickTopics,
   topicMeta,
   topicPostContent,
@@ -977,6 +978,8 @@ describe("trending topics", () => {
     expect(pickTopics(data, "all", 4).map((x) => x.title)).toEqual(["W1", "T1", "H1", "S1"]);
     // "w1" repeats "W1"; once other kinds run dry, google news keeps its turns
     expect(pickTopics(data, "all", 10).map((x) => x.title)).toEqual(["W1", "T1", "H1", "S1", "W2"]);
+    // no limit: every topic, once (the card pages through them)
+    expect(pickTopics(data, "all", Infinity).map((x) => x.title)).toEqual(["W1", "T1", "H1", "S1", "W2"]);
   });
 
   test("filters by category and only offers tabs with topics", () => {
@@ -1399,35 +1402,28 @@ describe("posting about a topic", () => {
   });
 
   test("names the link's publisher, not google's redirect host", () => {
-    const links = [
-      { title: "a", url: "https://news.google.com/rss/articles/x", publisher: "TechCrunch", pic: null },
-    ];
-    expect(topicPublisher({ url: "https://news.google.com/rss/articles/x", links })).toBe("TechCrunch");
-    expect(topicPublisher({ url: "https://www.example.com/p", links })).toBe("example.com");
-    expect(topicPublisher({ url: null, links })).toBe("");
+    // %topics works the publisher out (lib/json/topics.hoon)
+    expect(topicPublisher({ url: "https://news.google.com/rss/articles/x", publisher: "TechCrunch" })).toBe(
+      "TechCrunch",
+    );
+    expect(topicPublisher({ url: "https://www.example.com/p", publisher: "" })).toBe("example.com");
+    expect(topicPublisher({ url: null, publisher: "TechCrunch" })).toBe("");
   });
 
   test("keeps related links on the web", () => {
-    const parsed = parseTrending({
-      sources: {
-        x: {
-          topics: [
-            {
-              title: "t",
-              content: "term",
-              links: [
-                { title: "ok", url: "https://a.example", publisher: "A", pic: null },
-                { title: "bad", url: "javascript:x", publisher: "B" },
-                { url: "https://c.example" },
-              ],
-            },
-          ],
-        },
-      },
-    })!;
-    const topic = parsed.sources.x.topics[0];
-    expect(topic.content).toBe("term");
-    expect(topic.links).toEqual([{ title: "ok", url: "https://a.example", publisher: "A", pic: null }]);
+    // they come on their own now (api.scryTopicLinks), not with the topic
+    const topic = parseTrending({
+      sources: { x: { topics: [{ title: "t", content: "term", id: "35b52798", publisher: "A" }] } },
+    })!.sources.x.topics[0];
+    expect(topic).toMatchObject({ content: "term", id: "35b52798", publisher: "A" });
+    expect(
+      parseTopicLinks([
+        { title: "ok", url: "https://a.example", publisher: "A", pic: null },
+        { title: "bad", url: "javascript:x", publisher: "B" },
+        { url: "https://c.example" },
+      ]),
+    ).toEqual([{ title: "ok", url: "https://a.example", publisher: "A", pic: null }]);
+    expect(parseTopicLinks(null)).toEqual([]);
   });
 });
 

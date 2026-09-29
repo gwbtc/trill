@@ -211,8 +211,8 @@
     ?:  .=('nostr' which)  `%nostr
     ?:  .=('urbit' which)  `%urbit
     ~
-::  +trending: the leading topics of each %topics source, for the
-::  trending topics card. null when %topics isn't running
+::  +trending: every %topics source's topics, but those hidden as spam, for
+::  the trending topics card. null when %topics isn't running
 ::
 ++  trending
 ^-  (unit (unit cage))
@@ -268,7 +268,7 @@
         ==
       $(all t.all)
     $(all t.all, seen (~(put in seen) k), out [[k i.all u.v] out])
-  ::  hidden topics don't take any of a source's ten places
+  ::  all of them: the card pages through them itself
   %^  trending:en:topicsj  prefs
     %+  turn  srcs
     |=  [id=source-id:tsur at=@da topics=(list topic:tsur)]
@@ -277,8 +277,31 @@
       |=  t=topic:tsur
       =/  v  (verdict t)
       ?~(v | (hidden:tsur u.v))
-    [id at (scag 10 shown)]
+    [id at shown]
   [provider.spam flagged]
+::
+::  +topic-links: a trending topic's related articles, by its source and
+::  +topic-id:tsur; the card's topics come without them. null when the
+::  topic's gone (refetched away) or %topics isn't running
+::
+++  topic-links
+  |=  [source=@tas id=@t]
+  ^-  (unit (unit cage))
+  :-  ~  :-  ~  :-  %json  !>
+  ^-  json
+  =/  base=path  /(scot %p our.bowl)/topics/(scot %da now.bowl)
+  ?.  .^(? %gu (weld base /$))  ~
+  ::  a source never fetched has no topics to scry
+  =/  status
+    .^  [every=@dr next=(unit @da) errors=* fetched=(map source-id:tsur @da)]
+      %gx  (weld base /status/noun)
+    ==
+  ?.  (~(has by fetched.status) source)  ~
+  =/  ts  .^((list topic:tsur) %gx (weld base /topics/[source]/noun))
+  |-
+  ?~  ts  ~
+  ?:  =(id (topic-id:tsur title.i.ts))  (links:en:topicsj i.ts)
+  $(ts t.ts)
 ::
 ++  relays
 ^-  (unit (unit cage))

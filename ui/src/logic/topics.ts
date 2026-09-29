@@ -14,8 +14,11 @@ export type TopicItem = {
   categories: string[];
   // the source's description; google trends' search term when it has none
   content: string;
-  // related articles, at most five
-  links: TopicLink[];
+  // its handle within its source, to ask for its related articles
+  // (api.scryTopicLinks): they're left out here, being most of the weight
+  id: string;
+  // who published url, when known: google news urls are all its redirects
+  publisher: string;
 };
 export type TopicLink = { title: string; url: string; publisher: string; pic: string | null };
 export type TrendingData = Record<string, { fetched: number; topics: TopicItem[] }>;
@@ -104,7 +107,7 @@ const SOURCE_ORDER = [
   "gnews-health",
 ];
 
-const sourceKind = (id: string) => id.split("-")[0];
+export const sourceKind = (id: string) => id.split("-")[0];
 // only web links: urls are rendered as hrefs and image srcs
 const webUrl = (x: unknown) =>
   typeof x === "string" && /^https?:\/\//i.test(x) ? x : null;
@@ -150,13 +153,20 @@ function parseTopic(t: any, source: string): TopicItem | null {
     date: Number(t.date) || 0,
     categories: Array.isArray(t.categories) ? t.categories : [],
     content: typeof t.content === "string" ? t.content : "",
-    links: (Array.isArray(t.links) ? t.links : []).flatMap((l: any) => {
-      const url = webUrl(l?.url);
-      if (!url || typeof l.title !== "string") return [];
-      const publisher = typeof l.publisher === "string" ? l.publisher : "";
-      return [{ title: l.title, url, publisher, pic: webUrl(l.pic) }];
-    }),
+    id: typeof t.id === "string" ? t.id : "",
+    publisher: typeof t.publisher === "string" ? t.publisher : "",
   };
+}
+
+// a topic's related articles, from api.scryTopicLinks; [] when it's gone
+export function parseTopicLinks(raw: unknown): TopicLink[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((l: any) => {
+    const url = webUrl(l?.url);
+    if (!url || typeof l.title !== "string") return [];
+    const publisher = typeof l.publisher === "string" ? l.publisher : "";
+    return [{ title: l.title, url, publisher, pic: webUrl(l.pic) }];
+  });
 }
 
 // no spam part (an older %nostrill): no filter
@@ -295,10 +305,10 @@ export function hostOf(url: string): string {
   }
 }
 
-// who published the topic's link: its related article's publisher when
-// there is one (google news urls are all news.google.com redirects), else
-// the link's host
-export function topicPublisher(t: Pick<TopicItem, "url" | "links">): string {
+// who published the topic's link: as %topics found it among its related
+// articles (google news urls are all news.google.com redirects), else the
+// link's host
+export function topicPublisher(t: Pick<TopicItem, "url" | "publisher">): string {
   if (!t.url) return "";
-  return t.links.find((l) => l.url === t.url)?.publisher || hostOf(t.url);
+  return t.publisher || hostOf(t.url);
 }

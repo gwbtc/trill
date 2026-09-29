@@ -277,6 +277,7 @@
     [%x %j %profile which=@ id=@ ~]  (profile:scry which.pole id.pole)
     [%x %j %relays ~]  relays:scry
     [%x %j %topics ~]  trending:scry
+    [%x %j %topic-links source=@ id=@ ~]  (topic-links:scry source.pole id.pole)
     [%x %j %nostr ~]   nostr-feeds-scry:scry
     ::
     [%x %j %gwid patp=@ ~]  (sgwid:scry patp.pole)

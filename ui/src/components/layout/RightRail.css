@@ -390,9 +390,20 @@
 }
 
 .rail-trending-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   margin-top: 2px;
   font-size: 11.5px;
   color: var(--color-text-muted, #9aa2ab);
+}
+
+/* a source's favicon (components/topics/SourceIcon.tsx) */
+.source-icon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
 }
 
 /* before the first state fact: placeholder lines, not an empty state */
@@ -411,6 +422,26 @@
 
 .rail-loading span:first-child {
   width: 45%;
+}
+
+/* grows the card by a page (components/layout/TrendingTopics.tsx) */
+.rail-trending-more {
+  display: block;
+  width: calc(100% - 34px);
+  margin: 6px 17px 8px;
+  padding: 7px 0;
+  border: 1px solid var(--color-border, #e1e5e9);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-primary, #4f46e5);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rail-trending-more:hover {
+  background: var(--color-surface, #f7f8f9);
 }
 
 /* the way into the spam review (components/topics/SpamReview.tsx) */

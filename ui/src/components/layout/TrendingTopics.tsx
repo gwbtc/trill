@@ -16,10 +16,13 @@ import type { SharedCard } from "@/logic/cards";
 import TopicThumb from "@/components/TopicThumb";
 import TopicModal from "@/components/topics/TopicModal";
 import SpamReview from "@/components/topics/SpamReview";
+import SourceIcon from "@/components/topics/SourceIcon";
 
 // %topics refetches its sources hourly; checking more often than this
 // just catches that sooner
 const REFRESH_MS = 10 * 60 * 1000;
+// topics shown at first, and added by each "show more"
+const PAGE = 10;
 
 // trending topics from the %topics agent. hidden when there's nothing to show
 export default function TrendingTopics() {
@@ -32,6 +35,7 @@ export default function TrendingTopics() {
   const [data, setData] = useState<TrendingData | null>(null);
   const [spam, setSpam] = useState<TopicSpam | null>(null);
   const [tab, setTab] = useState("all");
+  const [shown, setShown] = useState(PAGE);
 
   useEffect(() => {
     if (!api) return;
@@ -65,10 +69,13 @@ export default function TrendingTopics() {
   const tabs = useMemo(() => (data ? availableTabs(data) : []), [data]);
   // a category dropped in settings takes its tab with it
   const activeTab = tabs.some((t) => t.id === tab) ? tab : "all";
-  const topics = useMemo(
-    () => (data ? pickTopics(data, activeTab) : []),
+  // every topic for the tab, sources taking turns; the card grows a page
+  // at a time
+  const all = useMemo(
+    () => (data ? pickTopics(data, activeTab, Infinity) : []),
     [data, activeTab],
   );
+  const topics = all.slice(0, shown);
   if (!data || topics.length === 0) return null;
   const tabLabel = tabs.find((t) => t.id === activeTab)?.label ?? "All";
 
@@ -79,7 +86,8 @@ export default function TrendingTopics() {
       title: "Trending topics",
       subtitle: activeTab === "all" ? "" : tabLabel,
       at: Date.now(),
-      items: topics.map((t) => ({
+      // a shared card holds ten (logic/cards.ts)
+      items: topics.slice(0, 10).map((t) => ({
         title: t.title,
         url: t.url,
         meta: topicMeta(t),
@@ -117,7 +125,10 @@ export default function TrendingTopics() {
               role="tab"
               aria-selected={t.id === activeTab}
               className={`rail-trending-tab${t.id === activeTab ? " active" : ""}`}
-              onClick={() => setTab(t.id)}
+              onClick={() => {
+                setTab(t.id);
+                setShown(PAGE);
+              }}
             >
               {t.label}
             </button>
@@ -129,7 +140,10 @@ export default function TrendingTopics() {
           <>
             <div className="rail-trending-text">
               <div className="rail-trending-title">{t.title}</div>
-              <div className="rail-trending-meta">{topicMeta(t)}</div>
+              <div className="rail-trending-meta">
+                <SourceIcon source={t.source} />
+                {topicMeta(t)}
+              </div>
             </div>
             {t.pic && <TopicThumb src={t.pic} className="rail-trending-pic" />}
           </>
@@ -145,6 +159,15 @@ export default function TrendingTopics() {
           </button>
         );
       })}
+      {all.length > shown && (
+        <button
+          type="button"
+          className="rail-trending-more"
+          onClick={() => setShown((n) => n + PAGE)}
+        >
+          Show more
+        </button>
+      )}
       {spam?.provider && spam.flagged.length > 0 && (
         <button
           type="button"

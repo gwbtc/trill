@@ -325,6 +325,11 @@ export default class IO {
   async scryTopics() {
     return await this.scry("/j/topics");
   }
+  // a trending topic's related articles, by its source and id (TopicItem);
+  // null once it's been refetched away
+  async scryTopicLinks(source: string, id: string) {
+    return await this.scry(`/j/topic-links/${source}/${id}`);
+  }
   // AI model providers, from %trill-ai-client (logic/aiClient.ts). errors
   // when it isn't running
   async scryAiProviders() {

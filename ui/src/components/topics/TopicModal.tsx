@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { ExternalLink, PenLine } from "lucide-react";
 import useLocalState from "@/state/state";
@@ -8,7 +9,9 @@ import {
   CATEGORY_OPTIONS,
   topicMeta,
   topicPublisher,
+  parseTopicLinks,
   type TopicItem,
+  type TopicLink,
 } from "@/logic/topics";
 import "@/styles/Topics.css";
 
@@ -39,7 +42,19 @@ export default function TopicModal({ topic }: { topic: TopicItem }) {
   const categories = topic.categories
     .map((c) => CATEGORY_OPTIONS.find((o) => o.id === c)?.label)
     .filter((c): c is string => !!c);
-  const related = topic.links.filter((l) => l.url !== topic.url).slice(0, 4);
+  // the related articles aren't in the card's data: ask for them
+  const api = useLocalState((s) => s.api);
+  const [related, setRelated] = useState<TopicLink[]>([]);
+  useEffect(() => {
+    if (!api || !topic.id) return;
+    let live = true;
+    api.scryTopicLinks(topic.source, topic.id).then((res) => {
+      if (live && "ok" in res) setRelated(parseTopicLinks(res.ok).slice(0, 4));
+    });
+    return () => {
+      live = false;
+    };
+  }, [api, topic.source, topic.id]);
   const when = topic.date
     ? new Date(topic.date).toLocaleString(undefined, {
         month: "short",
