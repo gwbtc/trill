@@ -30,6 +30,9 @@ $:  p=@p
       [%eng engagement]
       [%ted wid=@ud ws-proxy]
       [%dbug *]
+      ::  from our own agents (%trill-wallet): signed events to send to
+      ::  every connected relay
+      [%publish events=(list event:nsur)]
   ==
 +$  ws-proxy
   $%  [%msg msg=websocket-message:eyre]

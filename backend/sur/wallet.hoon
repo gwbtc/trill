@@ -130,6 +130,7 @@
       [%check mint=@t]                          ::  drop spent proofs
       [%restore mint=@t]                        ::  what our seed can reclaim
       [%set-phrase words=@t]                    ::  an empty wallet only
+      [%sync on=?]                              ::  NIP-60 mirroring
   ==
 ::  +token: ecash to hand over, from one mint in one unit (NUT-00 V3/V4)
 ::

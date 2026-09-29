@@ -531,6 +531,22 @@
   =.  nostr-feeds.state
     (~(put by nostr-feeds.state) name (~(put by osfs) url.relay sourced-feed))
   $(wids t.wids, css (weld css -.d))
+::  +publish: signed events to every relay with a live socket. one that's
+::  down misses them; whoever sent them can send them again
+::
+++  publish
+  |=  evs=(list event:nsur)
+  ^-  (list card)
+  =/  nclient  ~(. nostr-client [state bowl])
+  =/  entries  ~(tap by relays.state)
+  =|  cs=(list card)
+  |-  ?~  entries  cs
+  =/  rs=relay-stats:nsur  +.i.entries
+  ?~  wid.rs  $(entries t.entries)
+  =/  rclient  ~(. relay.nclient [u.wid.rs rs])
+  =/  more=(list card)
+    (turn evs |=(e=event:nsur (send-card:rclient [%event e])))
+  $(entries t.entries, cs (weld more cs))
 ::  +handle-rela: pokes from UI related to relay interaction
 ::
 ++  handle-rela
