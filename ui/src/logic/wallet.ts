@@ -25,7 +25,15 @@ export type WalletOp = {
   to: string | null; // a nutzap's recipient
 };
 
-export type WalletEntryKind = "deposit" | "withdraw" | "send" | "receive" | "zap-in" | "zap-out";
+export type WalletEntryKind =
+  | "deposit"
+  | "withdraw"
+  | "send"
+  | "receive"
+  | "zap-in"
+  | "zap-out"
+  | "ln-in" // over the NWC Lightning wallet
+  | "ln-out";
 export type WalletEntry = {
   at: number;
   kind: WalletEntryKind;
@@ -33,6 +41,20 @@ export type WalletEntry = {
   amount: number;
   fee: number;
   who: string | null; // a nutzap's other side, a hex pubkey
+};
+
+// a Lightning wallet over Nostr Wallet Connect (NIP-47): what the agent
+// shows of it (never its secret)
+export type WalletLightning = {
+  link: "connecting" | "open" | "down";
+  balance: number | null; // sats
+  relay: string;
+  service: string;
+  lud16: string | null;
+  methods: string[]; // what it says it does; [] until it's said
+  nip04Only: boolean;
+  paying: number; // payments with no answer yet
+  invoices: { hash: string; invoice: string; amount: number; expires: number }[];
 };
 
 export type SentToken = { at: number; mint: string; amount: number; token: string };
@@ -46,6 +68,7 @@ export type WalletState = {
   sent: SentToken[];
   log: WalletNote[];
   sync: boolean; // mirrored to relays (NIP-60)
+  lightning: WalletLightning | null;
   syncing: boolean;
 };
 
@@ -94,12 +117,39 @@ export function parseWallet(x: any): WalletState | null {
     })),
     log: list(x.log).map((l) => ({ at: num(l.at), what: str(l.what) })),
     sync: x.nostr?.sync === true,
+    lightning: parseLightning(x.lightning),
     syncing: x.nostr?.syncing === true,
   };
 }
 
+function parseLightning(l: any): WalletLightning | null {
+  if (!l || typeof l !== "object") return null;
+  return {
+    link: l.link === "open" || l.link === "down" ? l.link : "connecting",
+    balance: optNum(l.balance),
+    relay: str(l.relay),
+    service: str(l.service),
+    lud16: optStr(l.lud16),
+    methods: list(l.methods).filter((m): m is string => typeof m === "string"),
+    nip04Only: l["nip04-only"] === true,
+    paying: num(l.paying),
+    invoices: list(l.invoices).map((i) => ({
+      hash: str(i.hash),
+      invoice: str(i.invoice),
+      amount: num(i.amount),
+      expires: num(i.expires),
+    })),
+  };
+}
+
+// whether the Lightning wallet will do this: it's said so, or not said yet
+export function lightningCan(l: WalletLightning | null, method: string) {
+  return !!l && !l.nip04Only && (l.methods.length === 0 || l.methods.includes(method));
+}
+
 // a mint as people know it: its host, and its path if it has one
 export function mintName(url: string) {
+  if (url === "lightning") return "Lightning wallet";
   try {
     const u = new URL(url);
     const path = u.pathname.replace(/\/+$/, "");
@@ -179,5 +229,5 @@ export function shortKey(hex: string) {
 // the backend's own words for the log, as-is: notes like "deposited 100
 // sats at …" or "withdrawing failed: …"
 export function isFailure(note: string) {
-  return /fail|refus|lost|won't|isn't|no kind 10019|lack/i.test(note);
+  return /fail|refus|lost|won't|isn't|no kind 10019|lack|said no|no answer|only speaks/i.test(note);
 }

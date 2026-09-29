@@ -67,6 +67,8 @@ export default function Wallet() {
   }
 
   const busy = new Set(wallet.ops.map((o) => o.mint));
+  const ln = wallet.lightning;
+  const lnSats = ln?.balance ?? 0;
 
   return (
     <div id="screen-wallet" className="wallet-page trill-screen">
@@ -88,20 +90,41 @@ export default function Wallet() {
         <section className="wallet-balance-card" aria-labelledby="wallet-balance-title">
           <div className="wallet-balance-pattern" />
           <div className="wallet-balance-content">
-            <div id="wallet-balance-title" className="wallet-balance-label">Ecash balance</div>
+            <div id="wallet-balance-title" className="wallet-balance-label">{ln ? "Total balance" : "Ecash balance"}</div>
             <button
               type="button"
               className={`wallet-total${hidden ? " hidden" : ""}${prefs.hideBalance ? " revealable" : ""}`}
               onClick={() => prefs.hideBalance && setRevealed((r) => !r)}
               aria-label={hidden ? "Reveal wallet balance" : "Wallet balance"}
             >
-              <strong>{wallet.balance.toLocaleString()}</strong>
+              <strong>{(wallet.balance + lnSats).toLocaleString()}</strong>
               <span>sats</span>
             </button>
+            {ln && (
+              <div className="wallet-balance-split">
+                <div>
+                  <Zap size={17} fill="currentColor" />
+                  <span>
+                    <small>Lightning{ln.link === "open" ? "" : ln.link === "down" ? " · offline" : " · connecting"}</small>
+                    <strong className={`mono${hidden ? " hidden" : ""}`}>
+                      {ln.balance === null ? "…" : ln.balance.toLocaleString()}
+                    </strong>
+                  </span>
+                </div>
+                <div>
+                  <Coins size={17} />
+                  <span>
+                    <small>Cashu ecash</small>
+                    <strong className={`mono${hidden ? " hidden" : ""}`}>{wallet.balance.toLocaleString()}</strong>
+                  </span>
+                </div>
+              </div>
+            )}
             <div className="wallet-balance-meta">
               {wallet.mints.length === 1 ? "1 mint" : `${wallet.mints.length} mints`}
               {" · "}
-              {wallet.sync ? (wallet.syncing ? "backing up to Nostr…" : "backed up to Nostr") : "not backed up to Nostr"}
+              {wallet.sync ? (wallet.syncing ? "ecash backing up to Nostr…" : "ecash backed up to Nostr") : "ecash not backed up to Nostr"}
+              {ln && ln.paying > 0 ? " · a Lightning payment is out" : ""}
             </div>
           </div>
         </section>
@@ -257,7 +280,7 @@ function OpRow({ op, onShowInvoice }: { op: WalletOp; onShowInvoice: () => void 
 }
 
 function EntryRow({ entry: e, hidden }: { entry: WalletEntry; hidden: boolean }) {
-  const incoming = e.kind === "deposit" || e.kind === "receive" || e.kind === "zap-in";
+  const incoming = e.kind === "deposit" || e.kind === "receive" || e.kind === "zap-in" || e.kind === "ln-in";
   const title =
     e.kind === "deposit"
       ? "Lightning deposit"
@@ -269,16 +292,21 @@ function EntryRow({ entry: e, hidden }: { entry: WalletEntry; hidden: boolean })
             ? "Received a token"
             : e.kind === "zap-in"
               ? `Nutzap from ${e.who ? shortKey(e.who) : "someone"}`
-              : `Nutzapped ${e.who ? shortKey(e.who) : "someone"}`;
+              : e.kind === "zap-out"
+                ? `Nutzapped ${e.who ? shortKey(e.who) : "someone"}`
+                : e.kind === "ln-in"
+                  ? "Received over Lightning"
+                  : "Paid over Lightning";
   const icon =
-    e.kind === "zap-in" || e.kind === "zap-out" || e.kind === "withdraw" ? (
+    e.kind === "zap-in" || e.kind === "zap-out" || e.kind === "withdraw" || e.kind.startsWith("ln") ? (
       <Zap size={18} fill="currentColor" />
     ) : incoming ? (
       <ArrowDown size={18} />
     ) : (
       <ArrowUp size={18} />
     );
-  const iconClass = e.kind.startsWith("zap") || e.kind === "withdraw" ? "zap" : incoming ? "in" : "out";
+  const iconClass =
+    e.kind.startsWith("zap") || e.kind.startsWith("ln") || e.kind === "withdraw" ? "zap" : incoming ? "in" : "out";
   return (
     <div className="wallet-activity-row">
       <span className={`wallet-activity-icon ${iconClass}`}>{icon}</span>

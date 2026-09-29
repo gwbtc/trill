@@ -21,11 +21,13 @@ import useLocalState from "@/state/state";
 import {
   classifyPasted,
   invoiceSats,
+  lightningCan,
   mintName,
   mintUrlProblem,
   sanitizeSats,
   stripScheme,
   walletError,
+  type WalletLightning,
   type WalletMint,
 } from "@/logic/wallet";
 import { pickMint, useWalletPrefs } from "@/logic/walletPrefs";
@@ -61,7 +63,8 @@ export default function WalletModal({ initialMode, depositId, onClose }: Props) 
   const title =
     mode === "receive" ? "Receive" : mode === "send" ? "Send" : mode === "settings" ? "Wallet settings" : "Add a Cashu mint";
   const HeaderIcon = mode === "receive" ? ArrowDown : mode === "send" ? ArrowUp : mode === "settings" ? Settings : Coins;
-  const needsMint = (mode === "receive" || mode === "send") && wallet && wallet.mints.length === 0;
+  const needsMint =
+    (mode === "receive" || mode === "send") && wallet && wallet.mints.length === 0 && !wallet.lightning;
 
   return (
     <section
@@ -84,15 +87,15 @@ export default function WalletModal({ initialMode, depositId, onClose }: Props) 
         </div>
       ) : needsMint ? (
         <div className="wallet-modal-body">
-          <p className="wallet-trust-note">Ecash lives at a mint. Add one first.</p>
+          <p className="wallet-trust-note">Ecash lives at a mint: add one. Or connect a Lightning wallet in Settings.</p>
           <button type="button" className="wallet-primary-button" onClick={() => setMode("addmint")}>
             Add a mint
           </button>
         </div>
       ) : mode === "receive" ? (
-        <Receive mints={wallet.mints} depositId={depositId} onClose={onClose} />
+        <Receive mints={wallet.mints} lightning={wallet.lightning} depositId={depositId} onClose={onClose} />
       ) : mode === "send" ? (
-        <Send mints={wallet.mints} onClose={onClose} />
+        <Send mints={wallet.mints} lightning={wallet.lightning} onClose={onClose} />
       ) : mode === "addmint" ? (
         <AddMint mints={wallet.mints} onDone={onClose} />
       ) : (
@@ -114,13 +117,33 @@ function Tabs<T extends string>({ value, options, onChange }: { value: T; option
   );
 }
 
-function MintSelect({ mints, value, onChange, id }: { mints: WalletMint[]; value: string; onChange: (url: string) => void; id: string }) {
+// where sats come from or go: a mint, or ("lightning") the NWC wallet
+function MintSelect({
+  mints,
+  value,
+  onChange,
+  id,
+  lightning = null,
+  label = "Mint",
+}: {
+  mints: WalletMint[];
+  value: string;
+  onChange: (url: string) => void;
+  id: string;
+  lightning?: WalletLightning | null;
+  label?: string;
+}) {
   return (
     <>
       <label className="wallet-field-label" htmlFor={id}>
-        Mint
+        {label}
       </label>
       <select id={id} className="wallet-input" value={value} onChange={(e) => onChange(e.target.value)}>
+        {lightning && (
+          <option value="lightning">
+            Lightning wallet{lightning.balance === null ? "" : ` · ${lightning.balance.toLocaleString()} sats`}
+          </option>
+        )}
         {mints.map((m) => (
           <option key={m.url} value={m.url}>
             {mintName(m.url)} · {m.balance.toLocaleString()} sats
@@ -157,13 +180,27 @@ function AmountField({ id, amount, setAmount }: { id: string; amount: string; se
 }
 
 //  receiving: a Lightning invoice to pay, or a token someone gave us
-function Receive({ mints, depositId, onClose }: { mints: WalletMint[]; depositId?: number; onClose: () => void }) {
+function Receive({
+  mints,
+  lightning,
+  depositId,
+  onClose,
+}: {
+  mints: WalletMint[];
+  lightning: WalletLightning | null;
+  depositId?: number;
+  onClose: () => void;
+}) {
   const { api, wallet } = useLocalState((s) => ({ api: s.api, wallet: s.wallet }));
   const defaultMint = useWalletPrefs((s) => s.defaultMint);
   const [tab, setTab] = useState<"lightning" | "cashu">("lightning");
   const [amount, setAmount] = useState("");
-  const [mint, setMint] = useState(() => pickMint(mints, defaultMint));
+  const canInvoice = lightningCan(lightning, "make_invoice");
+  const [mint, setMint] = useState(() => (mints.length === 0 && canInvoice ? "lightning" : pickMint(mints, defaultMint)));
   const [token, setToken] = useState("");
+  // an NWC invoice we asked for: the hashes there were before, and ours
+  const [lnKnown, setLnKnown] = useState<Set<string> | null>(null);
+  const [lnHash, setLnHash] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // the deposit we're showing: one asked for, or the one we just made
   const [watching, setWatching] = useState<number | null>(depositId ?? null);
@@ -192,7 +229,37 @@ function Receive({ mints, depositId, onClose }: { mints: WalletMint[]; depositId
     }
   }, [op, lastOp, watching, wallet, onClose, since]);
 
+  useEffect(() => {
+    if (!lnKnown || lnHash || !wallet?.lightning) return;
+    const fresh = wallet.lightning.invoices.find((i) => !lnKnown.has(i.hash));
+    if (fresh) setLnHash(fresh.hash);
+  }, [wallet, lnKnown, lnHash]);
+  const lnInvoice = lnHash ? wallet?.lightning?.invoices.find((i) => i.hash === lnHash) : undefined;
+  const [lastLn, setLastLn] = useState(lnInvoice);
+  useEffect(() => {
+    if (lnInvoice) setLastLn(lnInvoice);
+    // gone: paid (an ln-in entry) or expired
+    else if (lastLn) {
+      const paid = wallet?.history.find((e) => e.kind === "ln-in" && e.at >= since && e.amount === lastLn.amount);
+      if (paid) setPaidAmount(paid.amount);
+      else onClose();
+    }
+  }, [lnInvoice, lastLn, wallet, since, onClose]);
+
+  async function lnReceive() {
+    if (!api || !wallet?.lightning) return;
+    setBusy(true);
+    setLnKnown(new Set(wallet.lightning.invoices.map((i) => i.hash)));
+    const res = await api.walletAction({ "nwc-invoice": { amount: Number(amount), description: "" } });
+    setBusy(false);
+    if ("error" in res) {
+      setLnKnown(null);
+      toast.error(walletError(res.error));
+    }
+  }
+
   async function deposit() {
+    if (mint === "lightning") return lnReceive();
     if (!api || !wallet) return;
     setBusy(true);
     setKnown(new Set(wallet.ops.map((o) => o.id)));
@@ -223,6 +290,30 @@ function Receive({ mints, depositId, onClose }: { mints: WalletMint[]; depositId
         <button type="button" className="wallet-primary-button" onClick={onClose}>
           Done
         </button>
+      </div>
+    );
+  }
+
+  if (lnKnown) {
+    return (
+      <div className="wallet-modal-body">
+        {lnInvoice ? (
+          <div className="wallet-invoice-preview">
+            <QrCode value={`lightning:${lnInvoice.invoice}`} label="Lightning invoice QR code" />
+            <strong className="wallet-invoice-amount mono">{lnInvoice.amount.toLocaleString()} sats</strong>
+            <code className="mono">{lnInvoice.invoice}</code>
+            <button type="button" className="wallet-secondary-button" onClick={() => copyText(lnInvoice.invoice, "Invoice")}>
+              <Copy size={15} /> Copy invoice
+            </button>
+            <p className="wallet-waiting">
+              <LoaderCircle className="zap-spinner" size={15} /> Waiting for payment to your Lightning wallet
+            </p>
+          </div>
+        ) : (
+          <p className="wallet-waiting">
+            <LoaderCircle className="zap-spinner" size={15} /> Asking your Lightning wallet for an invoice…
+          </p>
+        )}
       </div>
     );
   }
@@ -259,7 +350,14 @@ function Receive({ mints, depositId, onClose }: { mints: WalletMint[]; depositId
       {tab === "lightning" ? (
         <>
           <AmountField id="wallet-receive-amount" amount={amount} setAmount={setAmount} />
-          <MintSelect id="wallet-receive-mint" mints={mints} value={mint} onChange={setMint} />
+          <MintSelect
+            id="wallet-receive-mint"
+            label="Into"
+            mints={mints}
+            lightning={canInvoice ? lightning : null}
+            value={mint}
+            onChange={setMint}
+          />
           <button type="button" className="wallet-primary-button" disabled={busy || !amount || Number(amount) <= 0} onClick={deposit}>
             {busy ? <LoaderCircle className="zap-spinner" size={16} /> : null} Create invoice
           </button>
@@ -288,11 +386,22 @@ function Receive({ mints, depositId, onClose }: { mints: WalletMint[]; depositId
 }
 
 //  sending: paying a Lightning invoice, or a token to hand over
-function Send({ mints, onClose }: { mints: WalletMint[]; onClose: () => void }) {
+function Send({
+  mints,
+  lightning,
+  onClose,
+}: {
+  mints: WalletMint[];
+  lightning: WalletLightning | null;
+  onClose: () => void;
+}) {
   const { api, wallet } = useLocalState((s) => ({ api: s.api, wallet: s.wallet }));
   const defaultMint = useWalletPrefs((s) => s.defaultMint);
   const [tab, setTab] = useState<"lightning" | "cashu">("lightning");
+  const canPay = lightningCan(lightning, "pay_invoice");
   const [mint, setMint] = useState(() => pickMint(mints, defaultMint));
+  // an invoice is paid from the Lightning wallet, if there's one, or a mint
+  const [payFrom, setPayFrom] = useState(() => (canPay ? "lightning" : pickMint(mints, defaultMint)));
   const [invoice, setInvoice] = useState("");
   const [amount, setAmount] = useState("");
   const [memo, setMemo] = useState("");
@@ -300,6 +409,8 @@ function Send({ mints, onClose }: { mints: WalletMint[]; onClose: () => void }) 
   const [sentBefore, setSentBefore] = useState<number | null>(null);
 
   const balance = mints.find((m) => m.url === mint)?.balance ?? 0;
+  const payBalance =
+    payFrom === "lightning" ? (lightning?.balance ?? Infinity) : (mints.find((m) => m.url === payFrom)?.balance ?? 0);
   const invoiceAmount = invoiceSats(invoice);
   const isInvoice = classifyPasted(invoice) === "lightning";
   // the token we just made: the newest, once there's one more than before
@@ -308,7 +419,11 @@ function Send({ mints, onClose }: { mints: WalletMint[]; onClose: () => void }) 
   async function pay() {
     if (!api) return;
     setBusy(true);
-    const res = await api.walletAction({ withdraw: { mint, invoice: stripScheme(invoice) } });
+    const res = await api.walletAction(
+      payFrom === "lightning"
+        ? { "nwc-pay": { invoice: stripScheme(invoice) } }
+        : { withdraw: { mint: payFrom, invoice: stripScheme(invoice) } },
+    );
     setBusy(false);
     if ("error" in res) toast.error(walletError(res.error));
     else {
@@ -383,12 +498,19 @@ function Send({ mints, onClose }: { mints: WalletMint[]; onClose: () => void }) 
               </div>
             </div>
           )}
-          <MintSelect id="wallet-send-mint" mints={mints} value={mint} onChange={setMint} />
-          {invoiceAmount !== null && invoiceAmount > balance && <p className="wallet-field-error">More than that mint holds</p>}
+          <MintSelect
+            id="wallet-send-mint"
+            label="Pay from"
+            mints={mints}
+            lightning={canPay ? lightning : null}
+            value={payFrom}
+            onChange={setPayFrom}
+          />
+          {invoiceAmount !== null && invoiceAmount > payBalance && <p className="wallet-field-error">More than that holds</p>}
           <button
             type="button"
             className="wallet-primary-button"
-            disabled={busy || invoiceAmount === null || invoiceAmount > balance}
+            disabled={busy || !payFrom || invoiceAmount === null || invoiceAmount > payBalance}
             onClick={pay}
           >
             {busy ? <LoaderCircle className="zap-spinner" size={16} /> : null} Pay
@@ -570,6 +692,8 @@ function WalletSettings({ onAddMint }: { onAddMint: () => void }) {
         </div>
       </section>
 
+      <LightningSettings lightning={wallet.lightning} act={act} />
+
       <div className="wallet-setting-row wallet-setting-divider">
         <div>
           <strong>Recovery phrase</strong>
@@ -598,5 +722,91 @@ function WalletSettings({ onAddMint }: { onAddMint: () => void }) {
         </div>
       )}
     </div>
+  );
+}
+
+// the Lightning wallet: connect one by its NWC uri, or see and drop it
+function LightningSettings({
+  lightning,
+  act,
+}: {
+  lightning: WalletLightning | null;
+  act: (action: Record<string, unknown>) => Promise<void>;
+}) {
+  const [uri, setUri] = useState("");
+  const clean = uri.trim();
+  const looksRight = /^nostr(\+)?walletconnect:\/\/[0-9a-f]{64}\?/i.test(clean);
+
+  if (!lightning) {
+    return (
+      <section className="wallet-settings-section wallet-lightning" aria-labelledby="wallet-lightning-title">
+        <div className="wallet-settings-section-header">
+          <h3 id="wallet-lightning-title">Lightning wallet</h3>
+        </div>
+        <p className="wallet-trust-note">
+          Connect a Lightning wallet you already use (Alby Hub, coinos, …) with Nostr Wallet Connect: paste the
+          connection string it gives you. It holds a key for that connection only; keep it private.
+        </p>
+        <input
+          className="wallet-input mono"
+          type="password"
+          autoComplete="off"
+          placeholder="nostr+walletconnect://…"
+          value={uri}
+          onChange={(e) => setUri(e.target.value)}
+          aria-label="Nostr Wallet Connect string"
+        />
+        {clean && !looksRight && <p className="wallet-field-error">That isn't a nostr+walletconnect:// string</p>}
+        <button
+          type="button"
+          className="wallet-primary-button"
+          disabled={!looksRight}
+          onClick={async () => {
+            await act({ "nwc-connect": { uri: clean } });
+            setUri("");
+          }}
+        >
+          <Zap size={16} fill="currentColor" /> Connect
+        </button>
+      </section>
+    );
+  }
+
+  const status =
+    lightning.link === "open" ? "connected" : lightning.link === "down" ? "offline, retrying" : "connecting…";
+  return (
+    <section className="wallet-settings-section wallet-lightning" aria-labelledby="wallet-lightning-title">
+      <div className="wallet-settings-section-header">
+        <h3 id="wallet-lightning-title">Lightning wallet</h3>
+        <span>{status}</span>
+      </div>
+      <div className="wallet-mint-manage-row">
+        <span className={`wallet-mint-status${lightning.link === "open" ? " online" : ""}`} />
+        <div className="wallet-mint-copy">
+          <div>
+            <strong>{lightning.lud16 ?? "Nostr Wallet Connect"}</strong>
+          </div>
+          <span className="mono">{lightning.relay}</span>
+        </div>
+        <span className="wallet-mint-balance mono">
+          {lightning.balance === null ? "…" : `${lightning.balance.toLocaleString()} sats`}
+        </span>
+        <button
+          type="button"
+          className="wallet-mint-remove"
+          title="Ask its balance again"
+          aria-label="Refresh the Lightning balance"
+          onClick={() => act({ "nwc-refresh": null })}
+        >
+          <RotateCcw size={15} />
+        </button>
+      </div>
+      {lightning.nip04Only && (
+        <p className="wallet-field-error">This wallet only speaks NIP-04 encryption, which trill doesn't yet.</p>
+      )}
+      <button type="button" className="wallet-secondary-button" onClick={() => act({ "nwc-disconnect": null })}>
+        Disconnect
+      </button>
+    </section>
   );
 }
