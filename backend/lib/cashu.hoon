@@ -62,12 +62,37 @@
   ^-  point
   [x.pt ?:(=(0 y.pt) 0 (sub p y.pt))]
 ::
-::  point arithmetic, named apart from the stdlib's add, sub and mul
+::  point arithmetic, named apart from the stdlib's add, sub and mul.
+::  multiplication goes through +lin; an addition is cheap in Hoon
 ::
-++  pt-mul  |=([pt=point k=@] (mul-point-scalar:sc pt k))
+++  pt-mul  |=([pt=point k=@] (lin pt k 0))
 ++  pt-add  |=([a=point b=point] (add-points:sc a b))
 ++  pt-sub  |=([a=point b=point] (add-points:sc a (neg b)))
-++  base  |=(k=@ (priv-to-pub:sc k))
+++  base  |=(k=@ (lin g:t:sc k 0))
+::  +lin: k·P + j·G, in C. zuse's mul-point-scalar is plain Hoon (~13 ms);
+::  ECDSA public key recovery is jetted (libsecp256k1) and computes
+::  Q = r⁻¹(s·R − z·G). with R = P (r = x(P), v its y parity), s = k·r and
+::  z = −j·r, that's k·P + j·G, some 70 times faster. see WALLET.md
+::
+::    recovery can't take x(P) ≥ n (one point in 2^128): Hoon there.
+::    k = 0 would make s = 0, not a signature: j·G is taken as j·G then
+::
+++  lin
+  |=  [pt=point k=@ j=@]
+  ^-  point
+  =.  k  (mod k n)
+  =.  j  (mod j n)
+  ?:  =(0 k)
+    ?:  =(0 j)  [0 0]
+    $(pt g:t:sc, k j, j 0)
+  ?:  (gte x.pt n)
+    =/  kp  (mul-point-scalar:sc pt k)
+    ?:  =(0 j)  kp
+    (add-points:sc kp (mul-point-scalar:sc g:t:sc j))
+  =/  r  x.pt
+  %+  ecdsa-raw-recover:sc
+    (mod (sub n (mod (mul j r) n)) n)
+  [(mod y.pt 2) r (mod (mul k r) n)]
 ::  +sha: SHA-256 of octs, as the big-endian number the spec means
 ::
 ++  sha  |=(o=octs `@`(rev 3 32 (shay o)))
@@ -91,8 +116,8 @@
 ++  blind
   |=  [secret=octs r=@]
   ^-  point
-  ::  base crashes outside 0 < r < n
-  (pt-add (hash-to-curve secret) (base (mod r n)))
+  ::  Y + r·G in one +lin call (it reduces r mod n)
+  (lin (hash-to-curve secret) 1 r)
 ::  +unblind: C = C_ - rK, the mint's signature on the secret itself
 ::
 ++  unblind
@@ -119,7 +144,8 @@
   |=  [a=point b-blind=point c-blind=point e=@ s=@]
   ^-  ?
   ?.  &((lth e n) (gth s 0) (lth s n))  |
-  =/  r1  (pt-sub (base s) (pt-mul a e))
+  ::  one call: (−e)·A + s·G
+  =/  r1  (lin a (sub n e) s)
   =/  r2  (pt-sub (pt-mul b-blind s) (pt-mul c-blind e))
   =(e (hash-e ~[r1 r2 a c-blind]))
 ::  +proof-dleq-ok: NUT-12 from a proof someone else minted, with the
