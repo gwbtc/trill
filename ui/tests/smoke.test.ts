@@ -1405,12 +1405,12 @@ describe("AI providers", () => {
   test("parsing keeps well-formed providers, sorted, and never a key", () => {
     const raw = [
       { name: "zeta", baseUrl: "https://z.example/v1", hasKey: true, apiKey: "leak" },
-      { name: "alpha", baseUrl: "http://localhost/v1", hasKey: false },
+      { name: "alpha", baseUrl: "http://localhost/v1", evalUrl: "https://x.example/decisions", hasKey: false },
       { name: 3 },
     ];
     expect(parseProviders(raw)).toEqual([
-      { name: "alpha", baseUrl: "http://localhost/v1", hasKey: false },
-      { name: "zeta", baseUrl: "https://z.example/v1", hasKey: true },
+      { name: "alpha", baseUrl: "http://localhost/v1", evalUrl: "https://x.example/decisions", hasKey: false },
+      { name: "zeta", baseUrl: "https://z.example/v1", evalUrl: null, hasKey: true },
     ]);
     expect(parseProviders(null)).toEqual([]);
   });

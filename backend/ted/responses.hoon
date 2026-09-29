@@ -1,7 +1,7 @@
 ::  Call a provider's non-streaming Responses API.
 ::
 ::    arg: [provider request-args] from sur/ai-client.hoon, e.g.
-::    -nostrill!responses [['https://openrouter.ai/api/v1' key] [model input ~]]
+::    -nostrill!responses [['https://openrouter.ai/api/v1' ~ key] [model input ~]]
 ::
 /-  spider, sur=ai-client
 /+  rl=llm-responses, strandio

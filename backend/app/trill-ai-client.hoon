@@ -1,7 +1,8 @@
 ::  trill-ai-client: calls AI models over HTTP for other agents and the UI
 ::
-::    providers are ours to name: a base url speaking the Responses API
-::    and a key for it (sur/ai-client.hoon suggests some). calls are
+::    providers are ours to name: a base url speaking the Responses API,
+::    optionally a url for evaluations (Jev, lib/jev.hoon), and a key
+::    (sur/ai-client.hoon suggests some). calls and evaluations are
 ::    fire-and-forget pokes; results are scried by request id
 ::
 ::    scries (json):
@@ -10,7 +11,7 @@
 ::      /x/response/<id>      a call's outcome, or null while pending
 ::
 /-  *ai-client
-/+  default-agent, rl=llm-responses, jl=json-llm-client
+/+  default-agent, rl=llm-responses, jev, jl=json-llm-client
 ::
 |%
 +$  card  card:agent:gall
@@ -75,11 +76,16 @@
       %set-provider
     =/  url  (base-url:rl base-url.act)
     ?~  url  ~|('the base url must start with http:// or https://' !!)
+    =/  eval=(unit @t)
+      ?~  eval-url.act  ~
+      =/  e  (base-url:rl u.eval-url.act)
+      ?~  e  ~|('the evaluations url must start with http:// or https://' !!)
+      e
     =/  old  (~(get by providers.state) name.act)
     =/  key=@t
       ?^  api-key.act  u.api-key.act
       ?~(old '' api-key.u.old)
-    =.  providers.state  (~(put by providers.state) name.act [u.url key])
+    =.  providers.state  (~(put by providers.state) name.act [u.url eval key])
     `this
   ::
       %del-provider
@@ -98,6 +104,14 @@
     =.  pending.state
       (~(put by pending.state) request-id.act [provider.act model.act])
     [~[(send request-id.act (build-request:rl p args))] this]
+  ::
+      %evaluate
+    =/  bad  (problem:jev args.act)
+    ?^  bad  ~|(u.bad !!)
+    =/  p  (fresh-call state request-id.act provider.act)
+    =.  pending.state
+      (~(put by pending.state) request-id.act [provider.act model.args.act])
+    [~[(send request-id.act (build-request:jev p args.act))] this]
   ==
 ::
 ++  on-peek
@@ -109,6 +123,14 @@
   ::
       [%x %suggestions ~]
     ``json+!>(suggestions:en:jl)
+  ::
+      ::  a finished evaluation's answers, typed by lib/jev.hoon; null
+      ::  while pending, or if it failed or doesn't parse
+      [%x %evaluation @tas ~]
+    =/  result  (~(get by responses.state) i.t.t.path)
+    ?.  ?=([~ %response %ok *] result)  ``json+!>(~)
+    =/  e  (evaluation:jev value.u.result)
+    ``json+!>(?~(e ~ (evaluation:en:jl u.e)))
   ::
       [%x %response @tas ~]
     =/  request-id=@tas  i.t.t.path

@@ -334,8 +334,9 @@ export default class IO {
     return await this.scry("/suggestions", "trill-ai-client");
   }
   // apiKey null keeps the key the provider has; "" removes it
-  async setAiProvider(name: string, baseUrl: string, apiKey: string | null) {
-    return this.poke({ "set-provider": { name, baseUrl, apiKey } }, "trill-ai-client");
+  // evalUrl null: evaluations go to <baseUrl>/systemone
+  async setAiProvider(name: string, baseUrl: string, evalUrl: string | null, apiKey: string | null) {
+    return this.poke({ "set-provider": { name, baseUrl, evalUrl, apiKey } }, "trill-ai-client");
   }
   async deleteAiProvider(name: string) {
     return this.poke({ "del-provider": { name } }, "trill-ai-client");

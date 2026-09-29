@@ -82,7 +82,10 @@ export default function AiProvidersSettings() {
             ) : (
               <div key={p.name} className="relay-item ai-provider">
                 <span className="ai-provider-name">{p.name}</span>
-                <span className="relay-url mono">{p.baseUrl}</span>
+                <span className="relay-url mono" title={p.evalUrl ? `evaluations: ${p.evalUrl}` : undefined}>
+                  {p.baseUrl}
+                  {p.evalUrl && <span className="ai-provider-eval"> · evaluations at {p.evalUrl}</span>}
+                </span>
                 <span
                   className={`ai-provider-key${p.hasKey ? " set" : ""}`}
                   title={p.hasKey ? "A key is set" : "No key: sent without authorization"}
@@ -128,12 +131,14 @@ function AddProvider({
   const api = useLocalState((s) => s.api);
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
+  const [evalUrl, setEvalUrl] = useState("");
   const [key, setKey] = useState("");
   const [saving, setSaving] = useState(false);
   const n = name.trim();
   const problem =
     (n && (providerNameProblem(n) ?? (taken.includes(n) ? `You already have ${n}` : null))) ||
     (url.trim() && baseUrlProblem(url)) ||
+    (evalUrl.trim() && baseUrlProblem(evalUrl, "evaluations url")) ||
     null;
   const ready = n !== "" && url.trim() !== "" && !problem;
   const offered = suggestions.filter((s) => !taken.includes(s.name));
@@ -141,7 +146,7 @@ function AddProvider({
   async function add() {
     if (!api || !ready) return;
     setSaving(true);
-    const res = await api.setAiProvider(n, url.trim(), key.trim());
+    const res = await api.setAiProvider(n, url.trim(), evalUrl.trim() || null, key.trim());
     setSaving(false);
     if ("error" in res) {
       toast.error(`Couldn't add ${n}`);
@@ -149,6 +154,7 @@ function AddProvider({
     }
     setName("");
     setUrl("");
+    setEvalUrl("");
     setKey("");
     toast.success(`${n} added`);
     await added();
@@ -173,6 +179,7 @@ function AddProvider({
               onClick={() => {
                 setName(s.name);
                 setUrl(s.baseUrl);
+                setEvalUrl(s.evalUrl ?? "");
               }}
             >
               {s.name}
@@ -196,6 +203,13 @@ function AddProvider({
           aria-label="Base url"
         />
       </div>
+      <input
+        value={evalUrl}
+        onChange={(e) => setEvalUrl(e.target.value)}
+        placeholder="Evaluations url (optional: the base url + /systemone)"
+        className="relay-input mono"
+        aria-label="Evaluations url"
+      />
       <div className="ai-provider-fields">
         <input
           type="password"
@@ -218,17 +232,19 @@ function AddProvider({
 function EditProvider({ p, done }: { p: AiProvider; done: () => Promise<void> }) {
   const api = useLocalState((s) => s.api);
   const [url, setUrl] = useState(p.baseUrl);
+  const [evalUrl, setEvalUrl] = useState(p.evalUrl ?? "");
   const [key, setKey] = useState("");
   const [dropKey, setDropKey] = useState(false);
   const [saving, setSaving] = useState(false);
-  const problem = baseUrlProblem(url);
+  const problem =
+    baseUrlProblem(url) ?? (evalUrl.trim() ? baseUrlProblem(evalUrl, "evaluations url") : null);
 
   async function save() {
     if (!api || problem) return;
     setSaving(true);
     // a new key replaces it, none keeps it, unless it's being removed
     const apiKey = key.trim() ? key.trim() : dropKey ? "" : null;
-    const res = await api.setAiProvider(p.name, url.trim(), apiKey);
+    const res = await api.setAiProvider(p.name, url.trim(), evalUrl.trim() || null, apiKey);
     setSaving(false);
     if ("error" in res) {
       toast.error(`Couldn't save ${p.name}`);
@@ -255,6 +271,13 @@ function EditProvider({ p, done }: { p: AiProvider; done: () => Promise<void> })
           autoFocus
         />
       </div>
+      <input
+        value={evalUrl}
+        onChange={(e) => setEvalUrl(e.target.value)}
+        placeholder="Evaluations url (optional: the base url + /systemone)"
+        className="relay-input mono"
+        aria-label="Evaluations url"
+      />
       <div className="ai-provider-fields">
         <input
           type="password"

@@ -581,6 +581,10 @@
   font-weight: 400;
 }
 
+.ai-provider-eval {
+  color: var(--color-text-muted, #8a929b);
+}
+
 .ai-provider-key {
   display: inline-flex;
   align-items: center;

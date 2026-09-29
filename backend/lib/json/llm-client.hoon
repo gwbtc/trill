@@ -15,6 +15,7 @@
   %-  pairs
   :~  name+s+name
       'baseUrl'^s+base-url.p
+      'evalUrl'^?~(eval-url.p ~ s+u.eval-url.p)
       'hasKey'^b+!=('' api-key.p)
   ==
 ::
@@ -22,8 +23,49 @@
   ^-  json
   :-  %a
   %+  turn  suggestions:sur
-  |=  [name=@tas url=@t]
-  (pairs ~[name+s+name 'baseUrl'^s+url])
+  |=  [name=@tas url=@t eval=(unit @t)]
+  (pairs ~[name+s+name 'baseUrl'^s+url 'evalUrl'^?~(eval ~ s+u.eval)])
+::
+::  +evaluation: typed Jev answers (lib/jev.hoon), back as json
+::
+++  evaluation
+  |=  e=evaluation:sur
+  ^-  json
+  %-  pairs
+  :~  model+s+model.e
+      'inputTokens'^(numb input-tokens.e)
+      'outputTokens'^(numb output-tokens.e)
+      :-  %answers
+      %-  pairs
+      %+  turn  ~(tap by answers.e)
+      |=  [id=@t a=answer:sur]
+      :-  id
+      ?-  -.a
+        %noul  (pairs ~[type+s+'noul' noul+(real p.a)])
+          %choice
+        %-  pairs
+        :~  type+s+'choice'
+            choice+s+choice.a
+            probabilities+(reals probabilities.a)
+            confidence+(real confidence.a)
+        ==
+          %score
+        %-  pairs
+        :~  type+s+'score'
+            score+(real score.a)
+            legend+(pairs (turn ~(tap by legend.a) |=([k=@t v=@t] [k s+v])))
+            probabilities+(reals probabilities.a)
+            confidence+(real confidence.a)
+        ==
+      ==
+  ==
+::  +real: '.~0.95' is how @rd prints
+::
+++  real  |=(r=@rd `json`n+(rsh [3 2] (scot %rd r)))
+++  reals
+  |=  m=(map @t @rd)
+  ^-  json
+  (pairs (turn ~(tap by m) |=([k=@t r=@rd] [k (real r)])))
 ::
 ++  outcome
   |=  result=outcome:sur
@@ -66,7 +108,7 @@
   ^-  $-(json (unit action:sur))
   %-  of
   :~  :-  %set-provider
-      (ot ~[name+name 'baseUrl'^so 'apiKey'^(mu so)])
+      (ot ~[name+name 'baseUrl'^so 'evalUrl'^(mu so) 'apiKey'^(mu so)])
       [%del-provider (ot ~[name+name])]
       [%list-models (ot ~['requestId'^name provider+name])]
       :-  %call
@@ -77,6 +119,39 @@
           input+so
           'maxOutputTokens'^(mu ni)
       ==
+    ::
+      :-  %evaluate
+      %-  ot
+      :~  'requestId'^name
+          provider+name
+          :-  %args
+          %-  ot
+          :~  model+so
+              state+some
+              questions+(om question)
+      ==  ==
+  ==
+::  +question: Jev's, tagged by its type field (see lib/jev.hoon)
+::
+++  question
+  |=  j=json
+  ^-  (unit question:sur)
+  ?.  ?=([%o *] j)  ~
+  =/  ins  (~(get by p.j) 'instructions')
+  ?~  ins  ~
+  =/  crit=json  (~(gut by p.j) 'criteria' ~)
+  ?+  (~(get by p.j) 'type')  ~
+      [~ %s %noul]
+    =/  c=(map @t json)  ?:(?=([%o *] crit) p.crit ~)
+    `[%noul u.ins (~(get by c) 'true') (~(get by c) 'false')]
+  ::
+      [~ %s %choice]
+    ?.  ?=([%o *] crit)  ~
+    `[%choice u.ins (~(run by p.crit) |=(v=json ?~(v ~ `v)))]
+  ::
+      [~ %s %score]
+    ?.  ?=([%a *] crit)  ~
+    `[%score u.ins p.crit]
   ==
 --
 --
