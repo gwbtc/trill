@@ -2,44 +2,81 @@
 ::
 ::    providers are ours to name: a base url speaking the Responses API,
 ::    optionally a url for evaluations (Jev, lib/jev.hoon), and a key
-::    (sur/ai-client.hoon suggests some). calls and evaluations are
-::    fire-and-forget pokes; results are scried by request id
+::    (sur/ai-client.hoon suggests some)
+::
+::    agents on our ship poke a %call, %evaluate or %list-models with a
+::    request id, then watch /response/<id> for the outcome (see
+::    +on-watch; ted/evaluate.hoon does just that). nothing is kept
+::    after it's given, except successful answers, cached by what was
+::    asked for up to an hour: the same question to the same endpoint
+::    isn't paid for twice
 ::
 ::    scries (json):
-::      /x/providers          [{name, baseUrl, hasKey}], never the keys
-::      /x/suggestions        [{name, baseUrl}]
-::      /x/response/<id>      a call's outcome, or null while pending
+::      /x/providers          [{name, baseUrl, evalUrl, hasKey}], no keys
+::      /x/suggestions        [{name, baseUrl, evalUrl}]
 ::
 /-  *ai-client
-/+  default-agent, rl=llm-responses, jev, jl=json-llm-client
+/+  default-agent, dbug, rl=llm-responses, jev, jl=json-llm-client
 ::
 |%
 +$  card  card:agent:gall
-+$  pending-call  [provider=@tas model=@t]
 +$  state-0
   $:  %0
       providers=(map @tas provider)
-      pending=(map @tas pending-call)
-      responses=(map @tas outcome)
+      ::  requests out, and the cache key their answer goes under
+      pending=(map @tas @uvH)
+      ::  successful outcomes, by what was asked (+cache-key); wiped
+      ::  every hour, with anything still in ready
+      cache=(map @uvH outcome)
+      ::  cached answers for new requests, until their caller watches
+      ready=(map @tas outcome)
   ==
-::  +fresh-call: the provider for a new request id
 ::
-++  fresh-call
+++  wipe-every  ~h1
+::  +cache-key: a request without its headers, so without the api key:
+::  the same question to the same endpoint
+::
+++  cache-key
+  |=  =request:http
+  ^-  @uvH
+  (sham [method.request url.request body.request])
+::  +provider-for: the provider for a new request id
+::
+++  provider-for
   |=  [state=state-0 id=@tas name=@tas]
   ^-  provider
-  ?:  |((~(has by pending.state) id) (~(has by responses.state) id))
+  ?:  |((~(has by pending.state) id) (~(has by ready.state) id))
     ~|([%duplicate-request-id id] !!)
   =/  p  (~(get by providers.state) name)
   ?~  p  ~|([%no-such-provider name] !!)
   u.p
+::  +ask: answer from the cache, or send the request
 ::
-++  send
-  |=  [id=@tas =request:http]
+++  ask
+  |=  [state=state-0 id=@tas =request:http]
+  ^-  [(list card) state-0]
+  =/  k  (cache-key request)
+  =/  hit  (~(get by cache.state) k)
+  ?^  hit
+    [~ state(ready (~(put by ready.state) id u.hit))]
+  :_  state(pending (~(put by pending.state) id k))
+  ~[[%pass /responses/[id] %arvo %i %request request *outbound-config:iris]]
+::
+++  wipe-timer
+  |=  now=@da
   ^-  card
-  [%pass /responses/[id] %arvo %i %request request *outbound-config:iris]
+  [%pass /wipe %arvo %b %wait (add now wipe-every)]
+::
+++  give
+  |=  [id=@tas =outcome]
+  ^-  (list card)
+  :~  [%give %fact ~[/response/[id]] %noun !>(outcome)]
+      [%give %kick ~[/response/[id]] ~]
+  ==
 --
 ::
 =|  state=state-0
+%-  agent:dbug
 ^-  agent:gall
 |_  =bowl:gall
 +*  this  .
@@ -47,7 +84,7 @@
 ::
 ++  on-init
   ^-  (quip card _this)
-  `this
+  [~[(wipe-timer now.bowl)] this]
 ::
 ++  on-save
   !>(state)
@@ -93,25 +130,25 @@
     `this
   ::
       %list-models
-    =/  p  (fresh-call state request-id.act provider.act)
-    =.  pending.state
-      (~(put by pending.state) request-id.act [provider.act 'models'])
-    [~[(send request-id.act (build-models-request:rl p))] this]
+    =/  p  (provider-for state request-id.act provider.act)
+    =^  cards  state
+      (ask state request-id.act (build-models-request:rl p))
+    [cards this]
   ::
       %call
-    =/  p  (fresh-call state request-id.act provider.act)
+    =/  p  (provider-for state request-id.act provider.act)
     =/  args=request-args  [model.act input.act max-output-tokens.act]
-    =.  pending.state
-      (~(put by pending.state) request-id.act [provider.act model.act])
-    [~[(send request-id.act (build-request:rl p args))] this]
+    =^  cards  state
+      (ask state request-id.act (build-request:rl p args))
+    [cards this]
   ::
       %evaluate
     =/  bad  (problem:jev args.act)
     ?^  bad  ~|(u.bad !!)
-    =/  p  (fresh-call state request-id.act provider.act)
-    =.  pending.state
-      (~(put by pending.state) request-id.act [provider.act model.args.act])
-    [~[(send request-id.act (build-request:jev p args.act))] this]
+    =/  p  (provider-for state request-id.act provider.act)
+    =^  cards  state
+      (ask state request-id.act (build-request:jev p args.act))
+    [cards this]
   ==
 ::
 ++  on-peek
@@ -123,50 +160,65 @@
   ::
       [%x %suggestions ~]
     ``json+!>(suggestions:en:jl)
-  ::
-      ::  a finished evaluation's answers, typed by lib/jev.hoon; null
-      ::  while pending, or if it failed or doesn't parse
-      [%x %evaluation @tas ~]
-    =/  result  (~(get by responses.state) i.t.t.path)
-    ?.  ?=([~ %response %ok *] result)  ``json+!>(~)
-    =/  e  (evaluation:jev value.u.result)
-    ``json+!>(?~(e ~ (evaluation:en:jl u.e)))
-  ::
-      [%x %response @tas ~]
-    =/  request-id=@tas  i.t.t.path
-    =/  result=(unit outcome)  (~(get by responses.state) request-id)
-    ?~  result
-      ``json+!>(~)
-    ``json+!>((outcome:en:jl u.result))
   ==
 ::
 ++  on-arvo
   |=  [=wire =sign-arvo]
   ^-  (quip card _this)
-  ?.  ?=([%responses @tas ~] wire)
-    (on-arvo:def wire sign-arvo)
-  ?.  ?=(%http-response +<.sign-arvo)
-    (on-arvo:def wire sign-arvo)
-  =/  request-id=@tas  i.t.wire
-  ~|  [%unknown-request-id request-id]
-  ?>  (~(has by pending.state) request-id)
-  =/  res=client-response:iris  +>.sign-arvo
-  ?:  ?=(%progress -.res)
-    `this
-  =.  pending.state  (~(del by pending.state) request-id)
-  =/  result=outcome
-    ?-  -.res
-      %cancel  [%transport-error %cancelled]
-      %finished
-        =/  body=@t
-          ?~(full-file.res '' q.data.u.full-file.res)
-        [%response (parse-response:rl response-header.res body)]
-    ==
-  =.  responses.state
-    (~(put by responses.state) request-id result)
-  [~ this]
+  ?+  wire  (on-arvo:def wire sign-arvo)
+      [%wipe ~]
+    ?.  ?=([%behn %wake *] sign-arvo)  `this
+    =.  cache.state  ~
+    =.  ready.state  ~
+    [~[(wipe-timer now.bowl)] this]
+  ::
+      [%responses @tas ~]
+    ?.  ?=([%iris %http-response *] sign-arvo)
+      (on-arvo:def wire sign-arvo)
+    =/  id=@tas  i.t.wire
+    =/  k  (~(get by pending.state) id)
+    ?~  k  `this
+    =/  res=client-response:iris  +>.sign-arvo
+    ?:  ?=(%progress -.res)
+      `this
+    =.  pending.state  (~(del by pending.state) id)
+    =/  result=outcome
+      ?-  -.res
+        %cancel  [%transport-error %cancelled]
+        %finished
+          =/  body=@t
+            ?~(full-file.res '' q.data.u.full-file.res)
+          [%response (parse-response:rl response-header.res body)]
+      ==
+    ::  only answers are worth keeping: not errors, not a 429
+    =?  cache.state  ?=([%response %ok *] result)
+      (~(put by cache.state) u.k result)
+    [(give id result) this]
+  ==
 ::
-++  on-watch  on-watch:def
+::  /response/<id>: for agents on our ship. poke a %call, %evaluate or
+::  %list-models, then watch its id: the outcome comes as a %noun fact
+::  (untyped when it arrives: clam it with ;;), then a kick. a cached
+::  answer comes at once
+::
+++  on-watch
+  |=  =path
+  ^-  (quip card _this)
+  ?+  path  (on-watch:def path)
+      [%response @tas ~]
+    ?>  =(our src):bowl
+    =/  id=@tas  i.t.path
+    =/  hit  (~(get by ready.state) id)
+    ?^  hit
+      =.  ready.state  (~(del by ready.state) id)
+      :_  this
+      :~  [%give %fact ~ %noun !>(u.hit)]
+          [%give %kick ~ ~]
+      ==
+    ~|  [%no-such-request id]
+    ?>  (~(has by pending.state) id)
+    `this
+  ==
 ++  on-leave  on-leave:def
 ++  on-agent  on-agent:def
 ++  on-fail   on-fail:def
