@@ -67,13 +67,25 @@
       body=~
   ==
 ::
+::  +parse-response: a 2xx that says it's json (or doesn't say what it is)
+::  is parsed; any other 2xx, like audio or plain text, is kept as bytes
+::
 ++  parse-response
-  |=  [=response-header:http body=@t]
+  |=  [=response-header:http file=(unit mime-data:iris)]
   ^-  response
+  =/  body=@t  ?~(file '' q.data.u.file)
+  =/  type=@t  ?~(file '' type.u.file)
+  ?.  &((gte status-code.response-header 200) (lth status-code.response-header 300))
+    [%error response-header body (de:json:html body)]
+  =/  as-json=?
+    ?|  =('' type)
+        =('application/octet-stream' type)
+        ?=(^ (find "json" (trip type)))
+    ==
+  ?.  as-json
+    [%data response-header type ?~(file [0 0] data.u.file)]
   =/  value=(unit json)  (de:json:html body)
-  ?:  &((gte status-code.response-header 200) (lth status-code.response-header 300))
-    ?~  value
-      [%invalid-json response-header body]
-    [%ok response-header body u.value]
-  [%error response-header body value]
+  ?~  value
+    [%invalid-json response-header body]
+  [%ok response-header body u.value]
 --

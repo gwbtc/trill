@@ -26,7 +26,6 @@
   (strand-fail %incomplete-http-response ~)
 ?~  full-file.res
   (strand-fail %missing-response-body ~)
-=/  body=@t  q.data.u.full-file.res
 =/  parsed=response:sur
-  (parse-response:rl response-header.res body)
+  (parse-response:rl response-header.res full-file.res)
 (pure:m !>(parsed))

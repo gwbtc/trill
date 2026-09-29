@@ -4,7 +4,8 @@
 ::    optionally a url for evaluations (Jev, lib/jev.hoon), and a key
 ::    (sur/ai-client.hoon suggests some)
 ::
-::    agents on our ship poke a %call, %evaluate or %list-models with a
+::    agents on our ship poke a %call, %evaluate, %list-models, or an
+::    audio %speech, %transcribe or %translate (lib/ai-audio.hoon) with a
 ::    request id, then watch /response/<id> for the outcome (see
 ::    +on-watch; ted/evaluate.hoon does just that). nothing is kept
 ::    after it's given, except successful answers, cached by what was
@@ -16,7 +17,7 @@
 ::      /x/suggestions        [{name, baseUrl, evalUrl}]
 ::
 /-  *ai-client
-/+  default-agent, dbug, rl=llm-responses, jev, jl=json-llm-client
+/+  default-agent, dbug, rl=llm-responses, jev, audio=ai-audio, jl=json-llm-client
 ::
 |%
 +$  card  card:agent:gall
@@ -149,6 +150,30 @@
     =^  cards  state
       (ask state request-id.act (build-request:jev p args.act))
     [cards this]
+  ::
+      %speech
+    =/  bad  (speech-problem:audio args.act)
+    ?^  bad  ~|(u.bad !!)
+    =/  p  (provider-for state request-id.act provider.act)
+    =^  cards  state
+      (ask state request-id.act (build-speech:audio p args.act))
+    [cards this]
+  ::
+      %transcribe
+    =/  bad  (file-problem:audio model.args.act file.args.act)
+    ?^  bad  ~|(u.bad !!)
+    =/  p  (provider-for state request-id.act provider.act)
+    =^  cards  state
+      (ask state request-id.act (build-transcription:audio p args.act))
+    [cards this]
+  ::
+      %translate
+    =/  bad  (file-problem:audio model.args.act file.args.act)
+    ?^  bad  ~|(u.bad !!)
+    =/  p  (provider-for state request-id.act provider.act)
+    =^  cards  state
+      (ask state request-id.act (build-translation:audio p args.act))
+    [cards this]
   ==
 ::
 ++  on-peek
@@ -186,12 +211,10 @@
       ?-  -.res
         %cancel  [%transport-error %cancelled]
         %finished
-          =/  body=@t
-            ?~(full-file.res '' q.data.u.full-file.res)
-          [%response (parse-response:rl response-header.res body)]
+          [%response (parse-response:rl response-header.res full-file.res)]
       ==
     ::  only answers are worth keeping: not errors, not a 429
-    =?  cache.state  ?=([%response %ok *] result)
+    =?  cache.state  ?=([%response ?(%ok %data) *] result)
       (~(put by cache.state) u.k result)
     [(give id result) this]
   ==
