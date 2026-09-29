@@ -477,12 +477,12 @@ function WalletSettings({ onAddMint }: { onAddMint: () => void }) {
 
   async function showPhrase() {
     if (!api) return;
-    const res = await api.scryWalletPhrase();
-    if ("error" in res || typeof res.ok !== "string") {
+    const words = await api.walletPhrase();
+    if (!words) {
       toast.error("Couldn't get the phrase");
       return;
     }
-    setPhrase(res.ok.split(" "));
+    setPhrase(words.split(" "));
   }
 
   return (

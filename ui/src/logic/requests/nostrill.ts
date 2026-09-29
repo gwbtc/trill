@@ -164,8 +164,26 @@ export default class IO {
   async subscribeWallet(handler: Handler) {
     return await this.sub("/ui", handler, "trill-wallet");
   }
-  async scryWalletPhrase() {
-    return await this.scry("/phrase", "trill-wallet");
+  // the seed phrase: a watch the agent answers once and ends (no scry: any
+  // agent on the ship could read that). null if it won't say
+  async walletPhrase(): Promise<string | null> {
+    return new Promise((resolve) => {
+      let done = false;
+      const end = (phrase: string | null) => {
+        if (done) return;
+        done = true;
+        resolve(phrase);
+      };
+      this.airlock
+        .subscribe({
+          app: "trill-wallet",
+          path: "/phrase",
+          event: (d: unknown) => end(typeof d === "string" ? d : null),
+          err: () => end(null),
+          quit: () => end(null),
+        })
+        .catch(() => end(null));
+    });
   }
   // an action (backend/lib/json/wallet.hoon); { error } holds the agent's
   // refusal when it won't

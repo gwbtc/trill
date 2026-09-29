@@ -36,14 +36,22 @@
 ::    and pokes us back the event ids ([%signed ref ids]). the key never
 ::    leaves it. the ship stays the source of truth
 ::
+::    what's secret (the phrase, the tokens we made, the NWC key) goes only
+::    to our browser: gall has no scry permissions, and any agent here can
+::    read a scry or dbug. so no dbug, and the full wallet is a watch only
+::    eyre may make (sap /eyre/...)
+::
 ::    scries:
-::      /x/wallet  json: balances, mints, operations, sent tokens, the log
+::      /x/wallet  json: balances, mints, operations, the log (no tokens)
+::    watches (eyre only):
+::      /ui        the wallet json, tokens and all, now and on every change
+::      /phrase    the seed phrase, once, then kicked
 ::      /x/phrase  json: the seed phrase
 ::
 ::    it imports the tests only so that |commit type-checks them
 ::
 /-  sur=wallet, comms=nostrill-comms, nostr
-/+  default-agent, dbug, cashu, cw=cashu-wire, cs=cashu-seed, nip60,
+/+  default-agent, cashu, cw=cashu-wire, cs=cashu-seed, nip60,
     wj=json-wallet,
     bip39-english
 /=  t-cashu  /tests/cashu
@@ -114,7 +122,6 @@
 ::
 =|  state-0
 =*  state  -
-%-  agent:dbug
 ^-  agent:gall
 =<
 |_  =bowl:gall
@@ -171,18 +178,26 @@
   |=  =(pole knot)
   ^-  (unit (unit cage))
   ?+  pole  (on-peek:def pole)
-    [%x %wallet ~]  ``json+!>(wallet-json:hc)
-    ::  the seed phrase, to write down
-    [%x %phrase ~]  ``json+!>(`json`s+(crip phrase))
+    [%x %wallet ~]  ``json+!>((wallet-json:hc |))
   ==
 ::
 ++  on-watch
   |=  =path
   ^-  (quip card _this)
   ?>  =(our src):bowl
-  ?.  ?=([%ui ~] path)  (on-watch:def path)
-  :_  this
-  ~[[%give %fact ~ %json !>(wallet-json:hc)]]
+  ::  our browser only: see the top
+  ?.  ?=([%eyre *] sap.bowl)  ~|(%wallet-watches-from-eyre-only !!)
+  ?+  path  (on-watch:def path)
+      [%ui ~]
+    :_  this
+    ~[[%give %fact ~ %json !>((wallet-json:hc &))]]
+  ::
+      [%phrase ~]
+    :_  this
+    :~  [%give %fact ~ %json !>(`json`s+(crip phrase))]
+        [%give %kick ~ ~]
+    ==
+  ==
 ++  on-leave  on-leave:def
 ++  on-agent
   |=  [=wire =sign:agent:gall]
@@ -1381,7 +1396,7 @@
   |=  [old=_state cards=(list card)]
   ^-  (list card)
   ?:  =(old state)  cards
-  (snoc cards [%give %fact ~[/ui] %json !>(wallet-json)])
+  (snoc cards [%give %fact ~[/ui] %json !>((wallet-json &))])
 ::
 ++  fail
   |=  [id=@ud why=@t]
@@ -1397,6 +1412,7 @@
   (roll (fall (~(get by proofs) url) ~) |=([p=proof:sur n=@ud] (add n amount.p)))
 ::
 ++  wallet-json
+  |=  secret=?
   ^-  json
   =,  enjs:format
   %-  pairs
@@ -1474,7 +1490,12 @@
       :-  %a
       %+  turn  sent
       |=  s=sent:sur
-      (pairs ~[at+(sect at.s) mint+s+mint.s amount+(numb amount.s) token+s+token.s])
+      %-  pairs
+      :~  at+(sect at.s)
+          mint+s+mint.s
+          amount+(numb amount.s)
+          token+?:(secret s+token.s ~)
+      ==
     ::
       :-  %history
       :-  %a
