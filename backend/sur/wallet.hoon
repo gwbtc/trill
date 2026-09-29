@@ -85,6 +85,35 @@
           outputs=(list output)
           sends=@ud
       ==
+      ::  Lightning out: a melt quote for an invoice, then our proofs
+      ::  (reserved) with blank outputs for the change (NUT-05, NUT-08)
+      $:  %withdraw
+          mint=@t
+          invoice=@t
+          quote=@t
+          amount=@ud
+          reserve=@ud
+          inputs=(list proof)
+          blanks=(list output)
+          step=?(%quoting %melting %pending)
+      ==
+      ::  asking the mint which proofs are spent, 100 at a time (NUT-07)
+      $:  %check
+          mint=@t
+          todo=(list proof)
+          doing=(list proof)
+      ==
+      ::  asking the mint to sign again what our seed made (NUT-09, 13):
+      ::  keyset by keyset, batch by batch from counter 0, until
+      ::  restore-gap empty batches in a row
+      $:  %restore
+          mint=@t
+          keysets=(list @t)
+          counter=@ud
+          empty=@ud
+          batch=(list output)
+          found=(list proof)
+      ==
   ==
 ::  +sent: a token we made, to copy and hand over; its proofs are
 ::  someone else's once they swap it
@@ -97,6 +126,10 @@
       [%deposit mint=@t amount=@ud]             ::  in sats
       [%receive token=@t]                       ::  cashuA... or cashuB...
       [%send mint=@t amount=@ud memo=(unit @t)]
+      [%withdraw mint=@t invoice=@t]            ::  pay a bolt11 invoice
+      [%check mint=@t]                          ::  drop spent proofs
+      [%restore mint=@t]                        ::  what our seed can reclaim
+      [%set-phrase words=@t]                    ::  an empty wallet only
   ==
 ::  +token: ecash to hand over, from one mint in one unit (NUT-00 V3/V4)
 ::

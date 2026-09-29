@@ -7,16 +7,23 @@
 ::    what it's about to blind or spend saved before the request goes out
 ::
 ::    pokes (%noun, our own ship): $action in sur/wallet.hoon
-::      [%add-mint url]        fetch and check a mint's keysets
-::      [%deposit url amount]  a Lightning invoice; minted once paid
+::      [%add-mint url]            fetch and check a mint's keysets
+::      [%deposit url amount]      a Lightning invoice; minted once paid
+::      [%send url amount memo]    a token (in the sent list)
+::      [%receive token]           a cashuA/cashuB token, swapped in
+::      [%withdraw url invoice]    pay a Lightning invoice (melt)
+::      [%check url]               drop the proofs the mint says are spent
+::      [%restore url]             reclaim what our seed made (NUT-09)
+::      [%set-phrase words]        use another seed phrase (empty wallet)
 ::
 ::    scries:
-::      /x/wallet  json: balances, mints, operations, the log
+::      /x/wallet  json: balances, mints, operations, sent tokens, the log
+::      /x/phrase  json: the seed phrase
 ::
 ::    it imports the tests only so that |commit type-checks them
 ::
 /-  sur=wallet
-/+  default-agent, dbug, cashu, cw=cashu-wire, cs=cashu-seed, nip44
+/+  default-agent, dbug, cashu, cw=cashu-wire, cs=cashu-seed, nip44, bip39-english
 /=  t-cashu  /tests/cashu
 /=  t-wire  /tests/cashu-wire
 /=  t-seed  /tests/cashu-seed
@@ -39,6 +46,11 @@
 ::  +poll-every: how often a deposit's quote is checked
 ::
 ++  poll-every  ~s3
+::  +restore-batch, +restore-gap: NUT-09 outputs asked about at a time, and
+::  how many empty batches in a row end a keyset's restore
+::
+++  restore-batch  25
+++  restore-gap  3
 --
 ::
 =|  state-0
@@ -92,6 +104,8 @@
   ^-  (unit (unit cage))
   ?+  pole  (on-peek:def pole)
     [%x %wallet ~]  ``json+!>(wallet-json:hc)
+    ::  the seed phrase, to write down
+    [%x %phrase ~]  ``json+!>(`json`s+(crip phrase))
   ==
 ::
 ++  on-watch  on-watch:def
@@ -157,7 +171,7 @@
     ?~  m  ~|('add the mint first' !!)
     ?:  =(0 amount.a)  ~|('send at least 1 sat' !!)
     =/  have=(list proof:sur)  (fall (~(get by proofs) url) ~)
-    =/  pick  (select have amount.a keysets.u.m)
+    =/  pick  (select have amount.a keysets.u.m &)
     ?~  pick  ~|('not enough ecash at that mint, with fees' !!)
     =/  ins=(list proof:sur)  ins.u.pick
     ::  the proofs are reserved: out of the wallet until this is done
@@ -179,6 +193,42 @@
       %+  ~(put by ops)  id
       [%send url amount.a memo.a ins outs (lent send-amounts)]
     [~[(swap-card id url ins outs)] state]
+  ::
+      %withdraw
+    =/  url  (strip-slash:cw mint.a)
+    ?.  (~(has by mints) url)  ~|('add the mint first' !!)
+    =/  id  next-op
+    =.  next-op  +(next-op)
+    =.  ops
+      (~(put by ops) id [%withdraw url invoice.a '' 0 0 ~ ~ %quoting])
+    =/  body
+      (pairs:enjs:format ~[request+s+invoice.a unit+s+'sat'])
+    [~[(post id /quote (cat 3 url '/v1/melt/quote/bolt11') body)] state]
+  ::
+      %check
+    =/  url  (strip-slash:cw mint.a)
+    =/  have=(list proof:sur)  (fall (~(get by proofs) url) ~)
+    ?~  have  (note 'nothing to check')
+    =/  id  next-op
+    =.  next-op  +(next-op)
+    (check-next id [%check url have ~])
+  ::
+      %restore
+    =/  url  (strip-slash:cw mint.a)
+    =/  m  (~(get by mints) url)
+    ?~  m  ~|('add the mint first' !!)
+    =/  id  next-op
+    =.  next-op  +(next-op)
+    (restore-next id [%restore url ~(tap in ~(key by keysets.u.m)) 0 0 ~ ~])
+  ::
+      %set-phrase
+    ::  only over an empty wallet: the proofs we hold are this seed's
+    ?.  &(=(~ ops) (levy ~(val by proofs) |=(ps=(list proof:sur) =(~ ps))))
+      ~|('the wallet isn\'t empty: spend or send its ecash first' !!)
+    =/  words  (phrase-words words.a)
+    ?~  words  ~|('that isn\'t a BIP-39 phrase of 12 to 24 words' !!)
+    =/  text=tape  (zing (join " " u.words))
+    `state(phrase text, seed (seed:cs text), counters ~)
   ==
 ::  +heard: an http response for an operation, on the wire it went out on
 ::
@@ -193,6 +243,9 @@
     %deposit   (heard-deposit id u.o tag got)
     %receive   (heard-swap id u.o got)
     %send      (heard-swap id u.o got)
+    %withdraw  (heard-withdraw id u.o tag got)
+    %check     (heard-check id u.o got)
+    %restore   (heard-restore id u.o got)
   ==
 ::  +parse: a 2xx json body, or why not
 ::
@@ -361,7 +414,7 @@
 ::  until they cover the amount and the fee of swapping them
 ::
 ++  select
-  |=  [have=(list proof:sur) amount=@ud keysets=(map @t keyset:sur)]
+  |=  [have=(list proof:sur) amount=@ud keysets=(map @t keyset:sur) exact-ok=?]
   ^-  (unit [ins=(list proof:sur) fee=@ud exact=?])
   =/  big=(list proof:sur)
     (sort have |=([a=proof:sur b=proof:sur] (gth amount.a amount.b)))
@@ -374,7 +427,7 @@
     ?:  =(0 left)  out
     ?:  (gth amount.i.ps left)  $(ps t.ps)
     $(ps t.ps, left (sub left amount.i.ps), out [i.ps out])
-  ?^  exact  `[exact 0 &]
+  ?:  &(exact-ok ?=(^ exact))  `[exact 0 &]
   =|  out=(list proof:sur)
   =/  ps  big
   |-
@@ -416,6 +469,252 @@
     s.u.dleq.p
     u.r.u.dleq.p
   ==
+::
+::  withdrawing: a melt quote, our proofs reserved with blank outputs for
+::  change, then the melt; a pending one is polled
+::
+++  heard-withdraw
+  |=  [id=@ud o=op:sur tag=path got=(each json @t)]
+  ^-  (quip card _state)
+  ?>  ?=(%withdraw -.o)
+  ?:  ?=(%| -.got)
+    ?-  step.o
+      %quoting  (fail id (cat 3 'the withdrawal failed: ' p.got))
+      %pending  [~[(poll-timer id)] state]
+        %melting
+      ::  refused: the proofs come back, unless it says they're spent
+      =?  proofs  ?=(~ (find "spent" (cass (trip p.got))))
+        (~(put by proofs) mint.o (weld inputs.o (fall (~(get by proofs) mint.o) ~)))
+      (fail id (cat 3 'the payment failed: ' p.got))
+    ==
+  ?:  ?=([%quote ~] tag)
+    =/  q  (melt-quote:de:cw p.got)
+    ?~  q  (fail id 'the mint\'s melt quote didn\'t parse')
+    =/  m  (~(get by mints) mint.o)
+    ?~  m  (fail id 'the mint is gone')
+    =/  have=(list proof:sur)  (fall (~(get by proofs) mint.o) ~)
+    =/  pick  (select have (add amount.u.q reserve.u.q) keysets.u.m |)
+    ?~  pick  (fail id 'not enough ecash at that mint, with fees')
+    =/  ins  ins.u.pick
+    =/  used  (silt (turn ins |=(p=proof:sur secret.p)))
+    =.  proofs
+      (~(put by proofs) mint.o (skip have |=(p=proof:sur (~(has in used) secret.p))))
+    ::  blanks for whatever may come back: all but the invoice and the
+    ::  input fee (NUT-08; a mint may return unused reserve and more)
+    =/  over  (sub (sum ins) (add amount.u.q fee.u.pick))
+    =/  ks  (active-keyset mint.o 'sat')
+    ?~  ks  (fail id 'the mint has no active keyset for sats')
+    =^  blanks  state  (new-outputs id.u.ks (reap (blank-count:cw over) 1))
+    =.  o
+      %=  o
+        quote    quote.u.q
+        amount   amount.u.q
+        reserve  reserve.u.q
+        inputs   ins
+        blanks   blanks
+        step     %melting
+      ==
+    =.  ops  (~(put by ops) id o)
+    =/  body
+      %-  pairs:enjs:format
+      :~  quote+s+quote.u.q
+          inputs+(proofs:en:cw ins)
+          outputs+(outputs:en:cw (turn blanks blinded))
+      ==
+    [~[(post id /melt (cat 3 mint.o '/v1/melt/bolt11') body)] state]
+  ::  the melt's answer, or a pending one's quote
+  =/  r  (melt-result:de:cw p.got)
+  ?~  r  (fail id 'the mint\'s melt answer didn\'t parse')
+  ?:  =('PENDING' state.u.r)
+    =.  ops  (~(put by ops) id o(step %pending))
+    [~[(poll-timer id)] state]
+  ?.  =('PAID' state.u.r)
+    ::  not paid: the proofs are ours again
+    =.  proofs
+      (~(put by proofs) mint.o (weld inputs.o (fall (~(get by proofs) mint.o) ~)))
+    (fail id 'the invoice wasn\'t paid')
+  =/  back  (unblind-change mint.o blanks.o change.u.r)
+  =.  ops  (~(del by ops) id)
+  ?:  ?=(%| -.back)
+    (note (cat 3 'paid, but the change was lost: ' p.back))
+  =.  proofs  (~(put by proofs) mint.o (weld p.back (fall (~(get by proofs) mint.o) ~)))
+  =/  fee  (sub (sub (sum inputs.o) amount.o) (sum p.back))
+  %-  note
+  %+  rap  3
+  :~  'paid '  (crip (a-co:co amount.o))  ' sats; fees '
+      (crip (a-co:co fee))
+  ==
+::  +unblind-change: NUT-08: change signed onto our blanks, in their
+::  order, fewer if it's less; each amount is the signature's, not ours
+::
+++  unblind-change
+  |=  [url=@t blanks=(list output:sur) sigs=(list blind-sig:sur)]
+  ^-  (each (list proof:sur) @t)
+  =/  m  (~(get by mints) url)
+  ?~  m  [%| 'the mint is gone']
+  =|  out=(list proof:sur)
+  |-
+  ?~  sigs  [%& (flop out)]
+  ?~  blanks  [%| 'more change than blank outputs']
+  =*  b  i.blanks
+  =*  s  i.sigs
+  ?.  =(id.b id.s)  [%| 'change on another keyset']
+  =/  ks  (~(get by keysets.u.m) id.s)
+  ?~  ks  [%| 'change on an unknown keyset']
+  =/  k  (~(get by keys.u.ks) amount.s)
+  ?~  k  [%| 'change of an amount with no key']
+  =/  bp  (blind:cashu (as-octs:mimes:html secret.b) r.b)
+  ?~  dleq.s  [%| 'the mint didn\'t prove its change (no DLEQ)']
+  ?.  (dleq-ok:cashu u.k bp c.s e.u.dleq.s s.u.dleq.s)
+    [%| 'the mint\'s change proof (DLEQ) is wrong']
+  =/  c  (unblind:cashu c.s r.b u.k)
+  =/  p=proof:sur  [id.s amount.s secret.b c `[e.u.dleq.s s.u.dleq.s `r.b] ~]
+  $(blanks t.blanks, sigs t.sigs, out [p out])
+::
+::  checking: which of our proofs the mint says are spent, 100 at a time
+::
+++  check-next
+  |=  [id=@ud o=op:sur]
+  ^-  (quip card _state)
+  ?>  ?=(%check -.o)
+  ?~  todo.o
+    =.  ops  (~(del by ops) id)
+    (note (cat 3 'checked the proofs at ' mint.o))
+  =/  doing  (scag 100 `(list proof:sur)`todo.o)
+  =.  ops  (~(put by ops) id o(todo (slag 100 `(list proof:sur)`todo.o), doing doing))
+  =/  body  (pairs:enjs:format ~[['Ys' (ys:en:cw doing)]])
+  [~[(post id /check (cat 3 mint.o '/v1/checkstate') body)] state]
+::
+++  heard-check
+  |=  [id=@ud o=op:sur got=(each json @t)]
+  ^-  (quip card _state)
+  ?>  ?=(%check -.o)
+  ?:  ?=(%| -.got)  (fail id (cat 3 'checking failed: ' p.got))
+  =/  states  (states:de:cw p.got)
+  ?~  states  (fail id 'the mint\'s states didn\'t parse')
+  ?.  =((lent u.states) (lent doing.o))  (fail id 'the mint answered for other proofs')
+  ::  the states come in the order the proofs went
+  =/  spent=(set @t)
+    =|  out=(set @t)
+    =/  ps=(list proof:sur)  doing.o
+    =/  ss=(list @t)  u.states
+    |-
+    ?~  ps  out
+    ?~  ss  out
+    =?  out  =('SPENT' i.ss)  (~(put in out) secret.i.ps)
+    $(ps t.ps, ss t.ss)
+  =/  have=(list proof:sur)  (fall (~(get by proofs) mint.o) ~)
+  =.  proofs
+    (~(put by proofs) mint.o (skip have |=(p=proof:sur (~(has in spent) secret.p))))
+  =?  log  !=(~ spent)
+    =/  entries=(list [at=@da what=@t])
+      :_  log
+      :-  now.bowl
+      (rap 3 ~['dropped ' (crip (a-co:co ~(wyt in spent))) ' spent proofs'])
+    (scag 50 entries)
+  (check-next id o)
+::
+::  restoring: our seed's outputs, batch by batch, that the mint has
+::  signed before (NUT-09); each keyset from counter 0 until restore-gap
+::  empty batches in a row
+::
+++  restore-next
+  |=  [id=@ud o=op:sur]
+  ^-  (quip card _state)
+  ?>  ?=(%restore -.o)
+  ?~  keysets.o
+    ::  done: what we don't hold already goes in, then a check drops
+    ::  the spent
+    =/  have=(list proof:sur)  (fall (~(get by proofs) mint.o) ~)
+    =/  held=(set @t)  (silt (turn have |=(p=proof:sur secret.p)))
+    =/  new=(list proof:sur)
+      (skip found.o |=(p=proof:sur (~(has in held) secret.p)))
+    =.  proofs  (~(put by proofs) mint.o (weld new have))
+    =.  ops  (~(del by ops) id)
+    =^  noted  state
+      (note (rap 3 ~['restored ' (crip (a-co:co (lent new))) ' proofs; checking them']))
+    =/  cid  next-op
+    =.  next-op  +(next-op)
+    (check-next cid [%check mint.o (weld new have) ~])
+  =/  kid  i.keysets.o
+  =/  outs=(list output:sur)
+    %+  turn  (gulf counter.o (add counter.o (dec restore-batch)))
+    |=  c=@ud
+    =/  [secret=@t r=@]  (derive:cs seed kid c)
+    [kid 1 secret r]
+  =.  ops  (~(put by ops) id o(batch outs))
+  =/  body  (pairs:enjs:format ~[outputs+(outputs:en:cw (turn outs blinded))])
+  [~[(post id /restore (cat 3 mint.o '/v1/restore') body)] state]
+::
+++  heard-restore
+  |=  [id=@ud o=op:sur got=(each json @t)]
+  ^-  (quip card _state)
+  ?>  ?=(%restore -.o)
+  ?:  ?=(%| -.got)  (fail id (cat 3 'restoring failed: ' p.got))
+  ?~  keysets.o  (restore-next id o)
+  =/  kid  i.keysets.o
+  =/  pairs  (restored:de:cw p.got)
+  ?~  pairs  (fail id 'the mint\'s restore answer didn\'t parse')
+  =/  m  (~(get by mints) mint.o)
+  ?~  m  (fail id 'the mint is gone')
+  ::  our outputs by their blinded point, with their counters
+  =/  ours=(map point:sur [c=@ud o=output:sur])
+    =|  out=(map point:sur [c=@ud o=output:sur])
+    =/  c=@ud  counter.o
+    =/  os=(list output:sur)  batch.o
+    |-
+    ?~  os  out
+    $(os t.os, c +(c), out (~(put by out) b:(blinded i.os) [c i.os]))
+  =/  got-back=(list [c=@ud p=proof:sur])
+    %+  murn  u.pairs
+    |=  [b=point:sur s=blind-sig:sur]
+    ^-  (unit [c=@ud p=proof:sur])
+    =/  mine  (~(get by ours) b)
+    ?~  mine  ~
+    =/  ks  (~(get by keysets.u.m) id.s)
+    ?~  ks  ~
+    =/  k  (~(get by keys.u.ks) amount.s)
+    ?~  k  ~
+    ?~  dleq.s  ~
+    ?.  (dleq-ok:cashu u.k b c.s e.u.dleq.s s.u.dleq.s)  ~
+    =/  c  (unblind:cashu c.s r.o.u.mine u.k)
+    `[c.u.mine [id.s amount.s secret.o.u.mine c `[e.u.dleq.s s.u.dleq.s `r.o.u.mine] ~]]
+  =/  found  (weld found.o (turn got-back |=([* p=proof:sur] p)))
+  ::  the counter goes past anything the mint had signed
+  ::  (rolled over the plain list type: over got-back narrowed to
+  ::  non-empty by the =? below, roll doesn't compile)
+  =/  top=@ud
+    %+  roll  `(list [c=@ud p=proof:sur])`got-back
+    |=([[c=@ud *] n=@ud] (max +(c) n))
+  =?  counters  ?=(^ got-back)
+    (~(put by counters) kid (max top (fall (~(get by counters) kid) 0)))
+  =/  empty  ?~(got-back +(empty.o) 0)
+  =/  next=op:sur
+    ?:  (gte empty restore-gap)
+      o(keysets t.keysets.o, counter 0, empty 0, found found)
+    o(counter (add counter.o restore-batch), empty empty, found found)
+  (restore-next id next)
+::  +phrase-words: a phrase as its words, if it's 12 to 24 BIP-39 words
+::
+++  phrase-words
+  |=  t=@t
+  ^-  (unit (list tape))
+  =/  ws=(list tape)
+    %+  skip  (split (cass (trip t)))
+    |=(w=tape =(~ w))
+  ?.  (~(has in (silt ~[12 15 18 21 24])) (lent ws))  ~
+  ?.  (levy ws |=(w=tape ?=(^ (find ~[w] bip39-english))))  ~
+  `ws
+::
+++  split
+  |=  t=tape
+  ^-  (list tape)
+  =|  out=(list tape)
+  =|  cur=tape
+  |-
+  ?~  t  (flop [(flop cur) out])
+  ?:  |(=(' ' i.t) =('\0a' i.t))  $(t t.t, out [(flop cur) out], cur ~)
+  $(t t.t, cur [i.t cur])
 ::  +mint-outputs: blind the amount into outputs on an active keyset,
 ::  save them and advance the counter, then ask the mint to sign them
 ::
@@ -502,10 +801,17 @@
   ^-  (quip card _state)
   =/  o  (~(get by ops) id)
   ?~  o  `state
-  ?.  ?=([%deposit *] u.o)  `state
-  ?.  ?=(%waiting step.u.o)  `state
-  :_  state
-  ~[(get id /poll (rap 3 ~[mint.u.o '/v1/mint/quote/bolt11/' quote.u.o]))]
+  ?+  -.u.o  `state
+      %deposit
+    ?.  ?=(%waiting step.u.o)  `state
+    :_  state
+    ~[(get id /poll (rap 3 ~[mint.u.o '/v1/mint/quote/bolt11/' quote.u.o]))]
+  ::
+      %withdraw
+    ?.  ?=(%pending step.u.o)  `state
+    :_  state
+    ~[(get id /poll (rap 3 ~[mint.u.o '/v1/melt/quote/bolt11/' quote.u.o]))]
+  ==
 ::
 ++  poll-timer
   |=  id=@ud
@@ -591,6 +897,28 @@
       ::
           %send
         (pairs ~[id+(numb id) kind+s+'send' mint+s+mint.o amount+(numb amount.o)])
+      ::
+          %withdraw
+        %-  pairs
+        :~  id+(numb id)
+            kind+s+'withdraw'
+            mint+s+mint.o
+            amount+(numb amount.o)
+            step+s+step.o
+            invoice+s+invoice.o
+        ==
+      ::
+          %check
+        (pairs ~[id+(numb id) kind+s+'check' mint+s+mint.o left+(numb (lent todo.o))])
+      ::
+          %restore
+        %-  pairs
+        :~  id+(numb id)
+            kind+s+'restore'
+            mint+s+mint.o
+            keysets-left+(numb (lent keysets.o))
+            found+(numb (lent found.o))
+        ==
       ==
     ::
       :-  %sent

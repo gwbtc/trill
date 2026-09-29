@@ -241,6 +241,54 @@
           &(?=(^ amount-issued) ?=(^ amount-paid) (gte u.amount-issued u.amount-paid) !=(0 u.amount-paid))
       ==
     `[u.quote u.request paid issued (biff (get 'expiry') ni)]
+  ::  +melt-quote: POST /v1/melt/quote/bolt11 (and a GET of one)
+  ::
+  ++  melt-quote
+    |=  j=json
+    ^-  (unit [quote=@t amount=@ud reserve=@ud])
+    ?.  ?=([%o *] j)  ~
+    =/  quote  (biff (~(get by p.j) 'quote') so)
+    =/  amount  (biff (~(get by p.j) 'amount') ni)
+    ?~  quote  ~
+    ?~  amount  ~
+    `[u.quote u.amount (fall (biff (~(get by p.j) 'fee_reserve') ni) 0)]
+  ::  +melt-result: a melt's answer, or a melt quote's state: PAID,
+  ::  PENDING or UNPAID (older mints: a paid flag), and the change
+  ::  signed onto our blank outputs, in their order
+  ::
+  ++  melt-result
+    |=  j=json
+    ^-  (unit [state=@t change=(list blind-sig:sur)])
+    ?.  ?=([%o *] j)  ~
+    =/  state=@t
+      =/  s  (biff (~(get by p.j) 'state') so)
+      ?^  s  u.s
+      ?:  =([~ &] (biff (~(get by p.j) 'paid') bo))  'PAID'
+      'UNPAID'
+    =/  change=(list blind-sig:sur)
+      =/  c  (~(get by p.j) 'change')
+      ?~  c  ~
+      (fall ((ar blind-sig) u.c) ~)
+    `[state change]
+  ::  +restored: /v1/restore: the outputs the mint had signed, each with
+  ::  its signature, paired by position
+  ::
+  ++  restored
+    |=  j=json
+    ^-  (unit (list [b=point:sur sig=blind-sig:sur]))
+    ?.  ?=([%o *] j)  ~
+    =/  outs  (biff (~(get by p.j) 'outputs') (ar (ot ~['B_'^point])))
+    =/  sigs  (biff (~(get by p.j) 'signatures') (ar blind-sig))
+    ?~  outs  ~
+    ?~  sigs  ~
+    ?.  =((lent u.outs) (lent u.sigs))  ~
+    =/  os  u.outs
+    =/  ss  u.sigs
+    =|  out=(list [b=point:sur sig=blind-sig:sur])
+    |-
+    ?~  os  `(flop out)
+    ?~  ss  `(flop out)
+    $(os t.os, ss t.ss, out [[i.os i.ss] out])
   ::  +error: a mint's refusal: NUT-00's {detail, code}, or a bare
   ::  {detail} as tessera sends (its details are kebab-case names, like
   ::  token-already-spent, output-already-signed, quote-not-paid)
