@@ -214,6 +214,33 @@
           (fall (biff (~(get by p.k) key) ni) 0)
         `[-.u.u +<.u.u +>.u.u (num 'input_fee_ppk') (num 'final_expiry')]
     ==
+  ::  +mint-quote: POST /v1/mint/quote/bolt11 and GET of one. whether
+  ::  it's paid and issued, whichever way the mint says: a state
+  ::  (UNPAID/PAID/ISSUED), amount_paid and amount_issued, or a paid flag
+  ::
+  ++  mint-quote
+    |=  j=json
+    ^-  (unit [quote=@t request=@t paid=? issued=? expiry=(unit @ud)])
+    ?.  ?=([%o *] j)  ~
+    =/  get  |=(k=@t (~(get by p.j) k))
+    =/  quote  (biff (get 'quote') so)
+    =/  request  (biff (get 'request') so)
+    ?~  quote  ~
+    ?~  request  ~
+    =/  state  (biff (get 'state') so)
+    =/  amount-paid  (biff (get 'amount_paid') ni)
+    =/  amount-issued  (biff (get 'amount_issued') ni)
+    =/  paid-flag  (biff (get 'paid') bo)
+    =/  paid=?
+      ?|  ?=([~ ?(%'PAID' %'ISSUED')] state)
+          &(?=(^ amount-paid) (gth u.amount-paid (fall amount-issued 0)))
+          =([~ &] paid-flag)
+      ==
+    =/  issued=?
+      ?|  =([~ 'ISSUED'] state)
+          &(?=(^ amount-issued) ?=(^ amount-paid) (gte u.amount-issued u.amount-paid) !=(0 u.amount-paid))
+      ==
+    `[u.quote u.request paid issued (biff (get 'expiry') ni)]
   ::  +error: a mint's refusal: NUT-00's {detail, code}, or a bare
   ::  {detail} as tessera sends (its details are kebab-case names, like
   ::  token-already-spent, output-already-signed, quote-not-paid)

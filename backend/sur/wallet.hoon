@@ -43,6 +43,39 @@
 ::  its secret and blinding factor
 ::
 +$  output  [id=@t amount=@ud secret=@t r=@]
+::  +mint: a mint we use, by its url (no trailing slash)
+::
++$  mint  [url=@t keysets=(map @t keyset)]
+::  +op: an operation in flight, kept in state step by step so a crash or
+::  an upgrade can pick it up again. what it will spend or has blinded is
+::  saved before the request that uses it goes out
+::
++$  op
+  $%  ::  fetching a mint's keysets, then each one's keys
+      $:  %add-mint
+          url=@t
+          found=(list [id=@t unit=@t active=? fee-ppk=@ud final-expiry=@ud])
+          waiting=(set @t)                      ::  keysets whose keys are out
+      ==
+      ::  Lightning in: a quote and its invoice, polled until paid, then
+      ::  the ecash minted on these outputs
+      $:  %deposit
+          mint=@t
+          unit=@t
+          amount=@ud
+          quote=@t
+          request=@t                            ::  the bolt11 invoice
+          expiry=@da
+          step=?(%quoting %waiting %minting)
+          outputs=(list output)
+      ==
+  ==
+::  +action: pokes from our own ship (%noun; the UI's %json later)
+::
++$  action
+  $%  [%add-mint url=@t]
+      [%deposit mint=@t amount=@ud]             ::  in sats
+  ==
 ::  +token: ecash to hand over, from one mint in one unit (NUT-00 V3/V4)
 ::
 +$  token
