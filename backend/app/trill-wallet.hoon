@@ -6,7 +6,9 @@
 ::    that takes several requests is an +op in state, step by step, with
 ::    what it's about to blind or spend saved before the request goes out
 ::
-::    pokes (%noun, our own ship): $action in sur/wallet.hoon
+::    pokes (%noun or %json, our own ship): $action in sur/wallet.hoon;
+::    lib/json/wallet.hoon has the json. /ui: the /x/wallet json, now and
+::    whenever it changes
 ::      [%add-mint url]            fetch and check a mint's keysets
 ::      [%deposit url amount]      a Lightning invoice; minted once paid
 ::      [%send url amount memo]    a token (in the sent list)
@@ -15,6 +17,7 @@
 ::      [%check url]               drop the proofs the mint says are spent
 ::      [%restore url]             reclaim what our seed made (NUT-09)
 ::      [%set-phrase words]        use another seed phrase (empty wallet)
+::      [%del-mint url]            forget a mint we hold nothing at
 ::      [%zap to amount comment about]  a nutzap (NIP-61) to a pubkey
 ::      [%sync on]                 mirror to relays (NIP-60) or stop; on
 ::                                 publishes everything again
@@ -41,6 +44,7 @@
 ::
 /-  sur=wallet, comms=nostrill-comms, nostr
 /+  default-agent, dbug, cashu, cw=cashu-wire, cs=cashu-seed, nip60,
+    wj=json-wallet,
     bip39-english
 /=  t-cashu  /tests/cashu
 /=  t-wire  /tests/cashu-wire
@@ -69,6 +73,7 @@
       ::  NIP-61
       zaps=(set @ux)                            ::  nutzaps seen
       redeemed=(map @t (list [ev=@ux from=@ux]))  ::  not in a history yet
+      history=(list entry:sur)                  ::  newest first, 200 kept
   ==
 ::  +round: a sync out at %nostrill for signing, one at a time. first
 ::  the wallet event, token events and deletions; then, with their ids,
@@ -134,26 +139,32 @@
   |=  [=mark =vase]
   ^-  (quip card _this)
   ?>  =(our src):bowl
-  ?.  ?=(%noun mark)  (on-poke:def mark vase)
-  =^  cards  state  (act:hc ;;(action:sur q.vase))
+  =/  old  state
+  =/  a=action:sur
+    ?+  mark  ~|(bad-mark+mark !!)
+      %noun  ;;(action:sur q.vase)
+      %json  (action:de:wj !<(json vase))
+    ==
+  =^  cards  state  (act:hc a)
   =^  more  state  (mirror:hc &)
-  [(weld cards more) this]
+  [(ui:hc old (weld cards more)) this]
 ::
 ++  on-arvo
   |=  [=wire =sign-arvo]
   ^-  (quip card _this)
+  =/  old  state
   ?+  wire  (on-arvo:def wire sign-arvo)
       [%op @ *]
     =/  id  (slav %ud i.t.wire)
     ?:  ?=([%behn %wake *] sign-arvo)
       =^  cards  state  (wake:hc id)
-      [cards this]
+      [(ui:hc old cards) this]
     ?.  ?=([%iris %http-response *] sign-arvo)  `this
     =/  res=client-response:iris  +>.sign-arvo
     ?:  ?=(%progress -.res)  `this
     =^  cards  state  (heard:hc id t.t.wire res)
     =^  more  state  (mirror:hc &)
-    [(weld cards more) this]
+    [(ui:hc old (weld cards more)) this]
   ==
 ::
 ++  on-peek
@@ -165,23 +176,30 @@
     [%x %phrase ~]  ``json+!>(`json`s+(crip phrase))
   ==
 ::
-++  on-watch  on-watch:def
+++  on-watch
+  |=  =path
+  ^-  (quip card _this)
+  ?>  =(our src):bowl
+  ?.  ?=([%ui ~] path)  (on-watch:def path)
+  :_  this
+  ~[[%give %fact ~ %json !>(wallet-json:hc)]]
 ++  on-leave  on-leave:def
 ++  on-agent
   |=  [=wire =sign:agent:gall]
   ^-  (quip card _this)
+  =/  old  state
   ?:  ?=([%watch ~] wire)
     ?.  ?=([%poke-ack ^] sign)  `this
     =^  cards  state  (note:hc '%nostrill won\'t watch for our nutzaps')
-    [cards this]
+    [(ui:hc old cards) this]
   ?:  ?=([%fetch @ ~] wire)
     ?.  ?=([%poke-ack ^] sign)  `this
     =^  cards  state  (fail:hc (slav %ud i.t.wire) '%nostrill won\'t look up their 10019')
-    [cards this]
+    [(ui:hc old cards) this]
   ?:  ?=([%zap ~] wire)
     ?.  ?=([%poke-ack ^] sign)  `this
     =^  cards  state  (note:hc '%nostrill refused to publish our nutzap')
-    [cards this]
+    [(ui:hc old cards) this]
   ?.  ?=([%nostr ~] wire)  (on-agent:def wire sign)
   ?.  ?=(%poke-ack -.sign)  `this
   ?~  p.sign  `this
@@ -195,7 +213,7 @@
       redeemed  redeemed.old.u.round
     ==
   =^  cards  state  (note:hc '%nostrill refused our NIP-60 events')
-  [cards this]
+  [(ui:hc old cards) this]
 ++  on-fail   on-fail:def
 --
 ::
@@ -332,6 +350,15 @@
     =/  text=tape  (zing (join " " u.words))
     ::  a new P2PK key for the wallet event
     `state(phrase text, seed (seed:cs text), counters ~, listed ~)
+  ::
+      %del-mint
+    =/  url  (strip-slash:cw url.a)
+    ?.  (~(has by mints) url)  `state
+    ?.  =(~ (~(gut by proofs) url ~))
+      ~|('we hold ecash there: send or withdraw it first' !!)
+    ?:  (lien ~(val by ops) |=(o=op:sur =(url (op-mint o))))
+      ~|('an operation at that mint is under way' !!)
+    `state(mints (~(del by mints) url), proofs (~(del by proofs) url))
   ::
       %sync
     ?.  on.a  `state(quiet &, round ~)
@@ -768,6 +795,7 @@
     ?:  ?=(%| -.new)  (fail id p.new)
     =.  proofs  (~(put by proofs) mint.o (weld (fall (~(get by proofs) mint.o) ~) p.new))
     =.  ops  (~(del by ops) id)
+    =.  state  (record %deposit mint.o amount.o 0 ~)
     %-  note
     (rap 3 ~['deposited ' (crip (a-co:co amount.o)) ' sats at ' mint.o])
   ==
@@ -790,8 +818,11 @@
       (fail id (cat 3 'receiving failed: ' p.new))
     =.  ops  (~(del by ops) id)
     =.  proofs  (~(put by proofs) mint.o (weld p.new (fall (~(get by proofs) mint.o) ~)))
+    =/  fee  (sub (sum inputs.o) (sum p.new))
     ?~  zap.o
+      =.  state  (record %receive mint.o (sum p.new) fee ~)
       (note (rap 3 ~['received ' (crip (a-co:co (sum p.new))) ' sats']))
+    =.  state  (record %zap-in mint.o (sum p.new) fee `from.u.zap.o)
     ::  for the next history event to tag
     =.  redeemed  (~(put by redeemed) mint.o [u.zap.o (~(gut by redeemed) mint.o ~)])
     (note (rap 3 ~['redeemed a nutzap of ' (crip (a-co:co (sum p.new))) ' sats']))
@@ -833,6 +864,8 @@
         about-tags
       ==
     =/  relays=(list @t)  ?~(info.o ~ relays.u.info.o)
+    =/  fee  (sub (sub (sum inputs.o) (sum change)) amount.o)
+    =.  state  (record %zap-out mint.o amount.o fee `to.o)
     =^  cards  state
       %-  note
       %+  rap  3
@@ -862,6 +895,7 @@
   =/  token  (encode-token:cw [url 'sat' memo ps])
   =/  entries=(list sent:sur)  [[now.bowl url amount token] sent]
   =.  sent  entries
+  =.  state  (record %send url amount 0 ~)
   (note (rap 3 ~['made a token for ' (crip (a-co:co amount)) ' sats']))
 ::
 ++  swap-card
@@ -1008,6 +1042,7 @@
     (note (cat 3 'paid, but the change was lost: ' p.back))
   =.  proofs  (~(put by proofs) mint.o (weld p.back (fall (~(get by proofs) mint.o) ~)))
   =/  fee  (sub (sub (sum inputs.o) amount.o) (sum p.back))
+  =.  state  (record %withdraw mint.o amount.o fee ~)
   %-  note
   %+  rap  3
   :~  'paid '  (crip (a-co:co amount.o))  ' sats; fees '
@@ -1318,6 +1353,36 @@
   =.  log  (scag 50 entries)
   `state
 ::
+::  +record: a history entry
+::
+++  record
+  |=  [kind=?(%deposit %withdraw %send %receive %zap-in %zap-out) mint=@t amount=@ud fee=@ud who=(unit @ux)]
+  ^+  state
+  =/  entries=(list entry:sur)  [[now.bowl kind mint amount fee who] history]
+  state(history (scag 200 entries))
+::  +op-mint: the mint an operation is at
+::
+++  op-mint
+  |=  o=op:sur
+  ^-  @t
+  ?-  -.o
+    %add-mint  url.o
+    %deposit   mint.o
+    %receive   mint.o
+    %send      mint.o
+    %withdraw  mint.o
+    %check     mint.o
+    %restore   mint.o
+    %zap       mint.o
+  ==
+::  +ui: cards, and the wallet to /ui if it changed
+::
+++  ui
+  |=  [old=_state cards=(list card)]
+  ^-  (list card)
+  ?:  =(old state)  cards
+  (snoc cards [%give %fact ~[/ui] %json !>(wallet-json)])
+::
 ++  fail
   |=  [id=@ud why=@t]
   ^-  (quip card _state)
@@ -1410,6 +1475,19 @@
       %+  turn  sent
       |=  s=sent:sur
       (pairs ~[at+(sect at.s) mint+s+mint.s amount+(numb amount.s) token+s+token.s])
+    ::
+      :-  %history
+      :-  %a
+      %+  turn  history
+      |=  e=entry:sur
+      %-  pairs
+      :~  at+(sect at.e)
+          kind+s+kind.e
+          mint+s+mint.e
+          amount+(numb amount.e)
+          fee+(numb fee.e)
+          who+?~(who.e ~ s+(crip ((x-co:co 64) u.who.e)))
+      ==
     ::
       :-  %nostr
       %-  pairs

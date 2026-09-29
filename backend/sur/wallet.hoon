@@ -137,6 +137,17 @@
 ::  +zap-info: a kind 10019: where and how someone takes nutzaps
 ::
 +$  zap-info  [at=@ud relays=(list @t) mints=(list @t) lock=@t]
+::  +entry: the wallet's history, for people: what moved, where. amount
+::  is what came in or went out, fee what it cost on top (or off the top)
+::
++$  entry
+  $:  at=@da
+      kind=?(%deposit %withdraw %send %receive %zap-in %zap-out)
+      mint=@t
+      amount=@ud
+      fee=@ud
+      who=(unit @ux)                            ::  a nutzap's other side
+  ==
 ::  +sent: a token we made, to copy and hand over; its proofs are
 ::  someone else's once they swap it
 ::
@@ -152,6 +163,7 @@
       [%check mint=@t]                          ::  drop spent proofs
       [%restore mint=@t]                        ::  what our seed can reclaim
       [%set-phrase words=@t]                    ::  an empty wallet only
+      [%del-mint url=@t]                        ::  one we hold nothing at
       [%sync on=?]                              ::  NIP-60 mirroring
       [%signed ref=@ud ids=(list @ux)]          ::  %nostrill's reply
       [%nostr-event name=@t =event:nostr]       ::  from a %nostrill watch

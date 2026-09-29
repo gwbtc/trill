@@ -159,6 +159,19 @@ export default class IO {
     const res = await this.sub("/ui", handler, "hark");
     return res;
   }
+  // the ecash wallet (%trill-wallet): all of it on connect, again on
+  // every change. see logic/wallet.ts
+  async subscribeWallet(handler: Handler) {
+    return await this.sub("/ui", handler, "trill-wallet");
+  }
+  async scryWalletPhrase() {
+    return await this.scry("/phrase", "trill-wallet");
+  }
+  // an action (backend/lib/json/wallet.hoon); { error } holds the agent's
+  // refusal when it won't
+  async walletAction(action: Record<string, unknown>) {
+    return this.poke(action, "trill-wallet");
+  }
   // debates (%debates agent): everything we host or follow, live
   async subscribeDebates(handler: Handler) {
     return await this.sub("/ui", handler, "debates");

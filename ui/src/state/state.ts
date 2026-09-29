@@ -25,6 +25,7 @@ import { fixDMRequests, fixDMs, parseBigint } from "@/logic/utils";
 import { pingRelays } from "@/logic/latency";
 import { mentionedPubkeys } from "@/logic/nostrRefs";
 import toast from "react-hot-toast";
+import { isFailure, parseWallet, type WalletState } from "@/logic/wallet";
 import {
   applyDebateUpdate,
   debateKey,
@@ -96,6 +97,9 @@ export type LocalState = {
   debatePresences: Map<string, Presence>;
   setDmRequests: (requests: DMRequests) => void;
   lastChatFact: DM | null;
+  // the ecash wallet (%trill-wallet); null until it answers, or if it
+  // isn't running
+  wallet: WalletState | null;
   // 
   our: UrbitID | null;
 };
@@ -250,6 +254,23 @@ export const useStore = creator((set, get) => ({
           }
         });
     };
+    // the wallet: all of it, whenever it changes
+    api.subscribeWallet((data: unknown) => {
+      const wallet = parseWallet(data);
+      if (!wallet) return;
+      // what finished since (deposits, nutzaps: they take a while), told
+      // wherever we are. not on the first load
+      const before = get().wallet;
+      if (before) {
+        const seen = new Set(before.log.map((l) => `${l.at}|${l.what}`));
+        for (const l of wallet.log.filter((l) => !seen.has(`${l.at}|${l.what}`)).reverse()) {
+          const text = l.what.charAt(0).toUpperCase() + l.what.slice(1);
+          if (isFailure(l.what)) toast.error(text);
+          else toast.success(text);
+        }
+      }
+      set({ wallet });
+    });
     // debates: everything we host or follow, kept current by the agent
     const ourPatp = (() => {
       const o = api.airlock.our ?? "";
@@ -495,6 +516,7 @@ export const useStore = creator((set, get) => ({
   debatesLoaded: false,
   currentDebate: null,
   debatePresences: new Map(),
+  wallet: null,
   setDmRequests: (dmRequests) => set({ dmRequests }),
   lastChatFact: null,
   our: null,

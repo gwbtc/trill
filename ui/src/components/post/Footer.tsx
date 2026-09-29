@@ -99,6 +99,8 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
         targetHandle={getHandleLabel(user)}
         targetUser={user}
         targetProfile={profile}
+        pubkey={"nostr" in user ? user.nostr : (profile?.pubkey ?? null)}
+        eventId={"nostr" in user ? poast.hash : null}
         onZapped={() => setZapCountDelta((count) => count + 1)}
         onClose={() => setModal(null)}
       />,
