@@ -6,14 +6,17 @@
 +$  point  [x=@ y=@]
 ::  +keyset: a mint's keys for one unit, one key per amount (NUT-01/02)
 ::
-::    id: 16 hex (00...) or 66 hex (01...) characters
+::    id: 16 hex (00...) or 66 hex (01...) characters, derived from the
+::    rest (+keyset-id in lib/cashu-wire.hoon): check it
 ::    fee-ppk: parts per thousand of a unit, per proof spent
+::    final-expiry: unix seconds after which it's retired; 0 if never
 ::
 +$  keyset
   $:  id=@t
       unit=@t
       active=?
       fee-ppk=@ud
+      final-expiry=@ud
       keys=(map @ud point)
   ==
 ::  +dleq: the mint's proof that it signed with its key (NUT-12); r is

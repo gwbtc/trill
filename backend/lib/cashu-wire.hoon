@@ -28,8 +28,7 @@
 ::
 ::  amounts
 ::
-::  +split: an amount as the powers of two in it, smallest first, as
-::  mints sign them
+::  +split: an amount as the powers of two in it, smallest first
 ::
 ++  split
   |=  amount=@ud
@@ -40,16 +39,78 @@
   ?:  =(0 amount)  (flop out)
   =?  out  =(1 (end 0 amount))  [(bex i) out]
   $(amount (rsh 0 amount), i +(i))
-::  +fee: NUT-02: each input's fee-ppk, summed, rounded up
+::  +denominations: an amount as the amounts a keyset has keys for,
+::  largest first while they fit, repeating the largest: a mint only
+::  signs what it has keys for (tessera stops at 2^20). smallest first;
+::  ~ if they can't make it up
+::
+++  denominations
+  |=  [amount=@ud keys=(map @ud point:sur)]
+  ^-  (unit (list @ud))
+  =/  have=(list @ud)  (sort ~(tap in ~(key by keys)) gth)
+  =|  out=(list @ud)
+  |-
+  ?:  =(0 amount)  `out
+  ?~  have  ~
+  ?:  |(=(0 i.have) (gth i.have amount))  $(have t.have)
+  $(amount (sub amount i.have), out [i.have out])
+::  +fee: NUT-02: each input's fee-ppk, summed, rounded up. ~ if an
+::  input's keyset is unknown: pretending it's free would make the mint
+::  refuse the whole transaction
 ::
 ++  fee
   |=  [keysets=(map @t keyset:sur) inputs=(list proof:sur)]
-  ^-  @ud
-  =/  ppk
-    %+  roll  inputs
-    |=  [p=proof:sur n=@ud]
-    (add n fee-ppk:(fall (~(get by keysets) id.p) *keyset:sur))
-  (div (add ppk 999) 1.000)
+  ^-  (unit @ud)
+  =/  ppk=@ud  0
+  |-
+  ?~  inputs  `(div (add ppk 999) 1.000)
+  =/  k  (~(get by keysets) id.i.inputs)
+  ?~  k  ~
+  $(inputs t.inputs, ppk (add ppk fee-ppk.u.k))
+::  +keyset-id: NUT-02. V2 (01...): SHA-256 of
+::  "amt:pubhex,...|unit:u[|input_fee_ppk:n][|final_expiry:n]", amounts
+::  ascending. V1 (00..., deprecated): the first 7 bytes of SHA-256 of
+::  the compressed keys, amounts ascending
+::
+++  keyset-id
+  |=  [v2=? keys=(map @ud point:sur) unit=@t fee-ppk=@ud final-expiry=@ud]
+  ^-  @t
+  =/  sorted=(list [@ud point:sur])
+    (sort ~(tap by keys) |=([a=[@ud *] b=[@ud *]] (lth -.a -.b)))
+  ?.  v2
+    =/  bytes=(list octs)
+      %+  turn  sorted
+      |=([* pt=point:sur] [33 (rev 3 33 (compress-point:sc:cashu pt))])
+    =/  len=@ud  (mul 33 (lent bytes))
+    (cat 3 '00' (end [3 14] (hex-of 64 (sha:cashu [len (can 3 bytes)]))))
+  =/  pairs=(list @t)
+    %+  turn  sorted
+    |=([a=@ud pt=point:sur] (rap 3 ~[(crip (a-co:co a)) ':' (point-hex pt)]))
+  =/  pieces=(list @t)  ~[(rap 3 (join ',' pairs)) '|unit:' unit]
+  =?  pieces  !=(0 fee-ppk)
+    (weld pieces `(list @t)`~['|input_fee_ppk:' (crip (a-co:co fee-ppk))])
+  =?  pieces  !=(0 final-expiry)
+    (weld pieces `(list @t)`~['|final_expiry:' (crip (a-co:co final-expiry))])
+  (cat 3 '01' (hex-of 64 (sha:cashu (as-octs:mimes:html (rap 3 pieces)))))
+::  +id-ok: whether a keyset's id is the one its keys, unit and fee give:
+::  a mint can't then quietly change its fee
+::
+++  id-ok
+  |=  k=keyset:sur
+  ^-  ?
+  =/  v2  =('01' (end [3 2] id.k))
+  =(id.k (keyset-id v2 keys.k unit.k fee-ppk.k final-expiry.k))
+::  +full-id: a keyset id as a token may carry it (V4 shortens V2 ids to
+::  their first 16 hex characters), as one of ours. ~ if it matches none,
+::  or more than one
+::
+++  full-id
+  |=  [id=@t ours=(list @t)]
+  ^-  (unit @t)
+  ?^  (find ~[id] ours)  `id
+  =/  hits  (skim ours |=(o=@t =(id (end [3 (met 3 id)] o))))
+  ?.  ?=([@ ~] hits)  ~
+  `i.hits
 ::  +blank-count: NUT-08: blank outputs for a melt's fee reserve,
 ::  ceil(log2 reserve), at least one if there is a reserve
 ::
@@ -132,25 +193,38 @@
     =/  pt  (point +.i.kvs)
     ?:  |(?=(~ a) ?=(~ pt))  ~
     $(kvs t.kvs, out (~(put by out) u.a u.pt))
-  ::  +keysets: /v1/keysets: [{id, unit, active, input_fee_ppk}]
+  ::  +keysets: /v1/keysets: [{id, unit, active, input_fee_ppk?,
+  ::  final_expiry?}]; the optional ones 0 when missing or null
   ::
   ++  keysets
     |=  j=json
-    ^-  (unit (list [id=@t unit=@t active=? fee-ppk=@ud]))
+    ^-  (unit (list [id=@t unit=@t active=? fee-ppk=@ud final-expiry=@ud]))
     %.  j
     %-  ot
     :~  :-  %keysets
         %-  ar
         |=  k=json
-        ^-  (unit [@t @t ? @ud])
+        ^-  (unit [@t @t ? @ud @ud])
         =/  u  ((ot ~[id+so unit+so active+bo]) k)
         ?~  u  ~
-        ::  the fee is optional, 0 when it's missing
-        =/  fee
+        =/  num
+          |=  key=@t
+          ^-  @ud
           ?.  ?=([%o *] k)  0
-          (fall (bind (~(get by p.k) 'input_fee_ppk') |=(v=json (fall (ni v) 0))) 0)
-        `[-.u.u +<.u.u +>.u.u fee]
+          (fall (biff (~(get by p.k) key) ni) 0)
+        `[-.u.u +<.u.u +>.u.u (num 'input_fee_ppk') (num 'final_expiry')]
     ==
+  ::  +error: a mint's refusal: NUT-00's {detail, code}, or a bare
+  ::  {detail} as tessera sends (its details are kebab-case names, like
+  ::  token-already-spent, output-already-signed, quote-not-paid)
+  ::
+  ++  error
+    |=  j=json
+    ^-  (unit [code=(unit @ud) detail=@t])
+    ?.  ?=([%o *] j)  ~
+    =/  detail  (biff (~(get by p.j) 'detail') so)
+    ?~  detail  ~
+    `[(biff (~(get by p.j) 'code') ni) u.detail]
   ::  +signatures: {"signatures": [{id, amount, C_, dleq?}]}
   ::
   ++  signatures

@@ -91,13 +91,19 @@
 ++  blind
   |=  [secret=octs r=@]
   ^-  point
-  (pt-add (hash-to-curve secret) (base r))
+  ::  base crashes outside 0 < r < n
+  (pt-add (hash-to-curve secret) (base (mod r n)))
 ::  +unblind: C = C_ - rK, the mint's signature on the secret itself
 ::
 ++  unblind
   |=  [c-blind=point r=@ k=point]
   ^-  point
-  (pt-sub c-blind (pt-mul k r))
+  =/  c  (pt-sub c-blind (pt-mul k (mod r n)))
+  ::  zuse gives the point at infinity as [0 0] rather than crashing: no
+  ::  signature is that
+  ~|  %unblinded-to-infinity
+  ?<  =([0 0] c)
+  c
 ::  +hash-e: NUT-12's challenge: SHA-256 of the points' uncompressed hex,
 ::  run together as a string
 ::
