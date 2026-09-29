@@ -15,6 +15,7 @@
 ::      [%check url]               drop the proofs the mint says are spent
 ::      [%restore url]             reclaim what our seed made (NUT-09)
 ::      [%set-phrase words]        use another seed phrase (empty wallet)
+::      [%zap to amount comment about]  a nutzap (NIP-61) to a pubkey
 ::      [%sync on]                 mirror to relays (NIP-60) or stop; on
 ::                                 publishes everything again
 ::
@@ -101,6 +102,9 @@
 ::
 ++  restore-batch  25
 ++  restore-gap  3
+::  +zap-wait: how long relays get to find someone's 10019
+::
+++  zap-wait  ~s8
 --
 ::
 =|  state-0
@@ -170,6 +174,14 @@
     ?.  ?=([%poke-ack ^] sign)  `this
     =^  cards  state  (note:hc '%nostrill won\'t watch for our nutzaps')
     [cards this]
+  ?:  ?=([%fetch @ ~] wire)
+    ?.  ?=([%poke-ack ^] sign)  `this
+    =^  cards  state  (fail:hc (slav %ud i.t.wire) '%nostrill won\'t look up their 10019')
+    [cards this]
+  ?:  ?=([%zap ~] wire)
+    ?.  ?=([%poke-ack ^] sign)  `this
+    =^  cards  state  (note:hc '%nostrill refused to publish our nutzap')
+    [cards this]
   ?.  ?=([%nostr ~] wire)  (on-agent:def wire sign)
   ?.  ?=(%poke-ack -.sign)  `this
   ?~  p.sign  `this
@@ -227,8 +239,33 @@
   ::
       %nostr-event
     ?.  =(/gall/nostrill sap.bowl)  ~|(%nostr-events-from-nostrill-only !!)
-    ?.  =('nutzaps' name.a)  `state
-    (nutzap event.a)
+    ?:  =('nutzaps' name.a)  (nutzap event.a)
+    =/  zid  (rush name.a ;~(pfix (jest 'zap-') dem))
+    ?~  zid  `state
+    (zap-heard u.zid event.a)
+  ::
+      %nostr-eose
+    ?.  =(/gall/nostrill sap.bowl)  ~|(%nostr-events-from-nostrill-only !!)
+    =/  zid  (rush name.a ;~(pfix (jest 'zap-') dem))
+    ?~  zid  `state
+    ::  one relay done: go if some relay had their 10019
+    (zap-go u.zid |)
+  ::
+      %zap
+    ?:  =(0 amount.a)  ~|('zap at least 1 sat' !!)
+    ?.  .^(? %gu /(scot %p our.bowl)/nostrill/(scot %da now.bowl)/$)
+      ~|('%nostrill isn\'t running' !!)
+    =/  id  next-op
+    =.  next-op  +(next-op)
+    =.  ops
+      (~(put by ops) id [%zap to.a amount.a comment.a about.a %finding ~ '' '' ~ ~ 0])
+    =/  =filter:nostr  [~ `(silt ~[to.a]) `(silt ~[10.019]) ~ ~ ~ ~]
+    =/  name  (cat 3 'zap-' (crip (a-co:co id)))
+    :_  state
+    :~  [%pass /op/(scot %ud id) %arvo %b %wait (add now.bowl zap-wait)]
+        :*  %pass  /fetch/(scot %ud id)  %agent  [our.bowl %nostrill]
+            %poke  %noun  !>([%fetch name ~[filter]])
+    ==  ==
   ::
       %send
     =/  url  (strip-slash:cw mint.a)
@@ -367,7 +404,7 @@
   :_  state(round `out, synced proofs, listed ~(key by mints))
   :_  watch
   :*  %pass  /nostr  %agent  [our.bowl %nostrill]
-      %poke  %noun  !>([%sign ref (flop drafts)])
+      %poke  %noun  !>([%sign ref (flop drafts) ~])
   ==
 ::  +watch-cards: have %nostrill watch the relays for nutzaps to us at
 ::  our mints. its last watch is replaced, and the relays send what they
@@ -424,7 +461,7 @@
   =.  next-op  +(next-op)
   :_  state(round `r(ref ref, step %history))
   :~  :*  %pass  /nostr  %agent  [our.bowl %nostrill]
-          %poke  %noun  !>([%sign ref (flop drafts)])
+          %poke  %noun  !>([%sign ref (flop drafts) ~])
   ==  ==
 ::  +chunk: proofs by the token event, per-event:nip60 in each
 ::
@@ -505,6 +542,91 @@
     p(witness `(en:json:html (pairs:enjs:format ~[signatures+a+~[s+sig]])))
   ?~  ps  ~|('no proofs' !!)
   (take url u.m ps `[id.ev pubkey.ev])
+::  +zap-heard: a 10019 from whom we're zapping: kept if it's the newest
+::
+++  zap-heard
+  |=  [id=@ud ev=event:nostr]
+  ^-  (quip card _state)
+  =/  o  (~(get by ops) id)
+  ?.  ?=([~ %zap *] o)  `state
+  =/  z  u.o
+  ?.  &(=(10.019 kind.ev) =(to.z pubkey.ev))  `state
+  ?:  &(?=(^ info.z) (gte at.u.info.z created-at.ev))  `state
+  =/  lock  (tag-values tags.ev 'pubkey')
+  ?~  lock  `state
+  =/  =zap-info:sur
+    [created-at.ev (tag-values tags.ev 'relay') (tag-values tags.ev 'mint') i.lock]
+  `state(ops (~(put by ops) id z(info `zap-info)))
+::  +zap-go: with their 10019, swap ecash at a mint they take into proofs
+::  locked to their key. not final: another relay may yet have it
+::
+++  zap-go
+  |=  [id=@ud final=?]
+  ^-  (quip card _state)
+  =/  o  (~(get by ops) id)
+  ?.  ?=([~ %zap *] o)  `state
+  =/  z  u.o
+  ?.  ?=(%finding step.z)  `state
+  ?~  info.z
+    ?.  final  `state
+    (fail id 'they take no nutzaps: no kind 10019 on our relays')
+  =/  lock  lock.u.info.z
+  ?~  (from-hex:cashu lock)  (fail id 'their nutzap key isn\'t a key')
+  =/  cands=(list @t)  mints.u.info.z
+  |-
+  ?~  cands  (fail id 'we lack the ecash, with fees, at any mint they take')
+  =/  url  (strip-slash:cw i.cands)
+  =/  m  (~(get by mints) url)
+  ?~  m  $(cands t.cands)
+  =/  have=(list proof:sur)  (fall (~(get by proofs) url) ~)
+  ::  never as they are: they must be locked
+  =/  pick  (select have amount.z keysets.u.m |)
+  ?~  pick  $(cands t.cands)
+  =/  ks  (active-keyset url 'sat')
+  ?~  ks  $(cands t.cands)
+  =/  ins=(list proof:sur)  ins.u.pick
+  =/  used  (silt (turn ins |=(p=proof:sur secret.p)))
+  =.  proofs
+    (~(put by proofs) url (skip have |=(p=proof:sur (~(has in used) secret.p))))
+  =/  send-amounts  (need (denominations:cw amount.z keys.u.ks))
+  =/  change
+    (need (denominations:cw (sub (sum ins) (add amount.z fee.u.pick)) keys.u.ks))
+  =/  locked  (locked-outputs id.u.ks send-amounts lock)
+  =^  outs  state  (new-outputs id.u.ks change)
+  =/  all  (weld locked outs)
+  =.  ops
+    %+  ~(put by ops)  id
+    z(step %swapping, mint url, u i.cands, inputs ins, outputs all, sends (lent locked))
+  [~[(swap-card id url ins all)] state]
+::  +locked-outputs: outputs whose secrets are NUT-11 P2PK, locked to a
+::  key (02/03 hex), random rather than from our seed: not ours to restore
+::
+++  locked-outputs
+  |=  [kid=@t amounts=(list @ud) lock=@t]
+  ^-  (list output:sur)
+  =/  i=@ud  0
+  |-
+  ?~  amounts  ~
+  =/  nonce  (hex-of:cw 64 (shas (mix i %nonce) eny.bowl))
+  =/  secret=@t
+    %-  en:json:html
+    :-  %a
+    :~  s+'P2PK'
+        (pairs:enjs:format ~[nonce+s+nonce data+s+lock tags+a+~])
+    ==
+  =/  r  (mod (shas (mix i %blind) eny.bowl) n:cashu)
+  :-  [kid i.amounts secret ?:(=(0 r) 1 r)]
+  $(amounts t.amounts, i +(i))
+::  +tag-values: the first values of an event's tags of a name
+::
+++  tag-values
+  |=  [tags=(list (list @t)) k=@t]
+  ^-  (list @t)
+  %+  murn  tags
+  |=  t=(list @t)
+  ?.  ?=([@ @ *] t)  ~
+  ?.  =(k i.t)  ~
+  `i.t.t
 ::  +locked-to: a NUT-10 P2PK secret with our key in data, spendable on
 ::  our signature alone (SIG_INPUTS)
 ::
@@ -535,6 +657,7 @@
     %deposit   (heard-deposit id u.o tag got)
     %receive   (heard-swap id u.o got)
     %send      (heard-swap id u.o got)
+    %zap       (heard-swap id u.o got)
     %withdraw  (heard-withdraw id u.o tag got)
     %check     (heard-check id u.o got)
     %restore   (heard-restore id u.o got)
@@ -661,8 +784,9 @@
     =/  new  (swapped mint.o outputs.o got)
     ?:  ?=(%| -.new)
       ::  a nutzap's proofs may still be good: try it again when the
-      ::  relays next send it
-      =?  zaps  ?=(^ zap.o)  (~(del in zaps) ev.u.zap.o)
+      ::  relays next send it. spent ones stay done (whoever spent them)
+      =?  zaps  &(?=(^ zap.o) ?=(~ (find "spent" (cass (trip p.new)))))
+        (~(del in zaps) ev.u.zap.o)
       (fail id (cat 3 'receiving failed: ' p.new))
     =.  ops  (~(del by ops) id)
     =.  proofs  (~(put by proofs) mint.o (weld p.new (fall (~(get by proofs) mint.o) ~)))
@@ -685,6 +809,41 @@
     =/  change  (slag sends.o p.new)
     =.  proofs  (~(put by proofs) mint.o (weld change (fall (~(get by proofs) mint.o) ~)))
     (made mint.o amount.o memo.o (scag sends.o p.new))
+  ::
+      %zap
+    =/  new  (swapped mint.o outputs.o got)
+    ?:  ?=(%| -.new)
+      =?  proofs  ?=(~ (find "spent" (cass (trip p.new))))
+        (~(put by proofs) mint.o (weld inputs.o (fall (~(get by proofs) mint.o) ~)))
+      (fail id (cat 3 'zapping failed: ' p.new))
+    =.  ops  (~(del by ops) id)
+    =/  change  (slag sends.o p.new)
+    =.  proofs  (~(put by proofs) mint.o (weld change (fall (~(get by proofs) mint.o) ~)))
+    ::  the 9321: the locked proofs, DLEQ and all, to their relays and ours
+    =/  locked  (scag sends.o p.new)
+    =/  proof-tags=(list (list @t))
+      (turn locked |=(p=proof:sur `(list @t)`~['proof' (en:json:html (proof:nip60 p))]))
+    =/  about-tags=(list (list @t))
+      ?~  about.o  ~
+      ~[~['e' (id-hex:nip60 id.u.about.o)] ~['k' (crip (a-co:co kind.u.about.o))]]
+    =/  tags=(list (list @t))
+      ;:  weld
+        proof-tags
+        `(list (list @t))`~[~['unit' 'sat'] ~['u' u.o] ~['p' (id-hex:nip60 to.o)]]
+        about-tags
+      ==
+    =/  relays=(list @t)  ?~(info.o ~ relays.u.info.o)
+    =^  cards  state
+      %-  note
+      %+  rap  3
+      :~  'nutzapped '  (crip (a-co:co amount.o))  ' sats to '
+          (crip (scag 16 ((x-co:co 64) to.o)))
+      ==
+    :_  state
+    :_  cards
+    :*  %pass  /zap  %agent  [our.bowl %nostrill]
+        %poke  %noun  !>([%sign id ~[[9.321 tags comment.o |]] relays])
+    ==
   ==
 ::  +swapped: a swap's answer as proofs on our outputs, or why not
 ::
@@ -1123,6 +1282,10 @@
     ?.  ?=(%pending step.u.o)  `state
     :_  state
     ~[(get id /poll (rap 3 ~[mint.u.o '/v1/melt/quote/bolt11/' quote.u.o]))]
+  ::
+      %zap
+    ::  the relays have had their time
+    (zap-go id &)
   ==
 ::
 ++  poll-timer
@@ -1222,6 +1385,15 @@
       ::
           %check
         (pairs ~[id+(numb id) kind+s+'check' mint+s+mint.o left+(numb (lent todo.o))])
+      ::
+          %zap
+        %-  pairs
+        :~  id+(numb id)
+            kind+s+'zap'
+            to+s+(crip ((x-co:co 64) to.o))
+            amount+(numb amount.o)
+            step+s+step.o
+        ==
       ::
           %restore
         %-  pairs

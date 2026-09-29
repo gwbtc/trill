@@ -159,7 +159,10 @@
     ?:  ?=(%sign -.pok)
       [(sign-drafts:relay +.pok) this]
     ?:  ?=(%watch -.pok)
-      =^  cs  state  (watch:relay +.pok)
+      =^  cs  state  (watch:relay name.pok filters.pok &)
+      [cs this]
+    ?:  ?=(%fetch -.pok)
+      =^  cs  state  (watch:relay name.pok filters.pok |)
       [cs this]
     =^  cs  state  (handle-eng:posts +.pok)
     [cs this]
@@ -333,10 +336,16 @@
       =/  gift  +.sign-arvo
       =/  ev    +>.gift
       ::  %reject: failed handshake (no on-leave will ever fire);
-      ::  %disconnect: precedes on-leave, only meaningful while
-      ::  %connecting. %accept/%message are handled elsewhere
+      ::  %disconnect: the socket's gone. %accept/%message are handled
+      ::  elsewhere
       ?.  ?=(?(%reject %disconnect) -.ev)  `this
-      =^  cs  state  (handle-ws-sign:relay (slav %t url.wire))
+      =^  cs  state  (handle-ws-sign:relay (slav %t url.wire) +<.gift -.ev)
+      [cs this]
+    [%ws-ping url=@ wid=@ what=@ ~]
+      ?.  ?=([%behn %wake *] sign-arvo)  `this
+      =^  cs  state
+        %^  handle-ping:relay  (slav %t url.wire)  (slav %ud wid.wire)
+        =(%check what.wire)
       [cs this]
     [%ws-retry url=@ at=@ ~]
       ?.  ?=([%behn %wake *] sign-arvo)  `this

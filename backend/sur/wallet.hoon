@@ -100,6 +100,22 @@
           blanks=(list output)
           step=?(%quoting %melting %pending)
       ==
+      ::  a nutzap (NIP-61): their 10019 looked up on the relays, our
+      ::  ecash swapped into proofs locked to their key (the first sends
+      ::  outputs), then a 9321 to them with those
+      $:  %zap
+          to=@ux                                ::  their nostr pubkey
+          amount=@ud
+          comment=@t
+          about=(unit [id=@ux kind=@ud])        ::  the event zapped
+          step=?(%finding %swapping)
+          info=(unit zap-info)
+          mint=@t                               ::  ours, and as they list it
+          u=@t
+          inputs=(list proof)
+          outputs=(list output)
+          sends=@ud
+      ==
       ::  asking the mint which proofs are spent, 100 at a time (NUT-07)
       $:  %check
           mint=@t
@@ -118,6 +134,9 @@
           found=(list proof)
       ==
   ==
+::  +zap-info: a kind 10019: where and how someone takes nutzaps
+::
++$  zap-info  [at=@ud relays=(list @t) mints=(list @t) lock=@t]
 ::  +sent: a token we made, to copy and hand over; its proofs are
 ::  someone else's once they swap it
 ::
@@ -136,6 +155,9 @@
       [%sync on=?]                              ::  NIP-60 mirroring
       [%signed ref=@ud ids=(list @ux)]          ::  %nostrill's reply
       [%nostr-event name=@t =event:nostr]       ::  from a %nostrill watch
+      [%nostr-eose name=@t]                     ::  a %nostrill fetch's end
+      ::  a nutzap: sats to a nostr pubkey, about an event or not
+      [%zap to=@ux amount=@ud comment=@t about=(unit [id=@ux kind=@ud])]
   ==
 ::  +token: ecash to hand over, from one mint in one unit (NUT-00 V3/V4)
 ::
