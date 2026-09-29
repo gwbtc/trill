@@ -142,12 +142,40 @@
 ::
 +$  entry
   $:  at=@da
-      kind=?(%deposit %withdraw %send %receive %zap-in %zap-out)
+      kind=?(%deposit %withdraw %send %receive %zap-in %zap-out %ln-in %ln-out)
       mint=@t
       amount=@ud
       fee=@ud
       who=(unit @ux)                            ::  a nutzap's other side
   ==
+::  +nwc: a Lightning wallet we use through Nostr Wallet Connect (NIP-47,
+::  lib/nwc.hoon): its service's key, relays, and our secret for it (never
+::  shown), what it says it does, and our link to its relay
+::
++$  nwc
+  $:  service=@ux
+      relays=(list @t)
+      secret=@
+      lud16=(unit @t)
+      methods=(set @t)                          ::  from its 13194
+      encryption=(unit (set @t))                ::  ditto; ~ until heard
+      balance=(unit @ud)                        ::  msats
+      wid=(unit @ud)                            ::  our socket to relays's first
+      link=?(%connecting %open %down)
+      tries=@ud                                 ::  reconnects in a row
+      queue=(list event:nostr)                  ::  to send once open
+      asks=(map @ux nwc-ask)                    ::  our requests, by event id
+      invoices=(map @t nwc-invoice)             ::  ours, unpaid: by payment hash
+      tick=(unit @da)                           ::  the one timer
+  ==
++$  nwc-ask  [sent=@da what=nwc-what]
++$  nwc-what
+  $%  [%balance ~]
+      [%pay invoice=@t amount=(unit @ud)]       ::  sats, if it says
+      [%invoice amount=@ud]                     ::  sats
+      [%lookup hash=@t]
+  ==
++$  nwc-invoice  [invoice=@t amount=@ud made=@da expires=@da]
 ::  +sent: a token we made, to copy and hand over; its proofs are
 ::  someone else's once they swap it
 ::
@@ -164,6 +192,12 @@
       [%restore mint=@t]                        ::  what our seed can reclaim
       [%set-phrase words=@t]                    ::  an empty wallet only
       [%del-mint url=@t]                        ::  one we hold nothing at
+      ::  a Lightning wallet over NWC
+      [%nwc-connect uri=@t]                     ::  nostr+walletconnect://...
+      [%nwc-disconnect ~]
+      [%nwc-pay invoice=@t]
+      [%nwc-invoice amount=@ud description=@t]  ::  sats
+      [%nwc-refresh ~]                          ::  ask its balance
       [%sync on=?]                              ::  NIP-60 mirroring
       [%signed ref=@ud ids=(list @ux)]          ::  %nostrill's reply
       [%nostr-event name=@t =event:nostr]       ::  from a %nostrill watch

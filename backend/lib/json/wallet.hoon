@@ -10,6 +10,11 @@
 ::    {"restore": {"mint": "https://..."}}
 ::    {"sync": {"on": true}}
 ::    {"set-phrase": {"words": "twelve words ..."}}
+::    {"nwc-connect": {"uri": "nostr+walletconnect://..."}}
+::    {"nwc-disconnect": null}
+::    {"nwc-pay": {"invoice": "lnbc..."}}
+::    {"nwc-invoice": {"amount": 21, "description": ""}}
+::    {"nwc-refresh": null}
 ::    {"zap": {"to": "<hex pubkey>", "amount": 21, "comment": "",
 ::             "about": {"id": "<hex event id>", "kind": 1} | null}}
 ::
@@ -36,6 +41,11 @@
         restore+(ot ~[mint+so])
         sync+(ot ~[on+bo])
         set-phrase+(ot ~[words+so])
+        nwc-connect+(ot ~[uri+so])
+        nwc-disconnect+ul
+        nwc-pay+(ot ~[invoice+so])
+        nwc-invoice+(ot ~[amount+ni description+so])
+        nwc-refresh+ul
         :-  %zap
         %-  ot
         :~  to+(su hex)

@@ -46,18 +46,26 @@
 ::    watches (eyre only):
 ::      /ui        the wallet json, tokens and all, now and on every change
 ::      /phrase    the seed phrase, once, then kicked
-::      /x/phrase  json: the seed phrase
+::
+::    Lightning: a wallet elsewhere, over Nostr Wallet Connect (NIP-47,
+::    lib/nwc.hoon). we keep its uri's secret (our key for it, not our
+::    nostr key) and a websocket of our own to its relay: iris watches us
+::    on /websocket-client/<wid> once it's open, and pokes us what comes
+::    (%websocket-client-message). requests: 23194s, NIP-44 to the service;
+::    answers: 23195s, checked and decrypted. one timer times requests out
+::    and polls the invoices we made until paid
 ::
 ::    it imports the tests only so that |commit type-checks them
 ::
 /-  sur=wallet, comms=nostrill-comms, nostr
 /+  default-agent, cashu, cw=cashu-wire, cs=cashu-seed, nip60,
-    wj=json-wallet,
+    wj=json-wallet, nwc, ws=websockets, server, js=json-nostr,
     bip39-english
 /=  t-cashu  /tests/cashu
 /=  t-wire  /tests/cashu-wire
 /=  t-seed  /tests/cashu-seed
 /=  t-nip44  /tests/nip44
+/=  t-nwc  /tests/nwc
 ::
 |%
 +$  card  card:agent:gall
@@ -82,6 +90,7 @@
       zaps=(set @ux)                            ::  nutzaps seen
       redeemed=(map @t (list [ev=@ux from=@ux]))  ::  not in a history yet
       history=(list entry:sur)                  ::  newest first, 200 kept
+      ln=(unit nwc:sur)                         ::  a Lightning wallet (NWC)
   ==
 ::  +round: a sync out at %nostrill for signing, one at a time. first
 ::  the wallet event, token events and deletions; then, with their ids,
@@ -118,6 +127,12 @@
 ::  +zap-wait: how long relays get to find someone's 10019
 ::
 ++  zap-wait  ~s8
+::  NWC: reconnect backoff, the tick, how long answers may take
+::
+++  nwc-backoff  `(list @dr)`~[~s2 ~s10 ~s30 ~m2 ~m10]
+++  nwc-tick  ~s3
+++  nwc-patience  ~m1
+++  nwc-pay-patience  ~m3
 --
 ::
 =|  state-0
@@ -147,6 +162,11 @@
   ^-  (quip card _this)
   ?>  =(our src):bowl
   =/  old  state
+  ?:  ?=(%websocket-client-message mark)
+    ?>  ?=([%iris *] sap.bowl)
+    =/  m  !<([@ud websocket-message:eyre] vase)
+    =^  cards  state  (nwc-message:hc m)
+    [(ui:hc old cards) this]
   =/  a=action:sur
     ?+  mark  ~|(bad-mark+mark !!)
       %noun  ;;(action:sur q.vase)
@@ -172,6 +192,21 @@
     =^  cards  state  (heard:hc id t.t.wire res)
     =^  more  state  (mirror:hc &)
     [(ui:hc old (weld cards more)) this]
+  ::
+      [%ws-connect @ ~]
+    ?.  ?=([%iris %websocket-response *] sign-arvo)  `this
+    =^  cards  state  (nwc-sign:hc +>-.sign-arvo +>+.sign-arvo)
+    [(ui:hc old cards) this]
+  ::
+      [%nwc %retry @ ~]
+    ?.  ?=([%behn %wake *] sign-arvo)  `this
+    =^  cards  state  (nwc-retry:hc (slav %ud i.t.t.wire))
+    [(ui:hc old cards) this]
+  ::
+      [%nwc %tick @ ~]
+    ?.  ?=([%behn %wake *] sign-arvo)  `this
+    =^  cards  state  (nwc-tock:hc (slav %da i.t.t.wire))
+    [(ui:hc old cards) this]
   ==
 ::
 ++  on-peek
@@ -185,6 +220,12 @@
   |=  =path
   ^-  (quip card _this)
   ?>  =(our src):bowl
+  ::  iris, once our NWC socket is open
+  ?:  ?=([%websocket-client @ ~] path)
+    ?>  ?=([%iris *] sap.bowl)
+    =/  old  state
+    =^  cards  state  (nwc-opened:hc (slav %ud i.t.path))
+    [(ui:hc old cards) this]
   ::  our browser only: see the top
   ?.  ?=([%eyre *] sap.bowl)  ~|(%wallet-watches-from-eyre-only !!)
   ?+  path  (on-watch:def path)
@@ -198,7 +239,13 @@
         [%give %kick ~ ~]
     ==
   ==
-++  on-leave  on-leave:def
+++  on-leave
+  |=  =path
+  ^-  (quip card _this)
+  ?.  ?=([%websocket-client @ ~] path)  `this
+  =/  old  state
+  =^  cards  state  (nwc-sign:hc (slav %ud i.t.path) [%disconnect ~])
+  [(ui:hc old cards) this]
 ++  on-agent
   |=  [=wire =sign:agent:gall]
   ^-  (quip card _this)
@@ -365,6 +412,41 @@
     =/  text=tape  (zing (join " " u.words))
     ::  a new P2PK key for the wallet event
     `state(phrase text, seed (seed:cs text), counters ~, listed ~)
+  ::
+      %nwc-connect
+    =/  c  (parse-uri:nwc uri.a)
+    ?~  c  ~|('that isn\'t a Nostr Wallet Connect uri (nostr+walletconnect://...)' !!)
+    =/  close=(list card)
+      ?~  ln  ~
+      ?~  wid.u.ln  ~
+      ~[(cancel-connect:ws u.wid.u.ln)]
+    =/  n=nwc:sur
+      [service.u.c relays.u.c secret.u.c lud16.u.c ~ ~ ~ ~ %connecting 0 ~ ~ ~ ~]
+    :_  state(ln `n)
+    (snoc close (connect:ws (snag 0 relays.n) bowl))
+  ::
+      %nwc-disconnect
+    ?~  ln  `state
+    :_  state(ln ~)
+    ?~(wid.u.ln ~ ~[(cancel-connect:ws u.wid.u.ln)])
+  ::
+      %nwc-pay
+    =/  n  (nwc-usable 'pay_invoice')
+    =/  invoice  (crip (cass (trip (strip-lightning invoice.a))))
+    (nwc-ask [%pay invoice (invoice-sats:nwc invoice)] 'pay_invoice' (pairs:enjs:format ~[invoice+s+invoice]))
+  ::
+      %nwc-invoice
+    =/  n  (nwc-usable 'make_invoice')
+    ?:  =(0 amount.a)  ~|('ask for at least 1 sat' !!)
+    %^  nwc-ask  [%invoice amount.a]  'make_invoice'
+    %-  pairs:enjs:format
+    :~  amount+(numb:enjs:format (mul 1.000 amount.a))
+        description+s+description.a
+    ==
+  ::
+      %nwc-refresh
+    ?~  ln  `state
+    (nwc-ask [%balance ~] 'get_balance' (pairs:enjs:format ~))
   ::
       %del-mint
     =/  url  (strip-slash:cw url.a)
@@ -1368,10 +1450,283 @@
   =.  log  (scag 50 entries)
   `state
 ::
+::  NWC: our link to a Lightning wallet (see the top)
+::
+::  +nwc-usable: the wallet, if it can do this: connected, NIP-44, and
+::  the method among what it says it does (all, until it's said)
+::
+++  nwc-usable
+  |=  method=@t
+  ^-  nwc:sur
+  ?~  ln  ~|('connect a Lightning wallet first (Settings)' !!)
+  ?:  &(?=(^ encryption.u.ln) !(~(has in u.encryption.u.ln) 'nip44_v2'))
+    ~|('your Lightning wallet only speaks NIP-04, which trill doesn\'t yet' !!)
+  ?:  &(!=(~ methods.u.ln) !(~(has in methods.u.ln) method))
+    ~|((cat 3 'your Lightning wallet doesn\'t allow ' method) !!)
+  u.ln
+::
+++  strip-lightning
+  |=  t=@t
+  ^-  @t
+  =/  s  (trip t)
+  ?.  =("lightning:" (cass (scag 10 s)))  t
+  (crip (slag 10 s))
+::  +nwc-conn: what lib/nwc needs of it
+::
+++  nwc-conn
+  |=  n=nwc:sur
+  ^-  connection:nwc
+  [service.n relays.n secret.n lud16.n]
+::  +nwc-send: to the relay, if we're open; else once we are
+::
+++  nwc-send
+  |=  [n=nwc:sur m=client-msg:nostr]
+  ^-  [(list card) nwc:sur]
+  ?.  &(?=(%open link.n) ?=(^ wid.n))
+    ?.  ?=(%event -.m)  [~ n]
+    [~ n(queue (snoc queue.n event.m))]
+  :_  n
+  ~[(give-ws-payload-client:ws u.wid.n [1 `(json-to-octs:server (req:en:js m))])]
+::  +nwc-ask: a request, remembered by its event id
+::
+++  nwc-ask
+  |=  [what=nwc-what:sur method=@t params=json]
+  ^-  (quip card _state)
+  ?~  ln  `state
+  =/  n  u.ln
+  ::  a nonce apiece, however many in this event
+  =/  salt  next-op
+  =.  next-op  +(next-op)
+  =/  ev  (request:nwc (nwc-conn n) method params now.bowl (shas salt eny.bowl))
+  =.  asks.n  (~(put by asks.n) id.ev [now.bowl what])
+  =^  cards  n  (nwc-send n [%event ev])
+  =^  more  n  (nwc-ticking n)
+  [(weld cards more) state(ln `n)]
+::  +nwc-ticking: the timer, if it isn't running
+::
+++  nwc-ticking
+  |=  n=nwc:sur
+  ^-  [(list card) nwc:sur]
+  ?^  tick.n  [~ n]
+  =/  at  (add now.bowl nwc-tick)
+  :_  n(tick `at)
+  ~[[%pass /nwc/tick/(scot %da at) %arvo %b %wait at]]
+::  +nwc-opened: iris watches us: the socket's open. subscribe to its
+::  info and to answers to us, send what waited, ask the balance
+::
+++  nwc-opened
+  |=  wid=@ud
+  ^-  (quip card _state)
+  ::  not ?~: state is replaced below, unnarrowed
+  ?:  =(~ ln)  `state
+  =/  n  (need ln)
+  ?.  =(`wid wid.n)  `state
+  =.  n  n(link %open, tries 0)
+  =/  me  (hex64:nwc (client:nwc secret.n))
+  =/  info=filter:nostr  [~ `(silt ~[service.n]) `(silt ~[13.194]) ~ ~ ~ ~]
+  =/  answers=filter:nostr
+    :*  ~  `(silt ~[service.n])  `(silt ~[23.195])
+        `(~(gas by *(map @t (list @t))) ~[['p' ~[me]]])
+        `(sub now.bowl ~m1)  ~  ~
+    ==
+  =^  req  n  (nwc-send n [%req 'nwc' ~[info answers]])
+  =/  waiting  queue.n
+  =.  queue.n  ~
+  =/  sends=(list card)
+    %+  turn  waiting
+    |=(e=event:nostr (give-ws-payload-client:ws wid [1 `(json-to-octs:server (req:en:js [%event e]))]))
+  =.  ln  `n
+  =^  bal  state  (nwc-ask [%balance ~] 'get_balance' (pairs:enjs:format ~))
+  [:(weld req sends bal) state]
+::  +nwc-sign: iris on our connect wire (or a leave): %accept gives the
+::  socket's id (it's open when iris watches us); a close means down
+::
+++  nwc-sign
+  |=  [wid=@ud ev=websocket-event:eyre]
+  ^-  (quip card _state)
+  ?~  ln  `state
+  ?+  -.ev  `state
+    %accept  `state(ln `u.ln(wid `wid))
+    %reject  (nwc-down wid)
+    %disconnect  (nwc-down wid)
+  ==
+::  +nwc-down: our socket closed: try again, backing off
+::
+++  nwc-down
+  |=  wid=@ud
+  ^-  (quip card _state)
+  ?~  ln  `state
+  =/  n  u.ln
+  ?:  ?=(%down link.n)  `state
+  ::  a socket we've already let go of
+  ?:  &(?=(^ wid.n) !=(u.wid.n wid))  `state
+  =/  wait  (snag (min tries.n (dec (lent nwc-backoff))) nwc-backoff)
+  =/  tries  +(tries.n)
+  :_  state(ln `n(link %down, wid ~, tries tries))
+  ~[[%pass /nwc/retry/(scot %ud tries) %arvo %b %wait (add now.bowl wait)]]
+::
+++  nwc-retry
+  |=  tries=@ud
+  ^-  (quip card _state)
+  ?~  ln  `state
+  ?.  &(?=(%down link.u.ln) =(tries tries.u.ln))  `state
+  :_  state(ln `u.ln(link %connecting))
+  ~[(connect:ws (snag 0 relays.u.ln) bowl)]
+::  +nwc-message: from the relay: its info, answers to us, refusals
+::
+++  nwc-message
+  |=  [wid=@ud m=websocket-message:eyre]
+  ^-  (quip card _state)
+  ?~  ln  `state
+  =/  n  u.ln
+  ?.  =(`wid wid.n)  `state
+  ?~  message.m  `state
+  =/  =octs  u.message.m
+  =/  j  (de:json:html q.octs)
+  ?~  j  `state
+  =/  rm  (relay-msg:de:js u.j)
+  ?~  rm  `state
+  ?:  ?=(%ok -.u.rm)
+    ::  the relay wouldn't take a request of ours
+    ?:  accepted.u.rm  `state
+    ?.  (~(has by asks.n) id.u.rm)  `state
+    =.  ln  `n(asks (~(del by asks.n) id.u.rm))
+    (note (cat 3 'the Lightning wallet\'s relay refused our request: ' msg.u.rm))
+  ?.  ?=(%event -.u.rm)  `state
+  =/  ev  event.u.rm
+  ?:  =(13.194 kind.ev)
+    ?.  (genuine:nwc ev service.n)  `state
+    =/  [methods=(set @t) encryption=(set @t)]  (info:nwc ev)
+    =/  was  encryption.n
+    =.  ln  `n(methods methods, encryption `encryption)
+    ?:  |((~(has in encryption) 'nip44_v2') =(`encryption was))  `state
+    (note 'your Lightning wallet only speaks NIP-04, which trill doesn\'t yet')
+  =/  a  (answer-of:nwc (nwc-conn n) ev)
+  ?~  a  `state
+  =/  ask  (~(get by asks.n) to.u.a)
+  ?~  ask  `state
+  =.  ln  `n(asks (~(del by asks.n) to.u.a))
+  (nwc-answer what.u.ask result.u.a)
+::  +nwc-answer: what an answer means for what we asked
+::
+++  nwc-answer
+  |=  [what=nwc-what:sur res=(each json [code=@t message=@t])]
+  ^-  (quip card _state)
+  ::  not ?~: state is replaced below, unnarrowed
+  ?:  =(~ ln)  `state
+  ?:  ?=(%| -.res)
+    ?:  ?=(%balance -.what)  `state
+    =/  why  ?:(=('' message.p.res) code.p.res message.p.res)
+    ?:  ?=(%pay -.what)  (note (cat 3 'the Lightning payment failed: ' why))
+    (note (cat 3 'the Lightning wallet said no: ' why))
+  =/  r=json  p.res
+  =/  o=(map @t json)  ?.(?=([%o *] r) ~ p.r)
+  =/  num
+    |=  k=@t
+    ^-  (unit @ud)
+    =/  v  (~(get by o) k)
+    ?.  ?=([~ %n *] v)  ~
+    (rush p.u.v dem)
+  =/  str
+    |=  k=@t
+    ^-  (unit @t)
+    =/  v  (~(get by o) k)
+    ?.  ?=([~ %s *] v)  ~
+    `p.u.v
+  ?-  -.what
+      %balance
+    =/  n  (need ln)
+    `state(ln `n(balance (num 'balance')))
+  ::
+      %pay
+    =/  sats  (fall amount.what 0)
+    =/  fee  (div (add (fall (num 'fees_paid') 0) 999) 1.000)
+    =.  state  (record %ln-out 'lightning' sats fee ~)
+    =^  cards  state
+      (note (rap 3 ~['paid ' (crip (a-co:co sats)) ' sats from your Lightning wallet']))
+    =^  more  state  (nwc-ask [%balance ~] 'get_balance' (pairs:enjs:format ~))
+    [(weld cards more) state]
+  ::
+      %invoice
+    =/  invoice  (str 'invoice')
+    =/  hash  (str 'payment_hash')
+    ?~  invoice  (note 'the Lightning wallet made no invoice')
+    ?~  hash  (note 'the Lightning wallet made no invoice')
+    =/  expires=@da
+      =/  e  (num 'expires_at')
+      ?~  e  (add now.bowl ~h1)
+      (add ~1970.1.1 (mul ~s1 u.e))
+    =/  n  (need ln)
+    =.  invoices.n  (~(put by invoices.n) u.hash [u.invoice amount.what now.bowl expires])
+    =^  cards  n  (nwc-ticking n)
+    [cards state(ln `n)]
+  ::
+      %lookup
+    =/  n  (need ln)
+    =/  inv  (~(get by invoices.n) hash.what)
+    ?~  inv  `state
+    =/  st  (fall (str 'state') '')
+    ::  some wallets say only settled_at
+    =/  paid  |(=('settled' st) ?=(^ (num 'settled_at')))
+    ?:  paid
+      =.  ln  `n(invoices (~(del by invoices.n) hash.what))
+      =.  state  (record %ln-in 'lightning' amount.u.inv 0 ~)
+      =^  cards  state
+        (note (rap 3 ~['received ' (crip (a-co:co amount.u.inv)) ' sats in your Lightning wallet']))
+      =^  more  state  (nwc-ask [%balance ~] 'get_balance' (pairs:enjs:format ~))
+      [(weld cards more) state]
+    ?.  |(=('expired' st) =('failed' st))  `state
+    `state(ln `n(invoices (~(del by invoices.n) hash.what)))
+  ==
+::  +nwc-tock: the tick. requests that got no answer are dropped (a
+::  payment only noted: it may yet go through); our invoices past expiry
+::  dropped, the rest looked up
+::
+++  nwc-tock
+  |=  at=@da
+  ^-  (quip card _state)
+  ::  not ?~: state is replaced below, unnarrowed
+  ?:  =(~ ln)  `state
+  =/  n  (need ln)
+  ?.  =(`at tick.n)  `state
+  =.  tick.n  ~
+  =/  late=(list [id=@ux ask=nwc-ask:sur])
+    %+  skim  ~(tap by asks.n)
+    |=  [id=@ux a=nwc-ask:sur]
+    %+  gth  (sub now.bowl sent.a)
+    ?:(?=(%pay -.what.a) nwc-pay-patience nwc-patience)
+  =.  asks.n  (~(dif by asks.n) (malt late))
+  =.  invoices.n
+    %-  malt
+    %+  skip  ~(tap by invoices.n)
+    |=([h=@t i=nwc-invoice:sur] (gth now.bowl expires.i))
+  =/  paying  (lien late |=([* a=nwc-ask:sur] ?=(%pay -.what.a)))
+  =.  ln  `n
+  =^  cards  state
+    ?.  paying  `state
+    (note 'no answer about a Lightning payment yet: check your wallet')
+  ::  look up the invoices not already being looked up
+  =/  looking=(set @t)
+    %-  silt
+    %+  murn  ~(val by asks.n)
+    |=(a=nwc-ask:sur ?.(?=(%lookup -.what.a) ~ `hash.what.a))
+  =/  hashes=(list @t)
+    ?.  |(=(~ methods.n) (~(has in methods.n) 'lookup_invoice'))  ~
+    (skip ~(tap in ~(key by invoices.n)) |=(h=@t (~(has in looking) h)))
+  |-
+  ?^  hashes
+    =^  more  state
+      (nwc-ask [%lookup i.hashes] 'lookup_invoice' (pairs:enjs:format ~[['payment_hash' s+i.hashes]]))
+    $(hashes t.hashes, cards (weld cards more))
+  ?~  ln  [cards state]
+  =.  n  (need ln)
+  ?:  &(=(~ asks.n) =(~ invoices.n))  [cards state]
+  =^  more  n  (nwc-ticking n)
+  [(weld cards more) state(ln `n)]
 ::  +record: a history entry
 ::
 ++  record
-  |=  [kind=?(%deposit %withdraw %send %receive %zap-in %zap-out) mint=@t amount=@ud fee=@ud who=(unit @ux)]
+  |=  [kind=?(%deposit %withdraw %send %receive %zap-in %zap-out %ln-in %ln-out) mint=@t amount=@ud fee=@ud who=(unit @ux)]
   ^+  state
   =/  entries=(list entry:sur)  [[now.bowl kind mint amount fee who] history]
   state(history (scag 200 entries))
@@ -1508,6 +1863,31 @@
           amount+(numb amount.e)
           fee+(numb fee.e)
           who+?~(who.e ~ s+(crip ((x-co:co 64) u.who.e)))
+      ==
+    ::
+      :-  %lightning
+      ?~  ln  ~
+      =/  n  u.ln
+      %-  pairs
+      :~  link+s+link.n
+          balance+?~(balance.n ~ (numb (div u.balance.n 1.000)))
+          relay+s+(snag 0 relays.n)
+          service+s+(hex64:nwc service.n)
+          lud16+?~(lud16.n ~ s+u.lud16.n)
+          methods+a+(turn ~(tap in methods.n) |=(m=@t s+m))
+          :-  %nip04-only
+          b+?&(?=(^ encryption.n) !(~(has in u.encryption.n) 'nip44_v2'))
+          paying+(numb (lent (skim ~(val by asks.n) |=(a=nwc-ask:sur ?=(%pay -.what.a)))))
+          :-  %invoices
+          :-  %a
+          %+  turn  ~(tap by invoices.n)
+          |=  [h=@t i=nwc-invoice:sur]
+          %-  pairs
+          :~  hash+s+h
+              invoice+s+invoice.i
+              amount+(numb amount.i)
+              expires+(sect expires.i)
+          ==
       ==
     ::
       :-  %nostr
