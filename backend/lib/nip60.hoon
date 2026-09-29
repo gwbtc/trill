@@ -72,6 +72,33 @@
     ^-  (list json)  (e 'destroyed' destroyed)
     ^-  (list json)  (e 'created' created)
   ==
+::  +lock-key: our P2PK public key as NIP-61 has senders lock to: 02 and
+::  the x (BIP-340 signing doesn't mind the y)
+::
+++  lock-key  |=(x=@ `@t`(cat 3 '02' (hex-of:cw 64 x)))
+::  +info: NIP-61's kind 10019 tags: where to send us ecash and how to lock
+::  it
+::
+++  info
+  |=  [relays=(list @t) mints=(list @t) x=@]
+  ^-  (list tag:nostr)
+  ;:  weld
+    (turn relays |=(r=@t `tag:nostr`~['relay' r]))
+    (turn mints |=(m=@t `tag:nostr`~['mint' m 'sat']))
+    `(list tag:nostr)`~[~['pubkey' (lock-key x)]]
+  ==
+::  +redeemed: a 7376's public tags for the nutzaps it redeemed
+::
+++  redeemed
+  |=  zs=(list [ev=@ux from=@ux])
+  ^-  (list tag:nostr)
+  =|  out=(list tag:nostr)
+  |-
+  ?~  zs  (flop out)
+  %=  $
+    zs   t.zs
+    out  [~['p' (id-hex from.i.zs)] ~['e' (id-hex ev.i.zs) '' 'redeemed'] out]
+  ==
 ::  +deletion: the kind 5's tags for token events we've replaced
 ::
 ++  deletion

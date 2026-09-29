@@ -35,6 +35,10 @@ $:  p=@p
       ::  asking agent back with [%signed ref ids], ids in draft order.
       ::  the key never leaves us
       [%sign ref=@ud drafts=(list draft)]
+      ::  from our own agents: an ongoing subscription on every connected
+      ::  relay, replacing the agent's last one of this name. what it
+      ::  finds is poked to the agent as [%nostr-event name event]
+      [%watch name=@t filters=(list filter:nsur)]
   ==
 ::  +draft: an event to sign. seal: NIP-44 encrypt the content to our
 ::  own key first

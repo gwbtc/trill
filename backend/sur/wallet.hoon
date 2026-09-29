@@ -2,6 +2,7 @@
 ::  %trill-wallet keeps it. NIP-60 mirrors it to relays; see
 ::  lib/cashu.hoon for the cryptography
 ::
+/-  nostr
 |%
 +$  point  [x=@ y=@]
 ::  +keyset: a mint's keys for one unit, one key per amount (NUT-01/02)
@@ -69,11 +70,13 @@
           step=?(%quoting %waiting %minting)
           outputs=(list output)
       ==
-      ::  a token someone gave us, swapped for proofs of our own
+      ::  a token someone gave us, swapped for proofs of our own; or a
+      ::  nutzap (NIP-61): its event and sender
       $:  %receive
           mint=@t
           inputs=(list proof)
           outputs=(list output)
+          zap=(unit [ev=@ux from=@ux])
       ==
       ::  ecash to hand over: our proofs swapped into the amount (the
       ::  first sends outputs) and change for us
@@ -132,6 +135,7 @@
       [%set-phrase words=@t]                    ::  an empty wallet only
       [%sync on=?]                              ::  NIP-60 mirroring
       [%signed ref=@ud ids=(list @ux)]          ::  %nostrill's reply
+      [%nostr-event name=@t =event:nostr]       ::  from a %nostrill watch
   ==
 ::  +token: ecash to hand over, from one mint in one unit (NUT-00 V3/V4)
 ::

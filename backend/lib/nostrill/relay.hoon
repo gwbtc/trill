@@ -319,6 +319,9 @@
     =.  received.u.req  +(received.u.req)
     =.  reqs.relay  (~(put by reqs.relay) sub-id u.req)
     =.  relays.state  (~(put by relays.state) url.relay relay)
+    ::  our agents' subs: theirs to handle
+    =/  fwd  (forward name.u.req event)
+    ?^  fwd  [~[u.fwd] state]
     |^
     ::  https://nostrdata.github.io/kinds/
     ::  if it's an ongoing request past %eose,
@@ -559,6 +562,62 @@
   %+  snoc  (publish evs)
   :*  %pass  /signed  %agent  [our.bowl i.t.sap.bowl]
       %poke  %noun  !>([%signed ref (turn evs |=(e=event:nsur id.e))])
+  ==
+::  +watch: an ongoing subscription for one of our agents, on every live
+::  relay. named @<agent>/<name>: +handle-event forwards what it finds
+::
+++  watch
+  |=  [name=@t filters=(list filter:nsur)]
+  ^-  (quip card _state)
+  ?>  =(our src):bowl
+  ?.  ?=([%gall @ ~] sap.bowl)  ~|(%watch-for-agents-only !!)
+  =/  full=@t  (rap 3 ~['@' i.t.sap.bowl '/' name])
+  =^  cs  state  (unwatch full)
+  =/  wids=(list @ud)  (murn ~(val by relays.state) |=(rs=relay-stats:nsur wid.rs))
+  =^  more  state  (do-get wids full [%custom full filters &])
+  [(weld cs more) state]
+::  +unwatch: close every sub of this name, and forget it for replays
+::
+++  unwatch
+  |=  name=@t
+  ^-  (quip card _state)
+  =/  nclient  ~(. nostr-client [state bowl])
+  =/  entries=(list [@t relay-stats:nsur])  ~(tap by relays.state)
+  =|  cs=(list card)
+  |-
+  ?~  entries  [cs state]
+  =/  rs=relay-stats:nsur  +.i.entries
+  =/  sids=(list @t)
+    %+  murn  ~(tap by reqs.rs)
+    |=([sid=@t r=req-state:nsur] ?.(=(name name.r) ~ `sid))
+  =/  closes=(list card)
+    ?~  wid.rs  ~
+    =/  rclient  ~(. relay.nclient [u.wid.rs rs])
+    (turn sids |=(sid=@t (send-card:rclient [%close sid])))
+  =.  reqs.rs
+    =/  left  sids
+    |-
+    ?~  left  reqs.rs
+    $(left t.left, reqs.rs (~(del by reqs.rs) i.left))
+  =?  status.rs  ?=(^ status.rs)  `u.status.rs(subs (~(del by subs.u.status.rs) name))
+  =.  relays.state  (~(put by relays.state) url.rs rs)
+  $(entries t.entries, cs (weld closes cs))
+::  +forward: an event on one of our agents' subs (@<agent>/<name>),
+::  poked on to it
+::
+++  forward
+  |=  [sub=@t =event:nsur]
+  ^-  (unit card)
+  ?.  =('@' (end 3 sub))  ~
+  =/  t  (trip (rsh 3 sub))
+  =/  i  (find "/" t)
+  ?~  i  ~
+  =/  dude  (slaw %tas (crip (scag u.i t)))
+  ?~  dude  ~
+  =/  name=@t  (crip (slag +(u.i) t))
+  :-  ~
+  :*  %pass  /forward  %agent  [our.bowl u.dude]
+      %poke  %noun  !>([%nostr-event name event])
   ==
 ::  +publish: signed events to every relay with a live socket. one that's
 ::  down misses them; whoever sent them can send them again

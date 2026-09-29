@@ -323,10 +323,20 @@
     `[-.u.u +<.u.u +>.u.u d]
   ::  +proof: as tokens (V3) and NIP-60 events carry them
   ::
+  ::  +count: a number, or a string of digits, as cashu-ts 4 writes amounts
+  ::
+  ++  count
+    |=  j=json
+    ^-  (unit @ud)
+    ?+  j  ~
+      [%n *]  (rush p.j dem)
+      [%s *]  (rush p.j dem)
+    ==
+  ::
   ++  proof
     |=  j=json
     ^-  (unit proof:sur)
-    =/  u  ((ot ~[id+so amount+ni secret+so 'C'^point]) j)
+    =/  u  ((ot ~[id+so amount+count secret+so 'C'^point]) j)
     ?~  u  ~
     ?.  ?=([%o *] j)  ~
     =/  d=(unit dleq:sur)

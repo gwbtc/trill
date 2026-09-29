@@ -158,6 +158,9 @@
     ?:  ?=(%ted -.pok)  (ws-proxy +.pok)
     ?:  ?=(%sign -.pok)
       [(sign-drafts:relay +.pok) this]
+    ?:  ?=(%watch -.pok)
+      =^  cs  state  (watch:relay +.pok)
+      [cs this]
     =^  cs  state  (handle-eng:posts +.pok)
     [cs this]
   ::  +on-ui: JSON pokes from our own frontend
@@ -284,6 +287,8 @@
     ::
     [%x %j %gwid patp=@ ~]  (sgwid:scry patp.pole)
     [%x %j %patp gwid=@ ~]  (patp:scry gwid.pole)
+    ::  our nostr public key: public, it's on everything we publish
+    [%x %pubkey ~]  ``noun+!>(`@ux`pub.i.keys.state)
   ==
 ::
 ++  on-agent

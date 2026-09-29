@@ -18,6 +18,12 @@
 ::      [%sync on]                 mirror to relays (NIP-60) or stop; on
 ::                                 publishes everything again
 ::
+::    NIP-61: with the wallet event goes a kind 10019 (our mints, relays
+::    and the P2PK key to lock ecash to), and a %nostrill watch for
+::    nutzaps (kind 9321) to us at our mints. each is checked (our mint,
+::    locked to our key, DLEQ), unlocked with the P2PK key and swapped in;
+::    its history event tags it redeemed
+::
 ::    NIP-60: while sync is on (the default), a mint's proofs are
 ::    published whenever they change, as new token events that replace
 ::    (and delete) the last ones, with a history event for the change in
@@ -32,7 +38,7 @@
 ::
 ::    it imports the tests only so that |commit type-checks them
 ::
-/-  sur=wallet, comms=nostrill-comms
+/-  sur=wallet, comms=nostrill-comms, nostr
 /+  default-agent, dbug, cashu, cw=cashu-wire, cs=cashu-seed, nip60,
     bip39-english
 /=  t-cashu  /tests/cashu
@@ -59,6 +65,9 @@
       listed=(set @t)                           ::  mints in the last 17375
       synced=(map @t (list proof:sur))          ::  proofs the relays have
       round=(unit round)                        ::  a sync %nostrill has
+      ::  NIP-61
+      zaps=(set @ux)                            ::  nutzaps seen
+      redeemed=(map @t (list [ev=@ux from=@ux]))  ::  not in a history yet
   ==
 ::  +round: a sync out at %nostrill for signing, one at a time. first
 ::  the wallet event, token events and deletions; then, with their ids,
@@ -69,8 +78,20 @@
       step=?(%tokens %history)
       history=?
       wallet=?
-      mints=(list [url=@t gone=(list @ux) made=@ud was=@ud has=@ud])
-      old=[synced=(map @t (list proof:sur)) listed=(set @t)]
+      mints=(list mint-round)
+      $=  old
+      $:  synced=(map @t (list proof:sur))
+          listed=(set @t)
+          redeemed=(map @t (list [ev=@ux from=@ux]))
+      ==
+  ==
++$  mint-round
+  $:  url=@t
+      gone=(list @ux)
+      made=@ud
+      was=@ud
+      has=@ud
+      zaps=(list [ev=@ux from=@ux])
   ==
 ::  +poll-every: how often a deposit's quote is checked
 ::
@@ -145,13 +166,22 @@
 ++  on-agent
   |=  [=wire =sign:agent:gall]
   ^-  (quip card _this)
+  ?:  ?=([%watch ~] wire)
+    ?.  ?=([%poke-ack ^] sign)  `this
+    =^  cards  state  (note:hc '%nostrill won\'t watch for our nutzaps')
+    [cards this]
   ?.  ?=([%nostr ~] wire)  (on-agent:def wire sign)
   ?.  ?=(%poke-ack -.sign)  `this
   ?~  p.sign  `this
   ::  refused: the relays didn't get this round. roll back to what
   ::  they have, so the next mirror sends it again
   =?  state  ?=(^ round)
-    state(round ~, synced synced.old.u.round, listed listed.old.u.round)
+    %=  state
+      round     ~
+      synced    synced.old.u.round
+      listed    listed.old.u.round
+      redeemed  redeemed.old.u.round
+    ==
   =^  cards  state  (note:hc '%nostrill refused our NIP-60 events')
   [cards this]
 ++  on-fail   on-fail:def
@@ -193,20 +223,12 @@
     =/  m  (~(get by mints) url)
     ?~  m  ~|((cat 3 'add its mint first: ' url) !!)
     ?.  =('sat' unit.u.tok)  ~|('only tokens in sats, for now' !!)
-    =/  ins  (resolve proofs.u.tok ~(tap in ~(key by keysets.u.m)))
-    ?~  ins  ~|('the token uses a keyset its mint doesn\'t list' !!)
-    ?.  (dleqs-ok u.m u.ins)  ~|('a proof in the token fails its DLEQ check' !!)
-    =/  fee  (need (fee:cw keysets.u.m u.ins))
-    =/  total  (sum u.ins)
-    ?:  (lte total fee)  ~|('the token is worth no more than the fee' !!)
-    =/  ks  (active-keyset url 'sat')
-    ?~  ks  ~|('the mint has no active keyset for sats' !!)
-    =/  amounts  (need (denominations:cw (sub total fee) keys.u.ks))
-    =/  id  next-op
-    =.  next-op  +(next-op)
-    =^  outs  state  (new-outputs id.u.ks amounts)
-    =.  ops  (~(put by ops) id [%receive url u.ins outs])
-    [~[(swap-card id url u.ins outs)] state]
+    (take url u.m proofs.u.tok ~)
+  ::
+      %nostr-event
+    ?.  =(/gall/nostrill sap.bowl)  ~|(%nostr-events-from-nostrill-only !!)
+    ?.  =('nutzaps' name.a)  `state
+    (nutzap event.a)
   ::
       %send
     =/  url  (strip-slash:cw mint.a)
@@ -305,11 +327,18 @@
   =/  ref  next-op
   =.  next-op  +(next-op)
   =/  wallet=?  !=(listed ~(key by mints))
+  =/  ours=(list @t)  ~(tap in ~(key by mints))
+  ::  to roll back to if %nostrill refuses
+  =/  old-redeemed  redeemed
   =|  drafts=(list draft:comms)
+  ::  with the wallet event, NIP-61's 10019 and a watch for nutzaps
+  =|  watch=(list card)
   =?  drafts  wallet
-    =/  text  (wallet:nip60 (p2pk-key:cs seed 0) ~(tap in ~(key by mints)))
-    [[17.375 ~ text &] drafts]
-  =|  done=(list [url=@t gone=(list @ux) made=@ud was=@ud has=@ud])
+    =/  key  (p2pk-key:cs seed 0)
+    =/  info  (info:nip60 nostr-relays ours x:(base:cashu key))
+    [[10.019 info '' |] [17.375 ~ (wallet:nip60 key ours) &] drafts]
+  =?  watch  wallet  watch-cards
+  =|  done=(list mint-round)
   =/  urls=(list @t)  ~(tap in (~(uni in ~(key by synced)) ~(key by proofs)))
   |-
   ?^  urls
@@ -318,6 +347,8 @@
     =/  new=(list proof:sur)  (~(gut by proofs) url ~)
     ?:  =(old new)  $(urls t.urls)
     =/  gone=(list @ux)  (~(gut by tokens) url ~)
+    =/  zs  (~(gut by redeemed) url ~)
+    =.  redeemed  (~(del by redeemed) url)
     =/  chunks  (chunk new)
     =/  made=(list draft:comms)
       %+  turn  chunks
@@ -328,14 +359,40 @@
     %=  $
       urls    t.urls
       drafts  (weld (flop made) drafts)
-      done    [[url gone (lent chunks) (sum old) (sum new)] done]
+      done    [[url gone (lent chunks) (sum old) (sum new) zs] done]
     ==
   ::  ^round: the mold, not the state's face
-  =/  out=^round  [ref %tokens history wallet (flop done) synced listed]
+  =/  out=^round
+    [ref %tokens history wallet (flop done) synced listed old-redeemed]
   :_  state(round `out, synced proofs, listed ~(key by mints))
-  :~  :*  %pass  /nostr  %agent  [our.bowl %nostrill]
-          %poke  %noun  !>([%sign ref (flop drafts)])
+  :_  watch
+  :*  %pass  /nostr  %agent  [our.bowl %nostrill]
+      %poke  %noun  !>([%sign ref (flop drafts)])
+  ==
+::  +watch-cards: have %nostrill watch the relays for nutzaps to us at
+::  our mints. its last watch is replaced, and the relays send what they
+::  have again
+::
+++  watch-cards
+  ^-  (list card)
+  ?:  |(quiet =(~ mints))  ~
+  ?.  .^(? %gu /(scot %p our.bowl)/nostrill/(scot %da now.bowl)/$)  ~
+  =/  pub  .^(@ux %gx /(scot %p our.bowl)/nostrill/(scot %da now.bowl)/pubkey/noun)
+  =/  ours=(list @t)  ~(tap in ~(key by mints))
+  =/  tags  (~(gas by *(map @t (list @t))) ~[['p' ~[(id-hex:nip60 pub)]] ['u' ours]])
+  =/  =filter:nostr  [~ ~ `(silt ~[9.321]) `tags ~ ~ ~]
+  :~  :*  %pass  /watch  %agent  [our.bowl %nostrill]
+          %poke  %noun  !>([%watch 'nutzaps' ~[filter]])
   ==  ==
+::  +nostr-relays: the relays %nostrill has, for our 10019
+::
+++  nostr-relays
+  ^-  (list @t)
+  =/  j  .^(json %gx /(scot %p our.bowl)/nostrill/(scot %da now.bowl)/j/relays/json)
+  ?.  ?=([%o *] j)  ~
+  =/  r  (~(get by p.j) 'relays')
+  ?.  ?=([~ %o *] r)  ~
+  ~(tap in ~(key by p.u.r))
 ::  +signed: round one's ids, in the order we drafted: the wallet event's,
 ::  then each mint's token events and its deletion. note the token events
 ::  that are live now, and send the history
@@ -343,7 +400,8 @@
 ++  signed
   |=  [r=^round ids=(list @ux)]
   ^-  (quip card _state)
-  =?  ids  &(wallet.r ?=(^ ids))  t.ids
+  ::  the 10019's and the wallet event's
+  =?  ids  wallet.r  (slag 2 ids)
   =|  drafts=(list draft:comms)
   =/  ms  mints.r
   |-
@@ -359,7 +417,7 @@
         ?:  (gth has.m was.m)
           (history:nip60 & (sub has.m was.m) 'sat' made gone.m)
         (history:nip60 | (sub was.m has.m) 'sat' made gone.m)
-      [[7.376 ~ text &] drafts]
+      [[7.376 (redeemed:nip60 zaps.m) text &] drafts]
     $(ms t.ms)
   ?~  drafts  `state(round ~)
   =/  ref  next-op
@@ -376,6 +434,94 @@
   ::  =(~ ps), not ?~: a narrowed ps won't take its own slag back
   ?:  =(~ ps)  ~
   [(scag per-event:nip60 ps) $(ps (slag per-event:nip60 ps))]
+::  +take: ecash someone gave us, swapped for our own: from a token, or
+::  a nutzap's proofs, unlocked
+::
+++  take
+  |=  [url=@t m=mint:sur ps=(list proof:sur) zap=(unit [ev=@ux from=@ux])]
+  ^-  (quip card _state)
+  =/  ins  (resolve ps ~(tap in ~(key by keysets.m)))
+  ?~  ins  ~|('the token uses a keyset its mint doesn\'t list' !!)
+  ?.  (dleqs-ok m u.ins)  ~|('a proof in the token fails its DLEQ check' !!)
+  =/  fee  (need (fee:cw keysets.m u.ins))
+  =/  total  (sum u.ins)
+  ?:  (lte total fee)  ~|('the token is worth no more than the fee' !!)
+  =/  ks  (active-keyset url 'sat')
+  ?~  ks  ~|('the mint has no active keyset for sats' !!)
+  =/  amounts  (need (denominations:cw (sub total fee) keys.u.ks))
+  =/  id  next-op
+  =.  next-op  +(next-op)
+  =^  outs  state  (new-outputs id.u.ks amounts)
+  =.  ops  (~(put by ops) id [%receive url u.ins outs zap])
+  [~[(swap-card id url u.ins outs)] state]
+::  +nutzap: a kind 9321 to us (NIP-61), redeemed once. anything wrong
+::  with it is noted, not a crash, and not remembered: another copy (from
+::  another relay, or after a fix) gets another try
+::
+++  nutzap
+  |=  ev=event:nostr
+  ^-  (quip card _state)
+  ?.  =(9.321 kind.ev)  `state
+  ?:  (~(has in zaps) id.ev)  `state
+  ::  not while restoring: our counters may be behind. +heard-restore
+  ::  has the relays send it again
+  ?:  (lien ~(val by ops) |=(o=op:sur ?=(%restore -.o)))  `state
+  =/  res  (mule |.((redeem ev)))
+  ?:  ?=(%& -.res)
+    =^  cards  state  p.res
+    [cards state(zaps (~(put in zaps) id.ev))]
+  %-  (slog [leaf+"trill-wallet: refused nutzap {<id.ev>}" p.res])
+  (note (cat 3 'refused a nutzap: ' (crip (scag 16 ((x-co:co 64) id.ev)))))
+::  +redeem: a nutzap's proofs, if they're at one of our mints and
+::  locked to our P2PK key, signed for (NUT-11) and taken
+::
+++  redeem
+  |=  ev=event:nostr
+  ^-  (quip card _state)
+  =/  tag
+    |=  k=@t
+    ^-  (list @t)
+    %+  murn  tags.ev
+    |=  t=(list @t)
+    ?.  ?=([@ @ *] t)  ~
+    ?.  =(k i.t)  ~
+    `i.t.t
+  =/  us  (tag 'u')
+  ?~  us  ~|('no mint' !!)
+  =/  url  (strip-slash:cw i.us)
+  =/  m  (~(get by mints) url)
+  ?~  m  ~|('not at one of our mints' !!)
+  =/  units  (tag 'unit')
+  ?.  ?|(?=(~ units) =(~['sat'] units))  ~|('not in sats' !!)
+  =/  key  (p2pk-key:cs seed 0)
+  =/  x  x:(base:cashu key)
+  =/  ps=(list proof:sur)
+    %+  turn  (tag 'proof')
+    |=  j=@t
+    ^-  proof:sur
+    =/  p  (need (proof:de:cw (need (de:json:html j))))
+    ?.  (locked-to x secret.p)  ~|('not locked to our key' !!)
+    =/  sig  (sign-secret:cashu key (as-octs:mimes:html secret.p) (shas %zap eny.bowl))
+    p(witness `(en:json:html (pairs:enjs:format ~[signatures+a+~[s+sig]])))
+  ?~  ps  ~|('no proofs' !!)
+  (take url u.m ps `[id.ev pubkey.ev])
+::  +locked-to: a NUT-10 P2PK secret with our key in data, spendable on
+::  our signature alone (SIG_INPUTS)
+::
+++  locked-to
+  |=  [x=@ secret=@t]
+  ^-  ?
+  =/  j  (de:json:html secret)
+  ?.  ?=([~ %a [%s %'P2PK'] [%o *] ~] j)  |
+  =/  o  p.i.t.p.u.j
+  =/  data  (~(get by o) 'data')
+  ?.  ?=([~ %s *] data)  |
+  =/  k  (rush p.u.data hex)
+  ?~  k  |
+  ?.  =(x (end [3 32] u.k))  |
+  ?.  =(66 (met 3 p.u.data))  |
+  ::  SIG_ALL would sign the outputs too
+  !?=(^ (find "SIG_ALL" (trip (en:json:html (~(gut by o) 'tags' ~)))))
 ::  +heard: an http response for an operation, on the wire it went out on
 ::
 ++  heard
@@ -448,11 +594,21 @@
   ?:  =(~ keysets.mn)
     (note (cat 3 'no keyset of the mint checked out: ' url.o))
   =.  mints  (~(put by mints) url.o mn)
-  %-  note
-  %+  rap  3
-  :~  'added '  url.o  ': '
-      (crip (a-co:co ~(wyt by keysets.mn)))  ' keysets'
-  ==
+  =^  cards  state
+    %-  note
+    %+  rap  3
+    :~  'added '  url.o  ': '
+        (crip (a-co:co ~(wyt by keysets.mn)))  ' keysets'
+    ==
+  ::  none of its keysets used yet: our seed may have been used there
+  ::  (another wallet, or before a nuke). NUT-13: restore first, which
+  ::  also moves the counters past what the mint has signed
+  =/  kids=(list @t)  ~(tap in ~(key by keysets.mn))
+  ?:  (lien kids |=(k=@t (~(has by counters) k)))  [cards state]
+  =/  rid  next-op
+  =.  next-op  +(next-op)
+  =^  more  state  (restore-next rid [%restore url.o kids 0 0 ~ ~])
+  [(weld cards more) state]
 ::
 ::  depositing: a quote and invoice, polled until paid, then minted
 ::
@@ -503,10 +659,18 @@
   ?+  -.o  `state
       %receive
     =/  new  (swapped mint.o outputs.o got)
-    ?:  ?=(%| -.new)  (fail id (cat 3 'receiving failed: ' p.new))
+    ?:  ?=(%| -.new)
+      ::  a nutzap's proofs may still be good: try it again when the
+      ::  relays next send it
+      =?  zaps  ?=(^ zap.o)  (~(del in zaps) ev.u.zap.o)
+      (fail id (cat 3 'receiving failed: ' p.new))
     =.  ops  (~(del by ops) id)
     =.  proofs  (~(put by proofs) mint.o (weld p.new (fall (~(get by proofs) mint.o) ~)))
-    (note (rap 3 ~['received ' (crip (a-co:co (sum p.new))) ' sats']))
+    ?~  zap.o
+      (note (rap 3 ~['received ' (crip (a-co:co (sum p.new))) ' sats']))
+    ::  for the next history event to tag
+    =.  redeemed  (~(put by redeemed) mint.o [u.zap.o (~(gut by redeemed) mint.o ~)])
+    (note (rap 3 ~['redeemed a nutzap of ' (crip (a-co:co (sum p.new))) ' sats']))
   ::
       %send
     =/  new  (swapped mint.o outputs.o got)
@@ -781,7 +945,9 @@
       (note (rap 3 ~['restored ' (crip (a-co:co (lent new))) ' proofs; checking them']))
     =/  cid  next-op
     =.  next-op  +(next-op)
-    (check-next cid [%check mint.o (weld new have) ~])
+    =^  cards  state  (check-next cid [%check mint.o (weld new have) ~])
+    ::  nutzaps held back while we restored: the relays send them again
+    [(weld cards watch-cards) state]
   =/  kid  i.keysets.o
   =/  outs=(list output:sur)
     %+  turn  (gulf counter.o (add counter.o (dec restore-batch)))
