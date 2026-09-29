@@ -996,6 +996,49 @@ describe("trending topics", () => {
     expect(parseTrending([])).toBeNull();
     expect(parseTrending({ prefs })).toBeNull();
   });
+
+  test("reads the spam filter, and does without one", () => {
+    const flaggedRaw = {
+      source: "gtrends-us",
+      title: "Best casino bonus",
+      url: "https://spam.example",
+      pic: null,
+      score: null,
+      date: 1,
+      categories: [],
+      content: "",
+      links: [],
+      key: "best casino bonus",
+      spam: 0.97,
+      override: null,
+      hidden: true,
+    };
+    const withSpam = parseTrending({
+      prefs,
+      sources: {},
+      spam: {
+        provider: "openrouter",
+        threshold: 0.9,
+        // one good, one without a key
+        flagged: [flaggedRaw, { ...flaggedRaw, key: 3 }],
+      },
+    })!;
+    expect(withSpam.spam.provider).toBe("openrouter");
+    expect(withSpam.spam.flagged).toHaveLength(1);
+    expect(withSpam.spam.flagged[0]).toMatchObject({
+      key: "best casino bonus",
+      spam: 0.97,
+      override: null,
+      hidden: true,
+      title: "Best casino bonus",
+    });
+    // an older %nostrill sends no spam part: no filter
+    expect(parseTrending({ prefs, sources: {} })!.spam).toEqual({
+      provider: null,
+      threshold: 0.9,
+      flagged: [],
+    });
+  });
 });
 
 describe("shared cards", () => {

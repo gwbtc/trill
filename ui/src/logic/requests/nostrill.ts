@@ -343,7 +343,16 @@ export default class IO {
   }
   // %topics refetches everything for the new prefs; %nostrill forwards them
   async setTopicPrefs(prefs: TopicPrefs) {
-    return this.poke({ topics: prefs });
+    return this.poke({ topics: { "set-prefs": prefs } });
+  }
+  // which %trill-ai-client provider judges trending spam; null turns it off
+  async setTopicSpamProvider(provider: string | null) {
+    return this.poke({ topics: { "set-spam-provider": { provider } } });
+  }
+  // the owner's word on a flagged topic (FlaggedTopic.key): true spam,
+  // false not spam, null back to Jev's judgement
+  async markTopic(key: string, spam: boolean | null) {
+    return this.poke({ topics: { mark: { key, spam } } });
   }
   async addRP(host: UserType, id: string) {
     const json = { rp: { host: toWireUser(host), id } };

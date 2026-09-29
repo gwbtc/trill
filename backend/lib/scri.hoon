@@ -229,18 +229,56 @@
       %gx  (weld base /status/noun)
     ==
   =/  =prefs:tsur  .^(prefs:tsur %gx (weld base /prefs/noun))
+  =/  spam
+    .^  [provider=(unit @tas) verdicts=(map @t verdict:tsur)]
+      %gx  (weld base /spam/noun)
+    ==
+  ::  without a spam provider, nothing is hidden
+  =/  verdict
+    |=  t=topic:tsur
+    ^-  (unit verdict:tsur)
+    ?~  provider.spam  ~
+    (~(get by verdicts.spam) (topic-key:tsur title.t))
   ::  only fetched sources: an unfetched one's scry is empty and .^
   ::  would crash on it. topics in none of the chosen categories are
   ::  left out (the keyword-classified ones; google news only fetches
   ::  the chosen sections)
-  %+  trending:en:topicsj  prefs
-  %+  turn  ~(tap by fetched.status)
-  |=  [id=source-id:tsur at=@da]
-  =/  topics
+  =/  srcs=(list [id=source-id:tsur at=@da topics=(list topic:tsur)])
+    %+  turn  ~(tap by fetched.status)
+    |=  [id=source-id:tsur at=@da]
+    :+  id  at
     %+  skim  .^((list topic:tsur) %gx (weld base /topics/[id]/noun))
     |=  t=topic:tsur
     ?=(^ (~(int in categories.t) cats.prefs))
-  [id at (scag 10 topics)]
+  ::  flagged: Jev's yes over the threshold, or the owner's word; once
+  ::  each, however many sources have it
+  =/  flagged=(list [key=@t t=topic:tsur v=verdict:tsur])
+    =/  seen=(set @t)  ~
+    =/  lists=(list (list topic:tsur))
+      (turn srcs |=([* * ts=(list topic:tsur)] ts))
+    =/  all=(list topic:tsur)  (zing lists)
+    =|  out=(list [key=@t t=topic:tsur v=verdict:tsur])
+    |-
+    ?~  all  (flop out)
+    =/  v  (verdict i.all)
+    =/  k  (topic-key:tsur title.i.all)
+    ?.  ?&  ?=(^ v)
+            !(~(has in seen) k)
+            |(?=(^ override.u.v) (hidden:tsur u.v))
+        ==
+      $(all t.all)
+    $(all t.all, seen (~(put in seen) k), out [[k i.all u.v] out])
+  ::  hidden topics don't take any of a source's ten places
+  %^  trending:en:topicsj  prefs
+    %+  turn  srcs
+    |=  [id=source-id:tsur at=@da topics=(list topic:tsur)]
+    =/  shown
+      %+  skip  topics
+      |=  t=topic:tsur
+      =/  v  (verdict t)
+      ?~(v | (hidden:tsur u.v))
+    [id at (scag 10 shown)]
+  [provider.spam flagged]
 ::
 ++  relays
 ^-  (unit (unit cage))

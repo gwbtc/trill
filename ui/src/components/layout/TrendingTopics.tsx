@@ -9,11 +9,13 @@ import {
   pickTopics,
   topicMeta,
   TOPIC_PREFS_EVENT,
+  type TopicSpam,
   type TrendingData,
 } from "@/logic/topics";
 import type { SharedCard } from "@/logic/cards";
 import TopicThumb from "@/components/TopicThumb";
 import TopicModal from "@/components/topics/TopicModal";
+import SpamReview from "@/components/topics/SpamReview";
 
 // %topics refetches its sources hourly; checking more often than this
 // just catches that sooner
@@ -28,6 +30,7 @@ export default function TrendingTopics() {
     setModal: s.setModal,
   }));
   const [data, setData] = useState<TrendingData | null>(null);
+  const [spam, setSpam] = useState<TopicSpam | null>(null);
   const [tab, setTab] = useState("all");
 
   useEffect(() => {
@@ -35,8 +38,11 @@ export default function TrendingTopics() {
     let live = true;
     const load = async () => {
       const res = await api.scryTopics();
-      console.log("topics", res);
-      if (live && "ok" in res) setData(parseTrending(res.ok)?.sources ?? null);
+
+      if (!live || !("ok" in res)) return;
+      const trending = parseTrending(res.ok);
+      setData(trending?.sources ?? null);
+      setSpam(trending?.spam ?? null);
     };
     load();
     const timer = setInterval(load, REFRESH_MS);
@@ -139,6 +145,21 @@ export default function TrendingTopics() {
           </button>
         );
       })}
+      {spam?.provider && spam.flagged.length > 0 && (
+        <button
+          type="button"
+          className="rail-trending-spam"
+          onClick={() =>
+            setModal(<SpamReview flagged={spam.flagged} threshold={spam.threshold} />)
+          }
+        >
+          {hiddenCount(spam) > 0
+            ? `${hiddenCount(spam)} hidden as spam`
+            : `${spam.flagged.length} marked not spam`}
+        </button>
+      )}
     </div>
   );
 }
+
+const hiddenCount = (spam: TopicSpam) => spam.flagged.filter((t) => t.hidden).length;

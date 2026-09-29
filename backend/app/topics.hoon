@@ -8,13 +8,15 @@
 ::      /x/sources          (map source-id source)
 ::      /x/prefs            prefs: country, language, categories
 ::      /x/status           [every next errors fetched]
+::      /x/spam             [provider verdicts]: who judges spam, and what
+::                          they said, by +topic-key (see sur/topics.hoon)
 ::
 ::    e.g. .^((list topic:topics) %gx /=topics=/topics/noun)
 ::
 ::    :topics %print  logs the saved topics to the terminal
 ::
-/-  sur=topics
-/+  default-agent, dbug, lib=topics
+/-  sur=topics, ai=ai-client
+/+  default-agent, dbug, lib=topics, jev
 |%
 +$  card  card:agent:gall
 +$  state-0
@@ -25,6 +27,9 @@
       errors=(map source-id:sur [at=@da msg=@t])  ::  last failed fetch
       every=@dr
       next=(unit @da)                             ::  pending timer
+      spam-provider=(unit @tas)                   ::  ~: no spam filter
+      verdicts=(map @t verdict:sur)               ::  by +topic-key:sur
+      judging=(map @tas (list @t))                ::  batches out, their keys
   ==
 ::
 ::  +default-prefs: english, the us, every category
@@ -146,6 +151,114 @@
   =/  all=(list topic:sur)
     (zing (turn ~(val by snapshots) |=(s=snapshot:sur topics.s)))
   (sort all |=([a=topic:sur b=topic:sur] (gth date.a date.b)))
+::  spam: new topics go to %trill-ai-client as Jev evaluations, a yes/no
+::  question per topic, batch-size to a request. answers come back on
+::  /spam/<request id>; see +on-agent
+::
+++  batch-size  50
+::
+++  spam-question
+  |=  t=topic:sur
+  ^-  question:ai
+  :*  %noul
+      %-  pairs:enjs:format
+      :~  :-  'topic'
+          %-  pairs:enjs:format
+          :~  title+s+title.t
+              description+s+(crip (scag 400 (trip content.t)))
+              source+s+source.t
+          ==
+          question+s+'Is `topic` spam, rather than genuine news or discussion?'
+      ==
+      `s+'Spam: gambling or betting promotions, scams, SEO filler, ads, or junk posing as news'
+      `s+'A genuine news story, event, or discussion people are following'
+  ==
+::  +question-id: a batch's questions are t0, t1..: its keys, in order
+::
+++  question-id  |=(i=@ud `@t`(cat 3 't' (crip ((d-co:co 1) i))))
+::  +judge: batches asking about the topics not judged yet, nor out
+::
+++  judge
+  |=  [=bowl:gall provider=@tas topics=(list topic:sur) known=(set @t)]
+  ^-  (list [rid=@tas keys=(list @t) cards=(list card)])
+  =/  fresh=(list [@t topic:sur])
+    =|  seen=(set @t)
+    =|  out=(list [@t topic:sur])
+    |-
+    ?~  topics  (flop out)
+    =/  k  (topic-key:sur title.i.topics)
+    ?:  |((~(has in known) k) (~(has in seen) k))  $(topics t.topics)
+    $(topics t.topics, seen (~(put in seen) k), out [[k i.topics] out])
+  =|  batches=(list [rid=@tas keys=(list @t) cards=(list card)])
+  =/  n=@ud  0
+  |-
+  ?~  fresh  (flop batches)
+  =/  batch  (scag batch-size `(list [@t topic:sur])`fresh)
+  =/  rid=@tas
+    %+  rap  3
+    :~  'topics-'
+        (crip ((x-co:co 8) (end [3 4] eny.bowl)))
+        '-'
+        (crip ((d-co:co 1) n))
+    ==
+  =/  questions=(map @t question:ai)
+    %-  malt
+    %+  turn  (gulf 0 (dec (lent batch)))
+    |=  i=@ud
+    [(question-id i) (spam-question +:(snag i batch))]
+  =/  args=evaluate-args:ai
+    :+  'jev-latest'
+      s+'Topics trending on news sites and search engines, for readers of a social app'
+    questions
+  =/  =action:ai  [%evaluate rid provider args]
+  =/  cards=(list card)
+    :~  [%pass /spam/[rid] %agent [our.bowl %trill-ai-client] %poke %noun !>(action)]
+        [%pass /spam/[rid] %agent [our.bowl %trill-ai-client] %watch /response/[rid]]
+    ==
+  %=  $
+    fresh    (slag batch-size `(list [@t topic:sur])`fresh)
+    n        +(n)
+    batches  [[rid (turn batch head) cards] batches]
+  ==
+::  +record: a batch's answers, onto the verdicts. an owner's word stays
+::
+++  record
+  |=  $:  verdicts=(map @t verdict:sur)
+          keys=(list @t)
+          answers=(map @t answer:ai)
+      ==
+  ^-  (map @t verdict:sur)
+  =/  i=@ud  0
+  |-
+  ?~  keys  verdicts
+  =/  a  (~(get by answers) (question-id i))
+  =?  verdicts  ?=([~ %noul *] a)
+    =/  old  (~(get by verdicts) i.keys)
+    (~(put by verdicts) i.keys [`p.u.a ?~(old ~ override.u.old)])
+  $(keys t.keys, i +(i))
+::  +prune: verdicts on topics no source has any more go, unless the
+::  owner had a word on them
+::
+++  prune
+  |=  [verdicts=(map @t verdict:sur) snapshots=(map source-id:sur snapshot:sur)]
+  ^-  (map @t verdict:sur)
+  =/  live=(set @t)
+    %-  silt
+    (turn (saved snapshots) |=(t=topic:sur (topic-key:sur title.t)))
+  %-  malt
+  %+  skim  ~(tap by verdicts)
+  |=  [k=@t v=verdict:sur]
+  |((~(has in live) k) ?=(^ override.v))
+::
+++  known-keys
+  |=  [verdicts=(map @t verdict:sur) judging=(map @tas (list @t))]
+  ^-  (set @t)
+  ::  a plain loop: silt and zing over these fuse-loop
+  =/  out=(list (list @t))  ~(val by judging)
+  =/  ks=(set @t)  ~(key by verdicts)
+  |-
+  ?~  out  ks
+  $(out t.out, ks (~(gas in ks) i.out))
 ::  +print-topics: one line per topic, for :topics %print
 ::
 ::    ~2026.9.26..05.47.04  gnews-sports  sports  Title
@@ -242,6 +355,28 @@
       errors     (~(del by errors) id.act)
     ==
   ::
+  ::  a new spam provider judges what's saved now, not at the next fetch
+      %set-spam-provider
+    =.  spam-provider  provider.act
+    ?~  provider.act  `this
+    =/  batches
+      (judge bowl u.provider.act (saved snapshots) (known-keys verdicts judging))
+    =.  judging
+      (~(gas by judging) (turn batches |=([r=@tas k=(list @t) *] [r k])))
+    =/  cards=(list (list card))  (turn batches |=([* * c=(list card)] c))
+    =/  cs=(list card)  (zing cards)
+    [cs this]
+  ::
+      %mark
+    =/  old  (~(get by verdicts) key.act)
+    =/  said=(unit @rd)  ?~(old ~ spam.u.old)
+    :-  ~
+    %=  this
+      verdicts
+        ?:  &(?=(~ spam.act) ?=(~ said))  (~(del by verdicts) key.act)
+        (~(put by verdicts) key.act [said spam.act])
+    ==
+  ::
       %set-interval
     ~|  %interval-under-a-minute
     ?>  (gte every.act ~m1)
@@ -263,6 +398,9 @@
       [%x %status ~]
     =/  fetched  (~(run by snapshots) |=(s=snapshot:sur fetched.s))
     ``noun+!>([every=every next=next errors=errors fetched=fetched])
+  ::
+      [%x %spam ~]
+    ``noun+!>([provider=spam-provider verdicts=verdicts])
   ::
       [%x %topics ~]
     ``noun+!>((saved snapshots))
@@ -321,15 +459,52 @@
     ?:  ?=(%| -.out)
       ~&  [%topics-fetch-failed id p.out]
       `this(errors (~(put by errors) id [now.bowl p.out]))
-    :-  ~
-    %=  this
-      snapshots  (~(put by snapshots) id [now.bowl p.out])
-      errors     (~(del by errors) id)
-    ==
+    =.  snapshots  (~(put by snapshots) id [now.bowl p.out])
+    =.  errors     (~(del by errors) id)
+    =.  verdicts   (prune verdicts snapshots)
+    ?~  spam-provider  `this
+    =/  batches
+      (judge bowl u.spam-provider p.out (known-keys verdicts judging))
+    =.  judging
+      (~(gas by judging) (turn batches |=([r=@tas k=(list @t) *] [r k])))
+    =/  cards=(list (list card))  (turn batches |=([* * c=(list card)] c))
+    =/  cs=(list card)  (zing cards)
+    [cs this]
   ==
 ::
 ++  on-watch  on-watch:def
 ++  on-leave  on-leave:def
-++  on-agent  on-agent:def
+::  /spam/<request id>: a batch's evaluation from %trill-ai-client. a
+::  refusal (no such provider) or a failed call drops the batch: its
+::  topics are asked again after the next fetch
+::
+++  on-agent
+  |=  [=wire =sign:agent:gall]
+  ^-  (quip card _this)
+  ?+  wire  (on-agent:def wire sign)
+      [%spam @ ~]
+    =/  rid=@tas  i.t.wire
+    ?+  -.sign  `this
+        ?(%poke-ack %watch-ack)
+      ?~  p.sign  `this
+      ~&  [%topics-spam-refused rid]
+      `this(judging (~(del by judging) rid))
+    ::
+        %fact
+      =/  keys  (~(get by judging) rid)
+      ?~  keys  `this
+      =.  judging  (~(del by judging) rid)
+      ::  facts arrive untyped: clam, not !<
+      =/  =outcome:ai  ;;(outcome:ai q.q.cage.sign)
+      ?.  ?=([%response %ok *] outcome)
+        ~&  [%topics-spam-failed rid -.outcome]
+        `this
+      =/  e  (evaluation:jev value.outcome)
+      ?~  e
+        ~&  [%topics-spam-unparsed rid]
+        `this
+      `this(verdicts (record verdicts u.keys answers.u.e))
+    ==
+  ==
 ++  on-fail   on-fail:def
 --

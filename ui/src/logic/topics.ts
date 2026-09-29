@@ -22,7 +22,17 @@ export type TrendingData = Record<string, { fetched: number; topics: TopicItem[]
 // what %topics fetches: google trends' country, the google news edition
 // (country and language), the categories to show
 export type TopicPrefs = { country: string; lang: string; categories: string[] };
-export type Trending = { prefs: TopicPrefs | null; sources: TrendingData };
+// spam: the %trill-ai-client provider judging it (null: no filter), and the
+// topics Jev flagged or the owner marked, hidden or not, for review. hidden
+// ones are already left out of sources
+export type FlaggedTopic = TopicItem & {
+  key: string;
+  spam: number | null;
+  override: boolean | null;
+  hidden: boolean;
+};
+export type TopicSpam = { provider: string | null; threshold: number; flagged: FlaggedTopic[] };
+export type Trending = { prefs: TopicPrefs | null; sources: TrendingData; spam: TopicSpam };
 
 // fired on window by the settings page after it sends new prefs, so the
 // trending card reloads
@@ -102,31 +112,17 @@ const webUrl = (x: unknown) =>
 // null when %topics isn't running (the scry answers null)
 export function parseTrending(raw: unknown): Trending | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const { prefs, sources } = raw as { prefs?: any; sources?: any };
+  const { prefs, sources, spam } = raw as { prefs?: any; sources?: any; spam?: any };
   if (!sources || typeof sources !== "object" || Array.isArray(sources)) return null;
   const data: TrendingData = {};
   for (const [id, src] of Object.entries(sources as Record<string, any>)) {
     if (!src || !Array.isArray(src.topics)) continue;
     data[id] = {
       fetched: Number(src.fetched) || 0,
-      topics: src.topics
-        .filter((t: any) => t && typeof t.title === "string" && t.title.trim() !== "")
-        .map((t: any) => ({
-          source: String(t.source ?? id),
-          title: t.title,
-          url: webUrl(t.url),
-          pic: webUrl(t.pic),
-          score: typeof t.score === "number" ? t.score : null,
-          date: Number(t.date) || 0,
-          categories: Array.isArray(t.categories) ? t.categories : [],
-          content: typeof t.content === "string" ? t.content : "",
-          links: (Array.isArray(t.links) ? t.links : []).flatMap((l: any) => {
-            const url = webUrl(l?.url);
-            if (!url || typeof l.title !== "string") return [];
-            const publisher = typeof l.publisher === "string" ? l.publisher : "";
-            return [{ title: l.title, url, publisher, pic: webUrl(l.pic) }];
-          }),
-        })),
+      topics: src.topics.flatMap((t: any) => {
+        const topic = parseTopic(t, id);
+        return topic ? [topic] : [];
+      }),
     };
   }
   const goodPrefs =
@@ -139,7 +135,48 @@ export function parseTrending(raw: unknown): Trending | null {
       ? { country: prefs.country, lang: prefs.lang, categories: prefs.categories }
       : null,
     sources: data,
+    spam: parseSpam(spam),
   };
+}
+
+function parseTopic(t: any, source: string): TopicItem | null {
+  if (!t || typeof t.title !== "string" || t.title.trim() === "") return null;
+  return {
+    source: String(t.source ?? source),
+    title: t.title,
+    url: webUrl(t.url),
+    pic: webUrl(t.pic),
+    score: typeof t.score === "number" ? t.score : null,
+    date: Number(t.date) || 0,
+    categories: Array.isArray(t.categories) ? t.categories : [],
+    content: typeof t.content === "string" ? t.content : "",
+    links: (Array.isArray(t.links) ? t.links : []).flatMap((l: any) => {
+      const url = webUrl(l?.url);
+      if (!url || typeof l.title !== "string") return [];
+      const publisher = typeof l.publisher === "string" ? l.publisher : "";
+      return [{ title: l.title, url, publisher, pic: webUrl(l.pic) }];
+    }),
+  };
+}
+
+// no spam part (an older %nostrill): no filter
+function parseSpam(x: any): TopicSpam {
+  const threshold = typeof x?.threshold === "number" ? x.threshold : 0.9;
+  if (!x || typeof x !== "object") return { provider: null, threshold, flagged: [] };
+  const flagged = (Array.isArray(x.flagged) ? x.flagged : []).flatMap((t: any) => {
+    const topic = parseTopic(t, "");
+    if (!topic || typeof t.key !== "string") return [];
+    return [
+      {
+        ...topic,
+        key: t.key,
+        spam: typeof t.spam === "number" ? t.spam : null,
+        override: typeof t.override === "boolean" ? t.override : null,
+        hidden: t.hidden === true,
+      },
+    ];
+  });
+  return { provider: typeof x.provider === "string" ? x.provider : null, threshold, flagged };
 }
 
 // take turns across kinds of source (google news, google trends, hn), and

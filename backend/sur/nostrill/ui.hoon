@@ -8,7 +8,10 @@
       [%keys ~]  ::  cycle-keys
       [%rela relay-poke]
       [%lists lists-poke]
-      [%topics =prefs:tsur]  ::  trending topics settings, for %topics
+      ::  trending topics settings and spam marks, for %topics: only
+      ::  what +action:de:json-topics decodes (%set-prefs, %set-spam-provider,
+      ::  %mark) gets here
+      [%topics act=action:tsur]
       :: [%notif @da]  :: dismiss notification
   ==
 ::  bookmarks, mutes and reports: private lists, except that reporting

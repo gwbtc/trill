@@ -328,7 +328,7 @@
     post+ui-post
     rela+ui-relay
     lists+ui-lists
-    topics+prefs:de:topicsj
+    topics+action:de:topicsj
   ==
 ++  ui-lists
   %-  of  :~

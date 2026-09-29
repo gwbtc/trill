@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import { Check, TrendingUp } from "lucide-react";
 import useLocalState from "@/state/state";
 import { unwrap } from "@/logic/result";
+import { parseProviders, type AiProvider } from "@/logic/aiClient";
 import {
   CATEGORY_OPTIONS,
   COUNTRY_OPTIONS,
@@ -19,15 +20,38 @@ export default function TopicsSettings() {
   const [saved, setSaved] = useState<TopicPrefs | null>(null);
   const [draft, setDraft] = useState<TopicPrefs | null>(null);
   const [saving, setSaving] = useState(false);
+  // the spam filter: a %trill-ai-client provider, or none
+  const [spamProvider, setSpamProvider] = useState<string | null>(null);
+  const [providers, setProviders] = useState<AiProvider[]>([]);
 
   useEffect(() => {
     if (!api) return;
     api.scryTopics().then((res) => {
-      const prefs = "ok" in res ? (parseTrending(res.ok)?.prefs ?? null) : null;
+      const trending = "ok" in res ? parseTrending(res.ok) : null;
+      const prefs = trending?.prefs ?? null;
       setSaved(prefs);
       setDraft(prefs);
+      setSpamProvider(trending?.spam.provider ?? null);
+    });
+    // fails when %trill-ai-client isn't running: no providers to offer
+    api.scryAiProviders().then((res) => {
+      if ("ok" in res) setProviders(parseProviders(res.ok));
     });
   }, [api]);
+
+  async function chooseSpamProvider(next: string | null) {
+    if (!api) return;
+    const before = spamProvider;
+    setSpamProvider(next);
+    const res = await api.setTopicSpamProvider(next);
+    if ("error" in res) {
+      setSpamProvider(before);
+      toast.error("Couldn't change the spam filter");
+      return;
+    }
+    window.dispatchEvent(new Event(TOPIC_PREFS_EVENT));
+    toast.success(next ? `Spam filtered by ${next}` : "Spam filter off");
+  }
 
   if (!draft || !saved) return null;
   const dirty =
@@ -127,6 +151,32 @@ export default function TopicsSettings() {
               </button>
             );
           })}
+        </div>
+        <div className="topics-settings-row topics-settings-spam">
+          <label>
+            Spam filter
+            <select
+              className="topics-settings-select"
+              value={spamProvider ?? ""}
+              onChange={(e) => chooseSpamProvider(e.target.value || null)}
+            >
+              <option value="">Off</option>
+              {/* a provider set before it was deleted still shows */}
+              {spamProvider && !providers.some((p) => p.name === spamProvider) && (
+                <option value={spamProvider}>{spamProvider} (missing)</option>
+              )}
+              {providers.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="topics-settings-note">
+            Jev, through one of your AI providers, rates each topic; those it's 90% sure are
+            spam are hidden, and listed under the card to check.
+            {providers.length === 0 && " Add a provider under AI providers first."}
+          </p>
         </div>
         <div className="topics-settings-actions">
           <button

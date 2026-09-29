@@ -9,13 +9,24 @@
 ::  +trending: the prefs, and each source's leading topics in the
 ::  source's own order, with when the source was last fetched
 ::
+::    spam: who judges it, and the topics Jev flagged or the owner had
+::    a word on, hidden or not, for the card's review list
+::
 ++  trending
   |=  $:  =prefs:tsur
           srcs=(list [id=source-id:tsur fetched=@da topics=(list topic:tsur)])
+          provider=(unit @tas)
+          flagged=(list [key=@t t=topic:tsur v=verdict:tsur])
       ==
   ^-  json
   %-  pairs
   :~  prefs+(en-prefs prefs)
+    :-  %spam
+    %-  pairs
+    :~  provider+?~(provider ~ s+u.provider)
+        threshold+(real spam-threshold:tsur)
+        flagged+a+(turn flagged flagged-topic)
+    ==
     :-  %sources
     %-  pairs
     %+  turn  srcs
@@ -55,6 +66,22 @@
       links+a+(turn (scag 5 links.t) link)
   ==
 ::
+++  flagged-topic
+  |=  [key=@t t=topic:tsur v=verdict:tsur]
+  ^-  json
+  =/  j  (topic t)
+  ?>  ?=([%o *] j)
+  :-  %o
+  %-  ~(gas by p.j)
+  :~  key+s+key
+      spam+?~(spam.v ~ (real u.spam.v))
+      override+?~(override.v ~ b+u.override.v)
+      hidden+b+(hidden:tsur v)
+  ==
+::  +real: '.~0.97' is how @rd prints
+::
+++  real  |=(r=@rd `json`n+(rsh [3 2] (scot %rd r)))
+::
 ++  link
   |=  l=link:tsur
   ^-  json
@@ -65,11 +92,20 @@
       pic+?~(pic.l ~ s+u.pic.l)
   ==
 --
-::  +de: the settings page's prefs. %topics checks the codes themselves
+::  +de: what the settings page and the trending card may ask of %topics,
+::  forwarded by %nostrill. %topics checks the codes themselves
 ::
 ++  de
 =,  dejs-soft:format
 |%
+++  action
+  ^-  $-(json (unit action:tsur))
+  %-  of
+  :~  set-prefs+prefs
+      set-spam-provider+(ot ~[provider+(mu (su sym))])
+      mark+(ot ~[key+so spam+(mu bo)])
+  ==
+::
 ++  prefs
   ^-  $-(json (unit prefs:tsur))
   %-  ot

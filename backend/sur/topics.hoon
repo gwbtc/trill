@@ -82,6 +82,33 @@
       lang=@t
       cats=(set category)
   ==
+::  +verdict: whether a topic is spam, by its +topic-key
+::
+::    spam: Jev's yes, 0 to 1, from the spam provider (%trill-ai-client);
+::    ~ until it answers
+::    override: what the ship's owner said, which wins over Jev's
+::
++$  verdict
+  $:  spam=(unit @rd)
+      override=(unit ?)
+  ==
+::  +spam-threshold: from this yes on, a topic is hidden as spam
+::
+++  spam-threshold  .~0.9
+::
+++  hidden
+  |=  v=verdict
+  ^-  ?
+  ?^  override.v  u.override.v
+  ?~  spam.v  |
+  (gte:rd u.spam.v spam-threshold)
+::  +topic-key: the same story from any source, or on any day, is judged
+::  once
+::
+++  topic-key
+  |=  title=@t
+  ^-  @t
+  (crip (cass (trip title)))
 ::  +action: pokes, %noun mark, from our own ship only
 ::
 +$  action
@@ -90,5 +117,10 @@
       [%set-interval every=@dr]
       [%set-prefs =prefs]                 ::  replaces the sources
       [%fetch ~]                          ::  fetch every enabled source now
+      ::  which %trill-ai-client provider judges spam; ~: none, and
+      ::  nothing is hidden
+      [%set-spam-provider provider=(unit @tas)]
+      ::  the owner's word on a topic: spam or not; ~ leaves it to Jev
+      [%mark key=@t spam=(unit ?)]
   ==
 --

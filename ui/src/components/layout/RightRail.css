@@ -412,3 +412,21 @@
 .rail-loading span:first-child {
   width: 45%;
 }
+
+/* the way into the spam review (components/topics/SpamReview.tsx) */
+.rail-trending-spam {
+  display: block;
+  margin: 2px 17px 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted, #8a929b);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.rail-trending-spam:hover {
+  color: var(--color-primary, #4f46e5);
+  text-decoration: underline;
+}
