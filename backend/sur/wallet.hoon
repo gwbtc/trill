@@ -131,6 +131,7 @@
       [%restore mint=@t]                        ::  what our seed can reclaim
       [%set-phrase words=@t]                    ::  an empty wallet only
       [%sync on=?]                              ::  NIP-60 mirroring
+      [%signed ref=@ud ids=(list @ux)]          ::  %nostrill's reply
   ==
 ::  +token: ecash to hand over, from one mint in one unit (NUT-00 V3/V4)
 ::

@@ -10,7 +10,8 @@
     scri,
     constants,
     harklib=hark,
-    ws=websockets
+    ws=websockets,
+    nip44
 |_  [=state:sur =bowl:gall]
 +*  cardslib  ~(. cards:lib bowl)
 +$  card  card:agent:gall
@@ -531,6 +532,34 @@
   =.  nostr-feeds.state
     (~(put by nostr-feeds.state) name (~(put by osfs) url.relay sourced-feed))
   $(wids t.wids, css (weld css -.d))
+::  +sign-drafts: sign (and seal) events for one of our own agents,
+::  publish them, and tell it their ids. only an agent on this ship may
+::  ask: gall gives a local agent's pokes the provenance /gall/<agent>
+::
+++  sign-drafts
+  |=  [ref=@ud drafts=(list draft:comms)]
+  ^-  (list card)
+  ?>  =(our src):bowl
+  ?.  ?=([%gall @ ~] sap.bowl)  ~|(%sign-for-agents-only !!)
+  =/  ks=keys:nsur  i.keys.state
+  =/  ck  (conversation-key:nip44 priv.ks pub.ks)
+  =/  at=@ud  (div (sub now.bowl ~1970.1.1) ~s1)
+  =|  evs=(list event:nsur)
+  =/  n=@ud  0
+  |-
+  ?^  drafts
+    =/  d=draft:comms  i.drafts
+    =/  sed  (shas n eny.bowl)
+    =/  content=@t
+      ?.  seal.d  content.d
+      (encrypt:nip44 ck (end [3 32] (shas %nonce sed)) content.d)
+    =/  ev  (finalize-event:evlib ks sed [pub.ks at kind.d tags.d content])
+    $(drafts t.drafts, n +(n), evs [ev evs])
+  =.  evs  (flop evs)
+  %+  snoc  (publish evs)
+  :*  %pass  /signed  %agent  [our.bowl i.t.sap.bowl]
+      %poke  %noun  !>([%signed ref (turn evs |=(e=event:nsur id.e))])
+  ==
 ::  +publish: signed events to every relay with a live socket. one that's
 ::  down misses them; whoever sent them can send them again
 ::

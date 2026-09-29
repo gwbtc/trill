@@ -30,10 +30,16 @@ $:  p=@p
       [%eng engagement]
       [%ted wid=@ud ws-proxy]
       [%dbug *]
-      ::  from our own agents (%trill-wallet): signed events to send to
-      ::  every connected relay
-      [%publish events=(list event:nsur)]
+      ::  from our own agents (%trill-wallet): events for us to sign
+      ::  with our key and send to every connected relay. we poke the
+      ::  asking agent back with [%signed ref ids], ids in draft order.
+      ::  the key never leaves us
+      [%sign ref=@ud drafts=(list draft)]
   ==
+::  +draft: an event to sign. seal: NIP-44 encrypt the content to our
+::  own key first
+::
++$  draft  [kind=@ud tags=(list tag:nsur) content=@t seal=?]
 +$  ws-proxy
   $%  [%msg msg=websocket-message:eyre]
       [%disconnect ~]

@@ -5,11 +5,11 @@
 ::    kind 7376   history: a change in balance and the token events behind it
 ::    kind 5      deleting token events we've replaced (NIP-09, k=7375)
 ::
-::    contents are NIP-44 encrypted to our own key: +conversation-key of
-::    our private and public key. every event needs its own nonce
+::    %nostrill seals (NIP-44, to our own key) and signs them: the nostr
+::    key stays there. this builds the plaintext
 ::
 /-  sur=wallet, nostr
-/+  cw=cashu-wire, nip44, nostr-keys
+/+  cw=cashu-wire
 |%
 ::  +per-event: proofs in one token event. NIP-44 takes 64 KiB of text;
 ::  a proof with its DLEQ is some 450 bytes
@@ -17,28 +17,6 @@
 ++  per-event  50
 ::
 ++  id-hex  |=(id=@ux `@t`(crip ((x-co:co 64) id)))
-++  unix  |=(d=@da `@ud`(div (sub d ~1970.1.1) ~s1))
-::  +sign: an event, hashed and signed
-::
-++  sign
-  |=  [ks=keys:nostr eny=@ now=@da kind=@ud tags=(list tag:nostr) content=@t]
-  ^-  event:nostr
-  =/  raw=raw-event:nostr  [pub.ks (unix now) kind tags content]
-  =/  id  (hash-event:nostr-keys raw)
-  :*  id
-      pub.ks
-      created-at.raw
-      kind
-      tags
-      content
-      (sign-event:nostr-keys priv.ks id eny)
-  ==
-::  +seal: text encrypted to ourselves, with the nth nonce from eny
-::
-++  seal
-  |=  [ck=@ eny=@ n=@ud text=@t]
-  ^-  @t
-  (encrypt:nip44 ck (end [3 32] (shas n eny)) text)
 ::  +proof: a proof as cashu libraries keep it, DLEQ included
 ::
 ++  proof

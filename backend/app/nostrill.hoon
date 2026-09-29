@@ -156,9 +156,8 @@
       =^  cs  state  (handle:dbg +.pok)
       [cs this]
     ?:  ?=(%ted -.pok)  (ws-proxy +.pok)
-    ?:  ?=(%publish -.pok)
-      ?>  =(our src):bowl
-      [(publish:relay events.pok) this]
+    ?:  ?=(%sign -.pok)
+      [(sign-drafts:relay +.pok) this]
     =^  cs  state  (handle-eng:posts +.pok)
     [cs this]
   ::  +on-ui: JSON pokes from our own frontend
@@ -285,9 +284,6 @@
     ::
     [%x %j %gwid patp=@ ~]  (sgwid:scry patp.pole)
     [%x %j %patp gwid=@ ~]  (patp:scry gwid.pole)
-    ::  our current nostr keys, for our own agents that sign (the
-    ::  wallet's NIP-60 events). /dbug/state shows them already
-    [%x %keys ~]  ``noun+!>(i.keys.state)
   ==
 ::
 ++  on-agent

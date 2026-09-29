@@ -22,8 +22,9 @@
 ::    published whenever they change, as new token events that replace
 ::    (and delete) the last ones, with a history event for the change in
 ::    balance; the wallet event when the mints change. %nostrill has the
-::    nostr key and the relays: we sign with the one and it sends to the
-::    other. the ship stays the source of truth
+::    nostr key and the relays: it seals, signs and sends what we draft,
+::    and pokes us back the event ids ([%signed ref ids]). the key never
+::    leaves it. the ship stays the source of truth
 ::
 ::    scries:
 ::      /x/wallet  json: balances, mints, operations, sent tokens, the log
@@ -31,8 +32,8 @@
 ::
 ::    it imports the tests only so that |commit type-checks them
 ::
-/-  sur=wallet, nostr
-/+  default-agent, dbug, cashu, cw=cashu-wire, cs=cashu-seed, nip44, nip60,
+/-  sur=wallet, comms=nostrill-comms
+/+  default-agent, dbug, cashu, cw=cashu-wire, cs=cashu-seed, nip60,
     bip39-english
 /=  t-cashu  /tests/cashu
 /=  t-wire  /tests/cashu-wire
@@ -56,6 +57,20 @@
       quiet=?                                   ::  sync off
       tokens=(map @t (list @ux))                ::  live 7375s, by mint
       listed=(set @t)                           ::  mints in the last 17375
+      synced=(map @t (list proof:sur))          ::  proofs the relays have
+      round=(unit round)                        ::  a sync %nostrill has
+  ==
+::  +round: a sync out at %nostrill for signing, one at a time. first
+::  the wallet event, token events and deletions; then, with their ids,
+::  the history. what it replaces, to roll back if %nostrill refuses
+::
++$  round
+  $:  ref=@ud
+      step=?(%tokens %history)
+      history=?
+      wallet=?
+      mints=(list [url=@t gone=(list @ux) made=@ud was=@ud has=@ud])
+      old=[synced=(map @t (list proof:sur)) listed=(set @t)]
   ==
 ::  +poll-every: how often a deposit's quote is checked
 ::
@@ -95,9 +110,8 @@
   ^-  (quip card _this)
   ?>  =(our src):bowl
   ?.  ?=(%noun mark)  (on-poke:def mark vase)
-  =/  before  proofs
   =^  cards  state  (act:hc ;;(action:sur q.vase))
-  =^  more  state  (mirror:hc before &)
+  =^  more  state  (mirror:hc &)
   [(weld cards more) this]
 ::
 ++  on-arvo
@@ -112,9 +126,8 @@
     ?.  ?=([%iris %http-response *] sign-arvo)  `this
     =/  res=client-response:iris  +>.sign-arvo
     ?:  ?=(%progress -.res)  `this
-    =/  before  proofs
     =^  cards  state  (heard:hc id t.t.wire res)
-    =^  more  state  (mirror:hc before &)
+    =^  more  state  (mirror:hc &)
     [(weld cards more) this]
   ==
 ::
@@ -135,6 +148,10 @@
   ?.  ?=([%nostr ~] wire)  (on-agent:def wire sign)
   ?.  ?=(%poke-ack -.sign)  `this
   ?~  p.sign  `this
+  ::  refused: the relays didn't get this round. roll back to what
+  ::  they have, so the next mirror sends it again
+  =?  state  ?=(^ round)
+    state(round ~, synced synced.old.u.round, listed listed.old.u.round)
   =^  cards  state  (note:hc '%nostrill refused our NIP-60 events')
   [cards this]
 ++  on-fail   on-fail:def
@@ -258,84 +275,99 @@
     `state(phrase text, seed (seed:cs text), counters ~, listed ~)
   ::
       %sync
-    ?.  on.a  `state(quiet &)
-    ::  +on-poke mirrors after this: publish everything again, as if
-    ::  from nothing, and without history
-    =.  quiet  |
-    =^  cards  state  (mirror(listed ~) ~ |)
-    ::  +on-poke's mirror then finds nothing changed
-    [cards state]
+    ?.  on.a  `state(quiet &, round ~)
+    ::  publish everything again, as if from nothing, and without
+    ::  history. +on-poke's mirror then finds a round out
+    (mirror(quiet |, round ~, synced ~, listed ~) |)
+  ::
+      %signed
+    ?.  =(/gall/nostrill sap.bowl)  ~|(%signed-by-nostrill-only !!)
+    ?~  round  `state
+    ?.  =(ref.a ref.u.round)  `state
+    ?:  ?=(%history step.u.round)
+      ::  done: +on-poke's mirror sends what changed meanwhile
+      `state(round ~)
+    (signed u.round ids.a)
   ==
-::  +mirror: NIP-60. publish what changed since before: each mint whose
-::  proofs did, and the wallet event if our mints did. history too, if
-::  asked and the balance moved
+::  +mirror: NIP-60. send %nostrill what changed since the relays last
+::  heard: each mint whose proofs did, and the wallet event if our mints
+::  did. one round at a time: what changes meanwhile goes in the next.
+::  history too, if asked and the balance moved
 ::
 ++  mirror
-  |=  [before=(map @t (list proof:sur)) history=?]
+  |=  history=?
   ^-  (quip card _state)
   ?:  quiet  `state
-  ?:  &(=(before proofs) =(listed ~(key by mints)))  `state
+  ?^  round  `state
+  ?:  &(=(synced proofs) =(listed ~(key by mints)))  `state
   ?.  .^(? %gu /(scot %p our.bowl)/nostrill/(scot %da now.bowl)/$)
     (note 'not mirrored to nostr: %nostrill isn\'t running')
-  ::  whatever goes wrong here, what the wallet did stands
-  =/  res  (mule |.((publish before history)))
-  ?:  ?=(%& -.res)  p.res
-  %-  (slog [leaf+"trill-wallet: mirroring failed" p.res])
-  (note 'not mirrored to nostr: it crashed')
-::
-++  publish
-  |=  [before=(map @t (list proof:sur)) history=?]
-  ^-  (quip card _state)
-  =/  ks  .^(keys:nostr %gx /(scot %p our.bowl)/nostrill/(scot %da now.bowl)/keys/noun)
-  =/  ck  (conversation-key:nip44 priv.ks pub.ks)
-  =|  evs=(list event:nostr)
-  =/  n=@ud  0
-  ::  the wallet event
-  =^  evs  n
-    ?:  =(listed ~(key by mints))  [evs n]
+  =/  ref  next-op
+  =.  next-op  +(next-op)
+  =/  wallet=?  !=(listed ~(key by mints))
+  =|  drafts=(list draft:comms)
+  =?  drafts  wallet
     =/  text  (wallet:nip60 (p2pk-key:cs seed 0) ~(tap in ~(key by mints)))
-    :_  +(n)
-    :_  evs
-    (sign:nip60 ks (shas n eny.bowl) now.bowl 17.375 ~ (seal:nip60 ck eny.bowl n text))
-  =.  listed  ~(key by mints)
-  =/  urls=(list @t)  ~(tap in (~(uni in ~(key by before)) ~(key by proofs)))
+    [[17.375 ~ text &] drafts]
+  =|  done=(list [url=@t gone=(list @ux) made=@ud was=@ud has=@ud])
+  =/  urls=(list @t)  ~(tap in (~(uni in ~(key by synced)) ~(key by proofs)))
   |-
-  ?~  urls
-    ?~  evs  `state
-    :_  state
-    :~  :*  %pass  /nostr  %agent  [our.bowl %nostrill]
-            %poke  %noun  !>([%publish (flop evs)])
-    ==  ==
-  =/  url  i.urls
-  =/  old=(list proof:sur)  (~(gut by before) url ~)
-  =/  new=(list proof:sur)  (~(gut by proofs) url ~)
-  ?:  =(old new)  $(urls t.urls)
-  =/  gone=(list @ux)  (~(gut by tokens) url ~)
-  ::  the new token events, per-event proofs each
-  =|  made=(list @ux)
-  =/  chunks  (chunk new)
+  ?^  urls
+    =/  url  i.urls
+    =/  old=(list proof:sur)  (~(gut by synced) url ~)
+    =/  new=(list proof:sur)  (~(gut by proofs) url ~)
+    ?:  =(old new)  $(urls t.urls)
+    =/  gone=(list @ux)  (~(gut by tokens) url ~)
+    =/  chunks  (chunk new)
+    =/  made=(list draft:comms)
+      %+  turn  chunks
+      |=  ps=(list proof:sur)
+      ^-  draft:comms
+      [7.375 ~ (token:nip60 url 'sat' ps gone) &]
+    =?  made  ?=(^ gone)  (snoc made [5 (deletion:nip60 gone) '' |])
+    %=  $
+      urls    t.urls
+      drafts  (weld (flop made) drafts)
+      done    [[url gone (lent chunks) (sum old) (sum new)] done]
+    ==
+  ::  ^round: the mold, not the state's face
+  =/  out=^round  [ref %tokens history wallet (flop done) synced listed]
+  :_  state(round `out, synced proofs, listed ~(key by mints))
+  :~  :*  %pass  /nostr  %agent  [our.bowl %nostrill]
+          %poke  %noun  !>([%sign ref (flop drafts)])
+  ==  ==
+::  +signed: round one's ids, in the order we drafted: the wallet event's,
+::  then each mint's token events and its deletion. note the token events
+::  that are live now, and send the history
+::
+++  signed
+  |=  [r=^round ids=(list @ux)]
+  ^-  (quip card _state)
+  =?  ids  &(wallet.r ?=(^ ids))  t.ids
+  =|  drafts=(list draft:comms)
+  =/  ms  mints.r
   |-
-  ?^  chunks
-    =/  ev
-      %:  sign:nip60  ks  (shas n eny.bowl)  now.bowl  7.375  ~
-        (seal:nip60 ck eny.bowl n (token:nip60 url 'sat' i.chunks gone))
-      ==
-    $(chunks t.chunks, n +(n), evs [ev evs], made [id.ev made])
-  =.  made  (flop made)
-  =.  tokens  ?~(made (~(del by tokens) url) (~(put by tokens) url made))
-  ::  delete the ones they replace
-  =?  evs  ?=(^ gone)
-    [(sign:nip60 ks (shas n eny.bowl) now.bowl 5 (deletion:nip60 gone) '') evs]
-  =.  n  +(n)
-  ::  and what happened
-  =/  was  (sum old)
-  =/  has  (sum new)
-  =?  evs  &(history !=(was has))
-    =/  text
-      ?:  (gth has was)  (history:nip60 & (sub has was) 'sat' made gone)
-      (history:nip60 | (sub was has) 'sat' made gone)
-    [(sign:nip60 ks (shas n eny.bowl) now.bowl 7.376 ~ (seal:nip60 ck eny.bowl n text)) evs]
-  ^$(urls t.urls, n +(n))
+  ?^  ms
+    =/  m  i.ms
+    =/  made=(list @ux)  (scag made.m ids)
+    =.  ids  (slag (add made.m ?~(gone.m 0 1)) ids)
+    =.  tokens
+      ?~  made  (~(del by tokens) url.m)
+      (~(put by tokens) url.m made)
+    =?  drafts  &(history.r !=(was.m has.m))
+      =/  text
+        ?:  (gth has.m was.m)
+          (history:nip60 & (sub has.m was.m) 'sat' made gone.m)
+        (history:nip60 | (sub was.m has.m) 'sat' made gone.m)
+      [[7.376 ~ text &] drafts]
+    $(ms t.ms)
+  ?~  drafts  `state(round ~)
+  =/  ref  next-op
+  =.  next-op  +(next-op)
+  :_  state(round `r(ref ref, step %history))
+  :~  :*  %pass  /nostr  %agent  [our.bowl %nostrill]
+          %poke  %noun  !>([%sign ref (flop drafts)])
+  ==  ==
 ::  +chunk: proofs by the token event, per-event:nip60 in each
 ::
 ++  chunk
@@ -1044,6 +1076,7 @@
       :-  %nostr
       %-  pairs
       :~  sync+b+!quiet
+          syncing+b+?=(^ round)
           :-  %tokens
           (numb (roll ~(val by tokens) |=([l=(list @ux) k=@ud] (add k (lent l)))))
       ==
