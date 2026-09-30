@@ -1,1 +1,0 @@
-Known gap (not a bug): a ship re-sends its profile when its own follows change, not when it gains a follower. Other followers' copies can show a slightly out-of-date follower count. Suggestions aren't affected.
