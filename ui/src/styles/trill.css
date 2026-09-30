@@ -141,8 +141,6 @@
     }
 
     /* hide old nav/chevron */
-    .nav { display: none; }
-    .chevron { display: none; }
   }
 
   .body {
@@ -195,8 +193,17 @@
       margin-block-end: 1em;
     }
 
+    /* no side margins: the surrounding text keeps its own spaces, and a
+       margin indented links that start a line */
     .body-text a {
-      margin: 0 0.5ch 0 0.5ch;
+      text-decoration: underline;
+    }
+
+    .body-text a.nostr-mention {
+      text-decoration: none;
+    }
+
+    .body-text a.nostr-mention:hover {
       text-decoration: underline;
     }
 
@@ -234,12 +241,6 @@
 
 
 
-  .nick {
-    font-weight: 700;
-  }
-
-
-
 }
 
 .trill-post .post-footer footer {
@@ -269,10 +270,6 @@
 .trill-post .post-footer .zap-action {
   flex: 1 1 0;
   min-width: 0;
-}
-
-.trill-post .post-footer .trash-action {
-  flex: 0 0 30px;
 }
 
 .trill-post .post-footer .icon-count {
@@ -539,11 +536,6 @@
   background: color-mix(in srgb, var(--color-primary, #543fd7) 18%, var(--color-background, #fff));
 }
 
-.trill-reply-thread {
-  border-top: 1px solid var(--text-color);
-  margin-top: 1rem;
-}
-
 #thread-root-post.thread-root-card {
   padding: 18px 20px 0;
   background: var(--color-background, #fff);
@@ -646,6 +638,23 @@
   font-size: 19px;
   line-height: 1.55;
   letter-spacing: 0;
+}
+
+/* the thread's root post isn't a .trill-post, so it gets none of the feed's
+   nested post styles: quotes and links need their own */
+.thread-root-content blockquote {
+  margin: 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--color-border, #dfe3e7);
+}
+
+.thread-root-content blockquote span {
+  color: var(--color-text-secondary, #566069);
+}
+
+.thread-root-content .body-text a:not(.nostr-mention) {
+  color: var(--color-primary, #543fd7);
+  text-decoration: underline;
 }
 
 .thread-root-meta {
@@ -983,10 +992,16 @@
   text-decoration: underline;
 }
 
-.bad-quote {
-  border: 1px solid var(--text-color);
-  padding: 7px;
-  border-radius: 0.5rem;
+/* nostr references in note text (components/post/NostrText.tsx). inside
+   posts, the nested .body-text rules above take over the underline */
+a.nostr-mention {
+  color: var(--color-primary, #543fd7);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+a.nostr-mention:hover {
+  text-decoration: underline;
 }
 
 /* post-cards */
@@ -1097,6 +1112,24 @@
   img:hover {
     border: 1px solid var(--text-color);
   }
+
+  .react-remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 4rem;
+    height: 4rem;
+    cursor: pointer;
+    border: 1px dashed var(--color-text-muted, currentColor);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--color-text-muted, currentColor);
+  }
+
+  .react-remove:hover {
+    border-style: solid;
+    color: var(--text-color);
+  }
 }
 
 #stats-modal .trill-post {
@@ -1150,11 +1183,6 @@
 .youtube-thumbnail {
   width: 70%;
   margin: 0.7rem auto;
-}
-
-.rumor-quote img {
-  width: 50px;
-  margin-right: 1rem;
 }
 
 #trill-thread {

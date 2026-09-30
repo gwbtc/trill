@@ -1,13 +1,15 @@
 import type { UserProfile } from "@/types/nostrill";
 import type { UrbitContacts } from "@/types/urbit";
 
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import {
   AutocompleteList,
   useAutocompleteCandidates,
   type AutoCompleteCandidate,
 } from "./Autocomplete";
 import ConfirmationDialog from "../modals/ConfirmationDialog";
+import ComposerLayer from "./ComposerLayer";
+import { restoreComposerCaret, saveComposerCaret } from "./composerDom";
 import useLocalState from "@/state/state";
 import toast from "react-hot-toast";
 import { uploadToS3 } from "@/logic/s3";
@@ -39,10 +41,29 @@ export default function ({
     start: number;
   } | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
-  const { s3, setModal } = useLocalState((s) => ({
-    s3: s.s3,
-    setModal: s.setModal,
-  }));
+  const { s3 } = useLocalState((s) => ({ s3: s.s3 }));
+  // a pasted image waiting for upload confirmation
+  const [pendingPaste, setPendingPaste] = useState<{
+    file: File;
+    previewUrl: string;
+    caret: Range | null;
+  } | null>(null);
+  const cancelPaste = useCallback(() => {
+    setPendingPaste((p) => {
+      if (p) URL.revokeObjectURL(p.previewUrl);
+      return null;
+    });
+  }, []);
+  async function confirmPaste() {
+    if (!pendingPaste) return;
+    const { file, previewUrl, caret } = pendingPaste;
+    setPendingPaste(null);
+    URL.revokeObjectURL(previewUrl);
+    if (!inputRef.current) return;
+    // the dialog took focus; put the caret back where the paste happened
+    restoreComposerCaret(inputRef.current, caret);
+    await uploadPastedImage(file);
+  }
 
   // Track last known cursor index to restore if needed, though mostly we rely on live selection
   const cursorRef = useRef<number>(0);
@@ -155,28 +176,11 @@ export default function ({
           toast.error("S3 not configured. Cannot upload image.");
           return;
         }
-        const blobUrl = URL.createObjectURL(file);
-        setModal(
-          <ConfirmationDialog
-            message={`Do you want to upload ${file.name} to your S3 bucket?`}
-            onConfirm={async () => {
-              setModal(null);
-              await uploadPastedImage(file);
-            }}
-            onCancel={() => setModal(null)}
-          >
-            <img
-              style={{
-                border: "2px solid var(--text-color)",
-                maxWidth: "80%",
-                maxHeight: "300px",
-                display: "block",
-                margin: "1rem auto",
-              }}
-              src={blobUrl}
-            ></img>
-          </ConfirmationDialog>,
-        );
+        setPendingPaste({
+          file,
+          previewUrl: URL.createObjectURL(file),
+          caret: saveComposerCaret(inputRef.current),
+        });
         return;
       }
     }
@@ -251,6 +255,27 @@ export default function ({
           selectedIndex={mentionIndex}
           onSelect={selectUser}
         />
+      )}
+
+      {pendingPaste && (
+        <ComposerLayer onClose={cancelPaste}>
+          <ConfirmationDialog
+            message={`Do you want to upload ${pendingPaste.file.name} to your S3 bucket?`}
+            onConfirm={confirmPaste}
+            onCancel={cancelPaste}
+          >
+            <img
+              style={{
+                border: "2px solid var(--text-color)",
+                maxWidth: "80%",
+                maxHeight: "300px",
+                display: "block",
+                margin: "1rem auto",
+              }}
+              src={pendingPaste.previewUrl}
+            ></img>
+          </ConfirmationDialog>
+        </ComposerLayer>
       )}
     </>
   );

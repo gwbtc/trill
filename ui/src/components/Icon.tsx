@@ -19,6 +19,7 @@ import replySvg from "@/assets/icons/reply.svg?raw";
 import repostSvg from "@/assets/icons/rt.svg?raw";
 import rumorsSvg from "@/assets/icons/rumors.svg?raw";
 import settingsSvg from "@/assets/icons/settings.svg?raw";
+import flagSvg from "@/assets/icons/flag.svg?raw";
 import trashSvg from "@/assets/icons/trash.svg?raw";
 import youtubeSvg from "@/assets/icons/youtube.svg?raw";
 import { colorToCSSVar, type ThemeColorsType } from "@/styles/ThemeProvider";
@@ -29,6 +30,7 @@ const icons = {
   copy: copySvg,
   crow: crowSvg,
   emoji: emojiSvg,
+  flag: flagSvg,
   follow: followSvg,
   groundwire: groundwireSvg,
   home: homeSvg,

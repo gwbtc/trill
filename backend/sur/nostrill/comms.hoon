@@ -30,7 +30,24 @@ $:  p=@p
       [%eng engagement]
       [%ted wid=@ud ws-proxy]
       [%dbug *]
+      ::  from our own agents (%trill-wallet): events for us to sign
+      ::  with our key and send to every connected relay. we poke the
+      ::  asking agent back with [%signed ref ids], ids in draft order.
+      ::  the key never leaves us. to: more relays to send them to, one
+      ::  off, besides those we're connected to
+      [%sign ref=@ud drafts=(list draft) to=(list @t)]
+      ::  from our own agents: an ongoing subscription on every connected
+      ::  relay, replacing the agent's last one of this name. what it
+      ::  finds is poked to the agent as [%nostr-event name event]
+      [%watch name=@t filters=(list filter:nsur)]
+      ::  the same, once: closed at each relay's EOSE, which is poked on
+      ::  as [%nostr-eose name]
+      [%fetch name=@t filters=(list filter:nsur)]
   ==
+::  +draft: an event to sign. seal: NIP-44 encrypt the content to our
+::  own key first
+::
++$  draft  [kind=@ud tags=(list tag:nsur) content=@t seal=?]
 +$  ws-proxy
   $%  [%msg msg=websocket-message:eyre]
       [%disconnect ~]
@@ -42,6 +59,8 @@ $:  p=@p
       [%del-reply parent=upid child=@da]
       [%rp src=upid target=@da]
       [%reaction pid=upid reaction=@t]
+      [%del-reaction pid=upid]
+      [%report pid=upid reason=@t]
       [%mention =post:tp]
   ==
 ::  Data requests is done through subscriptions.

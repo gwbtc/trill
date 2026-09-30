@@ -1,67 +1,57 @@
 import { NRelay1 } from "@nostrify/nostrify";
-import useLocalState from "@/state/state";
+import useLocalState, { useStore } from "@/state/state";
 import spinner from "@/assets/triangles.svg";
 import { useEffect, useRef, useState } from "react";
 import {NostrFeed} from "@/components/nostr/Feed";
 import Icon from "@/components/Icon";
-import {  RefreshCw } from "lucide-react";
-import { addEventToFc, eventsToFc, eventToProfile } from "@/logic/nostrill";
+import { addEventToFc } from "@/logic/nostrill";
 import { GLOBAL_RELAY_URL } from "@/logic/constants";
 
 export default function Global() {
-  const { addProfile, setGlobal, globalFeed } = useLocalState((s) => ({
-    addProfile: s.addProfile,
+  const { setGlobal, globalFeed } = useLocalState((s) => ({
     setGlobal: s.setGlobal,
     globalFeed: s.globalFeed,
   }));
 
   const relayRef = useRef<NRelay1>(undefined);
+  const reqRef = useRef<AbortController>(undefined);
   useEffect(() => {
     const r = new NRelay1(GLOBAL_RELAY_URL);
     relayRef.current = r;
     fetchGlobal();
+    return () => {
+      reqRef.current?.abort();
+      r.close();
+      relayRef.current = undefined;
+    };
   }, []);
 
   const fetchGlobal = async () => {
-    setIsLoading(true);
-    // TODO
-    if (!relayRef.current) return;
     const relay = relayRef.current;
-    const req = relay.req([{ kinds: [667] }]);
-    for await (const msg of req) {
-      // console.log("relay msg", msg);
-      if (msg[0] === "EVENT") {
-        const event = msg[2];
-        const wevent = { ...event, relays: [GLOBAL_RELAY_URL] };
-        const nf = addEventToFc(wevent, globalFeed);
-        setGlobal(nf);
+    if (!relay) return;
+    // one live subscription at a time: a resync replaces the previous one
+    reqRef.current?.abort();
+    const ctrl = new AbortController();
+    reqRef.current = ctrl;
+    setIsLoading(true);
+    try {
+      const req = relay.req([{ kinds: [667] }], { signal: ctrl.signal });
+      for await (const msg of req) {
+        if (msg[0] === "EVENT") {
+          const event = msg[2];
+          const wevent = { ...event, relays: [GLOBAL_RELAY_URL] };
+          // read the live feed: this loop outlives the render that started it
+          const nf = addEventToFc(wevent, useStore.getState().globalFeed);
+          setGlobal(nf);
+        }
+        // stay subscribed past EOSE to keep streaming new posts
+        if (msg[0] === "EOSE") setIsLoading(false);
       }
-      if (msg[0] === "EOSE") {
-        setIsLoading(false);
-        // break; closes the subscription
-      }
+    } catch {
+      // aborted by a resync or unmount
     }
   };
   const [isLoading, setIsLoading] = useState(false);
-
-  async function fetchProfiles() {
-    setIsLoading(true);
-    const ids = Object.values(globalFeed.feed).map((p) => p.author);
-    if (!relayRef.current) return;
-    const relay = relayRef.current;
-    const req = relay.req([{ kinds: [0], ids }]);
-    for await (const msg of req) {
-      if (msg[0] === "EVENT") {
-        const prof = eventToProfile(msg[2]);
-        if (!prof) continue;
-        addProfile(prof.pubkey, prof);
-      }
-      if (msg[0] === "EOSE") {
-        setIsLoading(false);
-        break;
-      }
-    }
-  }
 
   // Show empty state with resync option when no feed data
   if (!globalFeed)

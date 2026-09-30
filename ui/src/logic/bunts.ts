@@ -1,4 +1,4 @@
-import type { Engagement, Gate, List, Lock, PostPerms } from "@/types/trill";
+import type { Engagement, Gate, Lock, PostPerms } from "@/types/trill";
 
 export const openLock: Lock = {
   rank: { caveats: [], locked: false, public: true },
@@ -24,37 +24,6 @@ export const engagementBunt: Engagement = {
   reacts: {},
   quoted: [],
   shared: [],
-};
-
-export const pushStateBunt = {
-  followers: [],
-  gate: {
-    lock: openLock,
-    mute: openLock,
-    begs: [],
-    "post-begs": [],
-    backlog: 0,
-  },
-};
-
-export const harkStateBunt = {
-  unread: {},
-  engagement: [],
-};
-
-export const pullStateBunt = {
-  following: [],
-  begs: [],
-  "post-begs": [],
-};
-export const listBunt: List = {
-  symbol: "",
-  name: "",
-  desc: "",
-  icon: "",
-  cover: "",
-  members: [],
-  public: true,
 };
 
 // export const palsBunt: Pals = {

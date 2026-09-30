@@ -4,6 +4,7 @@ import useLocalState from "@/state/state";
 import { useEffect, useState } from "react";
 import type { NostrEvent } from "@/types/nostr";
 import CodeBlock from "../CodeBlock";
+import toast from "react-hot-toast";
 
 export default function ({ poast }: { poast: Poast }) {
   const { relays, api, setModal, lastFact } = useLocalState((s) => ({
@@ -18,23 +19,23 @@ export default function ({ poast }: { poast: Poast }) {
   useEffect(() => {
     if (!lastFact) return;
     if (!("nostr" in lastFact)) return;
-    if (!("sent-post" in lastFact.nostr)) return;
+    if (!lastFact.nostr || !("sent-post" in lastFact.nostr)) return;
     const { id, host, event } = (lastFact.nostr as any)["sent-post"];
-    if (id !== poast.id || host !== poast.host) return;
+    if (String(id) !== String(poast.id) || host !== poast.host) return;
     setEvent(event);
 
   }, [lastFact]);
 
   async function handleConfirm() {
     setStatus("pending");
-    try {
-      // relays are keyed by url; the pokes take live wids
-      const wids = Object.values(relays)
-        .map((r) => r.wid)
-        .filter((w): w is number => w != null);
-      await api!.relayPost(poast.host, poast.id, wids);
-    } finally {
-      // setStatus("done");
+    // relays are keyed by url; the pokes take live wids
+    const wids = Object.values(relays)
+      .map((r) => r.wid)
+      .filter((w): w is number => w != null);
+    const res = await api!.relayPost(poast.host, poast.id, wids);
+    if ("error" in res) {
+      toast.error("Could not send post to relays");
+      setStatus("init");
     }
   }
 

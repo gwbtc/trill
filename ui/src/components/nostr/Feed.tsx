@@ -4,9 +4,11 @@ import spinner from "@/assets/triangles.svg";
 import { useEffect, useState } from "react";
 import Icon from "@/components/Icon";
 import toast from "react-hot-toast";
-import { Contact, RefreshCw } from "lucide-react";
 import type { FC } from "@/types/trill";
 import { useRelayActions } from "@/hooks/useRelayActions";
+
+// loading toasts never time out; the completion toast reuses the id to replace it
+const SYNC_TOAST = "nostr-sync";
 
 export default function Nostr() {
   const { nostrFeed, api, relays, lastEose, setEose } = useLocalState((s) => ({
@@ -17,53 +19,36 @@ export default function Nostr() {
     setEose: s.setEose,
   }));
   const [fetchingPosts, setFetchingPosts] = useState("");
-  const [fetchingProfiles, setFetchingProfiles] = useState("");
+  // eose seen, waiting for the store's /x/j/nostr rescry to land
+  const [awaitingFeed, setAwaitingFeed] = useState(false);
   const { syncRelays } = useRelayActions();
 
-  const refetch = () => nostrFeed;
-
   // pokes no longer return subIds; on eose the store refreshes feeds from
-  // the /x/j/nostr scry, so any eose closes whichever sync we're waiting on
+  // the /x/j/nostr scry, so any eose closes whichever sync we're waiting on.
+  // that scry can take seconds on a big backlog: the sync is only done
+  // once its result is in the store
   useEffect(() => {
     if (!lastEose) return;
-    if (fetchingProfiles) {
-      setFetchingProfiles("");
-      toast.success("Nostr profiles sync complete");
-    } else if (fetchingPosts) {
-      setFetchingPosts("");
-      toast.success("Nostr feed sync complete");
-    }
+    if (fetchingPosts) setAwaitingFeed(true);
     setEose("");
   }, [lastEose]);
+  useEffect(() => {
+    if (!awaitingFeed) return;
+    setAwaitingFeed(false);
+    setFetchingPosts("");
+    toast.success("Nostr feed sync complete", { id: SYNC_TOAST });
+  }, [nostrFeed]);
   const handleResync = async () => {
     if (!api) return;
-    toast.loading("Nostr post sync initiated");
+    toast.loading("Nostr post sync initiated", { id: SYNC_TOAST });
     setFetchingPosts("temp");
-    await syncRelays();
+    // syncRelays toasts its own error; just drop the spinner
+    if (!(await syncRelays())) {
+      toast.dismiss(SYNC_TOAST);
+      setFetchingPosts("");
+    }
   };
 
-  async function fetchProfiles() {
-    if (!api) return;
-    const rels = Object.values(relays)
-      .map((r) => r.wid)
-      .filter((w): w is number => w != null);
-    const authors = [
-      ...new Set(
-        Object.values(nostrFeed.feed).flatMap((p) =>
-          p.event ? [p.event.pubkey] : [],
-        ),
-      ),
-    ];
-    if (authors.length === 0) return;
-    setFetchingProfiles("temp");
-    try {
-      await api.nostrProfiles(rels, authors);
-      toast.loading("Nostr profile sync initiated");
-    } catch (error) {
-      toast.error("Failed to sync Nostr feed");
-      console.error("Sync error:", error);
-    }
-  }
   if (Object.keys(relays).length === 0)
     return (
       <div className="nostr-empty-state">
@@ -116,7 +101,7 @@ export default function Nostr() {
       </div>
     );
   }
-  return <NostrFeed resync={handleResync} data={nostrFeed} fetching={fetchingPosts === "" && fetchingProfiles === ""}/>
+  return <NostrFeed resync={handleResync} data={nostrFeed} fetching={fetchingPosts !== ""}/>
 }
 
 

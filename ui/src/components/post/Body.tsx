@@ -1,3 +1,5 @@
+import { linkLabel, safeHref } from "@/logic/utils";
+import NostrText from "./NostrText";
 import type {
   // TODO ref backend fetching!!
   Reference,
@@ -121,10 +123,10 @@ function Inlin({ i }: { i: Inline }) {
       <>
         {tokens.text.map((t, i) =>
           "text" in t ? (
-            <span key={t.text + i}>{t.text}</span>
+            <NostrText key={t.text + i} text={t.text} />
           ) : (
-            <a key={t.link.href + i} href={t.link.href}>
-              {t.link.show}
+            <a key={t.link.href + i} href={t.link.href} title={t.link.href}>
+              {linkLabel(t.link.show)}
             </a>
           ),
         )}
@@ -153,7 +155,7 @@ function Inlin({ i }: { i: Inline }) {
       <span
         className="mention"
         role="link"
-        onMouseUp={(e) => gotoShip(e, i.ship)}
+        onClick={(e) => gotoShip(e, i.ship)}
       >
         {i.ship}
       </span>
@@ -180,7 +182,13 @@ function LinkParser({ href, show }: { href: string; show: string }) {
   ) : isImg ? (
     <img className="inline-pic" src={href} />
   ) : (
-    <a href={href}>{show}</a>
+    safeHref(href) ? (
+      <a href={href} title={href}>
+        {linkLabel(show)}
+      </a>
+    ) : (
+      <span>{linkLabel(show)}</span>
+    )
   );
 }
 function Heading({ string, num }: { string: string; num: number }) {

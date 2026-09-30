@@ -1,4 +1,4 @@
-/-  *wrap, sur=nostrill, nsur=nostr, comms=nostrill-comms
+/-  *wrap, sur=nostrill, nsur=nostr, comms=nostrill-comms, tsur=topics
 |%
 +$  poke
   $%  [%fols fols-poke]
@@ -7,7 +7,19 @@
       [%prof prof-poke]
       [%keys ~]  ::  cycle-keys
       [%rela relay-poke]
+      [%lists lists-poke]
+      ::  trending topics settings and spam marks, for %topics: only
+      ::  what +action:de:json-topics decodes (%set-prefs, %set-spam-provider,
+      ::  %mark) gets here
+      [%topics act=action:tsur]
       :: [%notif @da]  :: dismiss notification
+  ==
+::  bookmarks, mutes and reports: private lists, except that reporting
+::  an urbit post also tells its host
++$  lists-poke
+  $%  [%bookmark add=? ref=post-ref:sur]
+      [%mute add=? =user:sur]
+      [%report ref=post-ref:sur reason=@t]
   ==
 +$  begs-poke
   $%  [%feed p=@p]
@@ -21,8 +33,12 @@
   $%  [%add content=@t global=? anon=? reply=reply-policy]
       [%reply content=@t host=user:sur id=@da thread=@da]
       [%quote content=@t host=user:sur id=@da]
+      ::  a post sharing a UI card (e.g. trending topics): the card is
+      ::  the JSON the UI renders, kept as a %json block with origin %card
+      [%card content=@t card=@t]
       [%rp host=user:sur id=@da]  :: NIP-18
       [%reaction host=user:sur id=@da reaction=@t]
+      [%del-reaction host=user:sur id=@da]
       :: [%rt id=@ux pubkey=@ux relay=@t]  :: NIP-18
       [%del host=user:sur id=@da]
   ==
@@ -63,6 +79,8 @@
       [%prof (map user:sur user-profile:comms)]
       :: our own keys!
       [%keys pub=@ux]
+      ::  the full lists after any change to them
+      [%lists bookmarks=(map post-ref:sur @da) muted=(set user:sur) reported=(set post-ref:sur)]
   ==
 +$  fols-fact
   $%  [%new-urbit (enbowl fols-res:comms)]

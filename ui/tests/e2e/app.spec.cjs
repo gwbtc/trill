@@ -5,41 +5,65 @@ let notificationFixtureKind = "empty";
 let feedFixtureKind = "empty";
 let channelBatch = 0;
 
+// IO.poke resolves only once the ship acks the poke over the event stream,
+// so every poke PUT to the channel is recorded here and acked on the next
+// stream GET (the mocked stream closes after each batch and the client
+// reconnects)
+let pendingPokeAcks = [];
+let ackEventId = 10_000;
+// every poke's json, for asserting what the UI actually sends
+let pokeLog = [];
+// when set, pokes are nacked, as the ship does when the agent crashes
+let nackPokes = false;
+// the post served by the "zap" feed fixture
+const DEFAULT_POST = { text: "A post ready for a zap", reacts: {} };
+let postFixture = { ...DEFAULT_POST };
+// bookmarks / mutes / reports as the agent sends them in its state
+const EMPTY_LISTS = { bookmarks: [], muted: [], reported: [] };
+let listsFixture = EMPTY_LISTS;
+
 async function installUrbitMock(page) {
+  pendingPokeAcks = [];
+  // registered first, so every mock below wins over it: any ship endpoint a
+  // test didn't mock fails here instead of reaching a real ship on whatever
+  // port the dev build points at
+  await page.route("**/~/**", (route) =>
+    route.fulfill({ status: 404, body: "unmocked ship endpoint in e2e" }),
+  );
   await page.addInitScript(() => {
     localStorage.setItem("nostrill-welcome-shown", "true");
   });
 
-  await page.route("http://localhost:8080/~/host", (route) =>
+  await page.route("**/~/host", (route) =>
     route.fulfill({ status: 200, body: "~zod" }),
   );
-  await page.route("http://localhost:8080/~/name", (route) =>
+  await page.route("**/~/name", (route) =>
     route.fulfill({ status: 200, body: "~zod" }),
   );
-  await page.route("http://localhost:8080/~/scry/n-contacts/all.json", (route) =>
+  await page.route("**/~/scry/n-contacts/all.json", (route) =>
     route.fulfill({ status: 200, json: {} }),
   );
   await page.route(
-    "http://localhost:8080/~/scry/settings/desk/nostrill.json",
+    "**/~/scry/settings/desk/nostrill.json",
     (route) => route.fulfill({ status: 200, json: { desk: {} } }),
   );
   await page.route(
-    "http://localhost:8080/~/scry/hark/desk/nostrill/skeins.json",
+    "**/~/scry/hark/desk/nostrill/skeins.json",
     (route) => route.fulfill({ status: 200, json: notificationFixture() }),
   );
   await page.route(
-    "http://localhost:8080/~/scry/noschat/**",
+    "**/~/scry/noschat/**",
     (route) => route.fulfill({ status: 200, json: dmInboxFixture() }),
   );
-  await page.route("http://localhost:8080/~/scry/storage/**", (route) =>
+  await page.route("**/~/scry/storage/**", (route) =>
     route.fulfill({ status: 404, json: { error: "no storage" } }),
   );
   // keep app scries (nostr feeds, profiles...) off any live ship;
   // later registrations win, so the gwid mock below shadows this default
-  await page.route("http://localhost:8080/~/scry/nostrill/**", (route) =>
+  await page.route("**/~/scry/nostrill/**", (route) =>
     route.fulfill({ status: 200, json: {} }),
   );
-  await page.route("http://localhost:8080/~/scry/nostrill/j/gwid/**", (route) =>
+  await page.route("**/~/scry/nostrill/j/gwid/**", (route) =>
     route.fulfill({
       status: 200,
       json: {
@@ -48,7 +72,7 @@ async function installUrbitMock(page) {
       },
     }),
   );
-  await page.route("http://localhost:8080/~/channel/**", handleChannel);
+  await page.route("**/~/channel/**", handleChannel);
 }
 
 async function handleChannel(route) {
@@ -63,19 +87,39 @@ async function handleChannel(route) {
         connection: "keep-alive",
       },
       body:
-        feedFixtureKind === "zap"
+        (feedFixtureKind === "zap"
           ? zapFeedFixtureBody(channelBatch)
           : dmInboxFixtureKind === "requests"
             ? dmRequestFixtureBody()
             : [
                 'id: 1\ndata: {"response":"poke","id":1,"ok":null}\n\n',
                 'id: 2\ndata: {"response":"poke","id":2,"ok":null}\n\n',
-              ].join(""),
+              ].join("")) + takePokeAcks(),
     });
     return;
   }
 
+  // PUT: a batch of channel actions; remember pokes so they get acked
+  try {
+    const actions = JSON.parse(request.postData() || "[]");
+    for (const action of actions) {
+      if (action.action !== "poke") continue;
+      pendingPokeAcks.push(action.id);
+      pokeLog.push(action.json);
+    }
+  } catch {
+    // not json (e.g. a delete beacon); nothing to ack
+  }
   await route.fulfill({ status: 200, body: "ok" });
+}
+
+function takePokeAcks() {
+  const acks = pendingPokeAcks.map((id) => {
+    const res = nackPokes ? { err: "nacked by test" } : { ok: null };
+    return `id: ${++ackEventId}\ndata: ${JSON.stringify({ response: "poke", id, ...res })}\n\n`;
+  });
+  pendingPokeAcks = [];
+  return acks.join("");
 }
 
 function makeUrbitId(patp, label) {
@@ -263,10 +307,10 @@ function zapFeedFixtureBody(batch) {
       write: { lock: { open: null }, manual: false, begs: {}, mute: { open: null }, backlog: 0 },
     },
     tags: [],
-    contents: [{ paragraph: [{ text: "A post ready for a zap" }] }],
+    contents: [{ paragraph: [{ text: postFixture.text }] }],
     time: 1_700_000_000_000,
     children: [],
-    engagement: { reacts: {}, quoted: [], shared: [] },
+    engagement: { reacts: postFixture.reacts, quoted: [], shared: [] },
   };
   const feed = { start: null, end: null, feed: { [post.id]: post } };
   const state = {
@@ -278,6 +322,7 @@ function zapFeedFixtureBody(batch) {
     timeline: { global: {}, start: null, end: null },
     followGraph: {},
     key: "",
+    lists: listsFixture,
   };
   const outerId = batch * 100;
   return [
@@ -298,6 +343,10 @@ test.beforeEach(async ({ page }) => {
   notificationFixtureKind = "empty";
   feedFixtureKind = "empty";
   channelBatch = 0;
+  pokeLog = [];
+  nackPokes = false;
+  postFixture = { ...DEFAULT_POST };
+  listsFixture = EMPTY_LISTS;
   await installUrbitMock(page);
 });
 
@@ -560,4 +609,159 @@ test("muted and blocked conversations are separated from inbox", async ({ page }
   await page.getByRole("button", { name: /Blocked\s*1/ }).click();
   await expect(page.getByText("blocked dm")).toBeVisible();
   await expect(page.getByText("muted dm")).toBeHidden();
+});
+
+// --- regressions for the UI review fixes ---------------------------------
+
+const REACT_POKE = (reaction) => ({
+  post: { reaction: { reaction, id: "zap-post", host: { urbit: "~litzod" } } },
+});
+
+test("reacting sends a ~ship user and the remove button only shows once reacted", async ({
+  page,
+}) => {
+  feedFixtureKind = "zap";
+  await page.goto("f/following");
+  const post = page.locator("article.trill-post", { hasText: "A post ready for a zap" });
+  await expect(post).toBeVisible();
+
+  await post.locator(".reaction-action").click();
+  await expect(page.locator("#react-list")).toBeVisible();
+  await expect(page.locator("#react-list .react-remove")).toHaveCount(0);
+  await page.locator("#react-list span", { hasText: "🫡" }).first().dispatchEvent("mouseup");
+  await expect(page.locator("#react-list")).toBeHidden();
+  // users go over the wire as { urbit: "~ship" }: the backend drops the
+  // full UrbitID object the UI works with
+  await expect.poll(() => pokeLog).toContainEqual(REACT_POKE("🫡"));
+});
+
+test("an existing reaction can be removed from the reaction picker", async ({ page }) => {
+  feedFixtureKind = "zap";
+  postFixture = { ...DEFAULT_POST, reacts: { "~zod": "🔥" } };
+  await page.goto("f/following");
+  const post = page.locator("article.trill-post", { hasText: "A post ready for a zap" });
+  await expect(post).toBeVisible();
+
+  await post.locator(".reaction-action").click();
+  await page.getByRole("button", { name: "Remove your reaction" }).click();
+  await expect(page.locator("#react-list")).toBeHidden();
+  await expect
+    .poll(() => pokeLog)
+    .toContainEqual({
+      post: { "del-reaction": { host: { urbit: "~litzod" }, id: "zap-post" } },
+    });
+});
+
+test("a rejected post keeps the draft and says it failed", async ({ page }) => {
+  await page.goto("f");
+  await page.getByRole("button", { name: "Compose", exact: true }).click();
+  const editor = page.locator("#compose-modal .input-editor");
+  await editor.click();
+  await editor.pressSequentially("this should not vanish");
+  // the ship nacks: the agent crashed on the poke
+  nackPokes = true;
+  await page.getByRole("button", { name: "Broadcast" }).click();
+
+  await expect(page.getByText("Failed to post")).toBeVisible();
+  await expect(page.locator("#compose-modal")).toBeVisible();
+  await expect(editor).toHaveText("this should not vanish");
+});
+
+test("links inside a post don't open its thread; the post itself does", async ({ page }) => {
+  feedFixtureKind = "zap";
+  postFixture = { ...DEFAULT_POST, text: "see https://example.com/a now" };
+  await page.goto("f/following");
+  const post = page.locator("article.trill-post", { hasText: "see" });
+  await expect(post).toBeVisible();
+  // spaces around the link survive tokenising
+  await expect(post.locator(".trill-post-body")).toContainText("see https://example.com/a now");
+
+  // keep the browser on the app when the link is followed
+  await page.evaluate(() =>
+    document.addEventListener(
+      "click",
+      (e) => {
+        if (e.target instanceof Element && e.target.closest('a[href^="http"]'))
+          e.preventDefault();
+      },
+      true,
+    ),
+  );
+  await post.getByRole("link", { name: "https://example.com/a" }).click();
+  await expect(page).toHaveURL(/\/f\/following$/);
+
+  await post.getByText("now").click();
+  await expect(page).toHaveURL(/\/t\/u\/~litzod\/zap-post$/);
+});
+
+test("unknown routes show the 404 page", async ({ page }) => {
+  await page.goto("definitely-not-a-page");
+  await expect(page.locator("main .error-title")).toHaveText("404");
+});
+
+const ZAP_REF = { urbit: { host: "~litzod", id: "zap-post" } };
+
+async function openPostMenu(page) {
+  feedFixtureKind = "zap";
+  await page.goto("f/following");
+  const post = page.locator("article.trill-post", { hasText: "A post ready for a zap" });
+  await expect(post).toBeVisible();
+  await post.getByRole("button", { name: "More post actions" }).click();
+  return post;
+}
+
+test("bookmark, mute and report go to the agent", async ({ page }) => {
+  await openPostMenu(page);
+  await page.getByRole("menuitem", { name: "Bookmark" }).click();
+  await expect.poll(() => pokeLog).toContainEqual({ lists: { bookmark: { add: true, ref: ZAP_REF } } });
+
+  const post = page.locator("article.trill-post", { hasText: "A post ready for a zap" });
+  await post.getByRole("button", { name: "More post actions" }).click();
+  await page.getByRole("menuitem", { name: "Mute author" }).click();
+  await expect
+    .poll(() => pokeLog)
+    .toContainEqual({ lists: { mute: { add: true, user: { urbit: "~litzod" } } } });
+
+  await post.getByRole("button", { name: "More post actions" }).click();
+  await page.getByRole("menuitem", { name: "Report post" }).click();
+  await expect(page.getByText("~litzod will be notified")).toBeVisible();
+  await page.getByLabel("Harassment").check();
+  await page.getByPlaceholder("Add details (optional)").fill("rude");
+  await page.getByRole("button", { name: "Report", exact: true }).click();
+  await expect
+    .poll(() => pokeLog)
+    .toContainEqual({ lists: { report: { ref: ZAP_REF, reason: "Harassment: rude" } } });
+});
+
+test("muted authors and reported posts are hidden from feeds", async ({ page }) => {
+  feedFixtureKind = "zap";
+  listsFixture = { ...EMPTY_LISTS, muted: [{ urbit: "~litzod" }] };
+  await page.goto("f/following");
+  await page.waitForTimeout(1500);
+  await expect(page.getByText("A post ready for a zap")).toHaveCount(0);
+
+  listsFixture = { ...EMPTY_LISTS, reported: [ZAP_REF] };
+  await page.reload();
+  await page.waitForTimeout(1500);
+  await expect(page.getByText("A post ready for a zap")).toHaveCount(0);
+});
+
+test("bookmarks page lists saved posts and settings lists muted accounts", async ({ page }) => {
+  feedFixtureKind = "zap";
+  listsFixture = {
+    bookmarks: [{ ref: ZAP_REF, at: 1_700_000_000_000 }],
+    muted: [{ urbit: "~bus" }],
+    reported: [],
+  };
+  await page.goto("bookmarks");
+  await expect(page.getByRole("heading", { name: "Bookmarks" })).toBeVisible();
+  await expect(page.getByText("A post ready for a zap")).toBeVisible();
+
+  await page.goto("sets");
+  const muted = page.locator("#settings-muted");
+  await expect(muted.getByText("~bus").first()).toBeVisible();
+  await muted.getByRole("button", { name: "Unmute ~bus" }).click();
+  await expect
+    .poll(() => pokeLog)
+    .toContainEqual({ lists: { mute: { add: false, user: { urbit: "~bus" } } } });
 });

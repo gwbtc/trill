@@ -1,5 +1,5 @@
 import type { Wevent } from "./nostr";
-import type { GroundwireID, UrbitID } from "./nostrill";
+import type { UrbitID } from "./nostrill";
 import type { Ship } from "./urbit";
 
 export type SortugRef = {
@@ -111,7 +111,7 @@ export type ExternalContent = {
     content: string;
   };
 };
-export type ExternalApp = "twatter" | "insta" | "anon" | "rumors" | "nostr";
+export type ExternalApp = "twatter" | "insta" | "anon" | "rumors" | "nostr" | "card";
 export interface TwatterReference {
   json: {
     origin: "twatter";

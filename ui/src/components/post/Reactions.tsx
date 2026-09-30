@@ -15,8 +15,8 @@ import chad from "@/assets/reacts/chad.png";
 import pika from "@/assets/reacts/pika.png";
 import facepalm from "@/assets/reacts/facepalm.png";
 import Icon from "@/components/Icon";
+import { X } from "lucide-react";
 import emojis from "@/logic/emojis.json";
-import Modal from "../modals/Modal";
 import useLocalState from "@/state/state";
 import toast from "react-hot-toast";
 import type { UserType } from "@/types/nostrill";
@@ -24,8 +24,11 @@ import type { AsyncRes } from "@/types/ui";
 
 export function ReactModal({
   send,
+  remove,
 }: {
   send: (s: string) => AsyncRes<number>;
+  // present only when we have a reaction on the post to take back
+  remove?: () => AsyncRes<number>;
 }) {
   const { setModal } = useLocalState((s) => ({ setModal: s.setModal }));
   async function sendReact(e: React.MouseEvent, s: string) {
@@ -33,9 +36,15 @@ export function ReactModal({
     const res = await send(s);
     if ("ok" in res) setModal(null);
   }
+  async function removeReact(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!remove) return;
+    const res = await remove();
+    if ("ok" in res) setModal(null);
+  }
   // todo one more meme
   return (
-    <Modal>
+    <>
       <div id="react-list">
         <span onMouseUp={(e) => sendReact(e, "❤️")}>️️❤️</span>
         <span onMouseUp={(e) => sendReact(e, "🤔")}>🤔</span>
@@ -76,8 +85,19 @@ export function ReactModal({
         <img onMouseUp={(e) => sendReact(e, "soy")} src={soy} alt="" />
         <img onMouseUp={(e) => sendReact(e, "cry")} src={cry} alt="" />
         <img onMouseUp={(e) => sendReact(e, "doom")} src={doom} alt="" />
+        {remove && (
+          <button
+            type="button"
+            className="react-remove"
+            onClick={removeReact}
+            aria-label="Remove your reaction"
+            title="Remove your reaction"
+          >
+            <X size={28} />
+          </button>
+        )}
       </div>
-    </Modal>
+    </>
   );
 }
 
@@ -129,11 +149,20 @@ export function TrillReactModal({
 
   async function sendReact(s: string) {
     const result = await api!.addReact(user, poast.id, s);
+    if ("error" in result) toast.error("Could not send reaction");
     // Only add notification if reacting to someone else's post
-    if (result && poast.author !== our) {
+    else if (poast.author !== our) {
       toast.success(`You reacted to ${poast.author}'s post`);
     }
     return result;
   }
-  return <ReactModal send={sendReact} />;
+  async function removeReact() {
+    const result = await api!.removeReact(user, poast.id);
+    if ("error" in result) toast.error("Could not remove reaction");
+    return result;
+  }
+  const hasOurReact = !!poast.engagement.reacts?.[our];
+  return (
+    <ReactModal send={sendReact} remove={hasOurReact ? removeReact : undefined} />
+  );
 }

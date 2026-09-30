@@ -28,18 +28,6 @@
   transform: translate(-50%, -50%);
 }
 
-.centered {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-}
-
-
-.grow {
-  flex-grow: 1;
-}
-
 button {
   cursor: pointer;
 }
@@ -47,25 +35,6 @@ button {
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New",
     monospace;
-}
-
-t .red {
-  background-color: rgb(200, 0, 0, 0.9);
-}
-
-.tc,
-.ct {
-  text-align: center;
-}
-
-.cb {
-  margin: auto;
-}
-
-.xc {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
 }
 
 .hidden {
@@ -88,52 +57,8 @@ t .red {
   display: flex;
 }
 
-.f1 {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.flex-align {
-  display: flex;
-  gap: 1rem;
-  align-items: center;
-}
-
-.noscroll {
-  overflow: hidden;
-}
-
-.scroll-y {
-  overflow-y: scroll;
-}
-
 .cp {
   cursor: pointer;
-}
-
-.m0 {
-  margin: 0;
-}
-
-.mb {
-  margin: 0 0 1rem 0;
-}
-
-.mt {
-  margin-top: 1rem;
-}
-
-.mr {
-  margin-right: 0.5rem;
-}
-
-.s-50 {
-  width: 50px;
-}
-
-.s-100 {
-  width: 100px;
 }
 
 .border {
@@ -159,9 +84,9 @@ body {
   width: 100%;
 }
 
-#root,
-#mobile-ui {
+#root {
   width: 100%;
+  min-height: 100vh;
 }
 
 *,
@@ -226,10 +151,6 @@ h6 {
   font-weight: var(--font-bold);
   line-height: 1.2;
   color: var(--color-text);
-}
-
-#root {
-  min-height: 100vh;
 }
 
 #modal:has(#compose-modal),
@@ -309,21 +230,6 @@ main {
   border-right: 1px solid var(--color-border-light, #eef0f2);
   min-height: 100vh;
 
-  & #top-tabs {
-    display: flex;
-    gap: 2rem;
-    justify-content: center;
-
-    & div {
-      cursor: pointer;
-    }
-
-    & .active {
-      font-weight: 700;
-      border-bottom: 3px solid var(--color-text);
-    }
-  }
-
   /* Thread page styling */
   & .thread-header {
     margin-bottom: 1rem;
@@ -384,7 +290,7 @@ main {
 
       & .thread-id {
         font-family: "Source Code Pro", monospace;
-        background: rgba(42, 157, 143, 0.1);
+        background: color-mix(in srgb, var(--color-accent) 10%, transparent);
         color: var(--color-accent, #2a9d8f);
         padding: 2px 6px;
         border-radius: 4px;
@@ -421,6 +327,24 @@ main {
   }
 }
 
+/* phones: the sidebar is a fixed bottom bar (Sidebar.css), so the column
+   takes the width and leaves room under its last post for the bar */
+@media (max-width: 600px) {
+  #main-column {
+    width: 100%;
+    border-right: 0;
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+
+  /* the nostr activity dot (NostrSignals) sat on the bar's "More": bottom
+     left instead, above the bar, clear of the compose button */
+  div.nostr-signal.fixed {
+    right: auto;
+    left: 16px;
+    bottom: calc(74px + env(safe-area-inset-bottom));
+  }
+}
+
 /* modal */
 .sr-only {
   position: absolute;
@@ -442,7 +366,8 @@ main {
   text-align: center;
 }
 
-#modal-background {
+#modal-background,
+.composer-layer-bg {
   min-height: 100vh;
   width: 100vw;
   background: var(--color-overlay, rgba(21, 24, 28, 0.45));
@@ -457,7 +382,8 @@ main {
   overflow-y: auto;
 }
 
-#modal {
+#modal,
+.composer-layer {
   width: min(600px, calc(100vw - 32px));
   z-index: 101;
   background-color: var(--color-background, #fff);
@@ -598,11 +524,6 @@ main {
   justify-content: flex-end;
 }
 
-.modal-buttons {
-  display: flex;
-  justify-content: space-around;
-}
-
 @media (max-height: 720px) {
   #modal-background {
     align-items: flex-start;
@@ -616,47 +537,25 @@ main {
 }
 
 /* Generic button styles */
-.btn {
-  font-size: 0.875rem;
-  font-weight: 600;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
 
-.btn-confirm,
-.btn-primary {
+.btn-confirm {
   background: var(--color-accent, #2a9d8f);
   color: white;
 }
 
-.btn-confirm:hover,
-.btn-primary:hover {
+.btn-confirm:hover {
   background: color-mix(in srgb, var(--color-accent, #2a9d8f) 85%, black);
   transform: translateY(-1px);
 }
 
-.btn-cancel,
-.btn-secondary {
+.btn-cancel {
   background: rgba(128, 128, 128, 0.15);
   color: var(--color-text);
   border: 1px solid rgba(128, 128, 128, 0.3);
 }
 
-.btn-cancel:hover,
-.btn-secondary:hover {
+.btn-cancel:hover {
   background: rgba(128, 128, 128, 0.25);
-}
-
-.btn-danger {
-  background: #e63946;
-  color: white;
-}
-
-.btn-danger:hover {
-  background: #c5303c;
 }
 
 /* Confirmation Dialog */
@@ -890,7 +789,7 @@ main {
 
 .welcome-footer .highlight {
   font-family: "Source Code Pro", monospace;
-  background: rgba(42, 157, 143, 0.15);
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
   color: var(--color-accent, #2a9d8f);
   padding: 0.15rem 0.4rem;
   border-radius: 4px;
@@ -912,4 +811,62 @@ button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 
+}
+
+/* Report dialog (components/modals/ReportDialog.tsx) */
+#modal:has(.report-dialog) {
+  max-width: 360px;
+}
+
+.confirmation-dialog.report-dialog {
+  max-width: none;
+  text-align: left;
+}
+
+.report-dialog p {
+  margin-bottom: 0.25rem;
+}
+
+.report-dialog-note {
+  display: block;
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.report-dialog-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.report-dialog-reasons label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.report-dialog-reasons label.selected {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+}
+
+.report-dialog-details {
+  width: 100%;
+  min-height: 4rem;
+  margin-bottom: 1rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.9rem;
+  resize: vertical;
 }

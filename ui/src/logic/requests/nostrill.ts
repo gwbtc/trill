@@ -1,5 +1,7 @@
 import type Urbit from "urbit-api";
-import type { Cursor, Gate, PostID, PostPerms } from "@/types/trill";
+import type { Cursor, FullNode, Gate, PostID, PostPerms } from "@/types/trill";
+import { patpToFallbackUID } from "@/logic/gw";
+import type { PostRef } from "@/logic/lists";
 import type {
   S3Config,
   SettingsRes,
@@ -11,6 +13,7 @@ import type {
 import {
   FeedPostCount,
   PROFILES_SUB_NAME,
+  NOSTR_PAGE_SIZE,
   SYNC_SUB_NAME,
 } from "../constants";
 import type {
@@ -29,6 +32,41 @@ import type {
 } from "@/types/nostrill";
 import type { AsyncRes } from "@/types/ui";
 import type { Rope, Skein } from "@/types/hark";
+import type { TopicPrefs } from "@/logic/topics";
+import type { DebateKey, NewDebate } from "@/logic/debates";
+
+// the UI carries full UrbitIDs, but the backend's user decoder
+// (user:de:common) only takes { urbit: "~ship" } | { nostr: "hex" }; an
+// object-shaped urbit user fails to decode and the poke is silently dropped
+type WireUser = { urbit: string } | { nostr: string };
+function toWireUser(user: UserType): WireUser {
+  return "urbit" in user ? { urbit: user.urbit.patp } : user;
+}
+
+// thread scries/peeks send nodes without authorFull (feed scries include
+// it), and every thread renderer reads node.authorFull.author; fill it in
+// from the patps so a missing field can't crash the page
+function withAuthorFull(node: FullNode): FullNode {
+  const children = Array.isArray(node.children)
+    ? node.children
+    : Object.fromEntries(
+        Object.entries(node.children ?? {}).map(([k, c]) => [k, withAuthorFull(c)]),
+      );
+  return {
+    ...node,
+    authorFull: node.authorFull ?? {
+      author: patpToFallbackUID(node.author),
+      host: patpToFallbackUID(node.host),
+    },
+    children,
+  };
+}
+function normalizeThread(res: PeekThreadRes): PeekThreadRes {
+  const d = res.data.data;
+  if (!d || d === "maybe") return res;
+  const data = { node: withAuthorFull(d.node), thread: d.thread.map(withAuthorFull) };
+  return { ...res, data: { ...res.data, data } };
+}
 
 // Subscribe
 type Handler = (date: any) => void;
@@ -46,24 +84,41 @@ export default class IO {
       threadName,
     });
   }
-  private async poke(json: any, agent?: string, marc?: string) {
+  private async poke(json: any, agent?: string, marc?: string): AsyncRes<number> {
     const app = agent ? agent : "nostrill";
     const mark = marc ? marc : "json";
-    try {
-      const res = await this.airlock.poke({
-        app,
-        mark,
-        json,
-      });
-      return { ok: res };
-    } catch (e) {
-      return { error: `${e}` };
-    }
+    // airlock.poke resolves once the message is PUT to the channel, not
+    // when the agent acks it; a nack (the agent crashed) only reaches
+    // onError. wait for the ack so { ok } means the poke actually landed
+    return new Promise((resolve) => {
+      let id: number | undefined;
+      let acked = false;
+      const done = () => {
+        if (acked && id !== undefined) resolve({ ok: id });
+      };
+      this.airlock
+        .poke({
+          app,
+          mark,
+          json,
+          onSuccess: () => {
+            acked = true;
+            done();
+          },
+          onError: (e) => resolve({ error: `${e}` }),
+        })
+        .then(
+          (res) => {
+            id = res;
+            done();
+          },
+          (e) => resolve({ error: `${e}` }),
+        );
+    });
   }
   private async scry(path: string, agent?: string) {
     try {
       const app = agent ? agent : "nostrill";
-      console.log("scrying", {app, path})
       const res = await this.airlock.scry({ app, path });
       return { ok: res };
     } catch (e) {
@@ -71,16 +126,17 @@ export default class IO {
     }
   }
   private async sub(path: string, handler: Handler, agent?: string) {
-    const has = this.subs.get(path);
-    if (has) return;
+    const app = agent ? agent : "nostrill";
+    // keyed per agent: nostrill, hark and noschat all serve "/ui"
+    const key = `${app}${path}`;
+    if (this.subs.has(key)) return;
 
     const err = (err: any, _id: string) =>
-      console.error(err, "error on nostrill subscription");
+      console.error(err, `error on ${app} subscription`);
     const quit = (data: any) => {
-      console.error(data, "nostrill subscription kicked");
-      this.subs.delete(path);
+      console.error(data, `${app} subscription kicked`);
+      this.subs.delete(key);
     };
-    const app = agent ? agent : "nostrill";
     const res = await this.airlock.subscribe({
       app,
       path,
@@ -88,7 +144,7 @@ export default class IO {
       err,
       quit,
     });
-    this.subs.set(path, res);
+    this.subs.set(key, res);
     return res;
   }
   async unsub(sub: number) {
@@ -102,6 +158,66 @@ export default class IO {
   async subscribeHark(handler: Handler) {
     const res = await this.sub("/ui", handler, "hark");
     return res;
+  }
+  // the ecash wallet (%trill-wallet): all of it on connect, again on
+  // every change. see logic/wallet.ts
+  async subscribeWallet(handler: Handler) {
+    return await this.sub("/ui", handler, "trill-wallet");
+  }
+  // the seed phrase: a watch the agent answers once and ends (no scry: any
+  // agent on the ship could read that). null if it won't say
+  async walletPhrase(): Promise<string | null> {
+    return new Promise((resolve) => {
+      let done = false;
+      const end = (phrase: string | null) => {
+        if (done) return;
+        done = true;
+        resolve(phrase);
+      };
+      this.airlock
+        .subscribe({
+          app: "trill-wallet",
+          path: "/phrase",
+          event: (d: unknown) => end(typeof d === "string" ? d : null),
+          err: () => end(null),
+          quit: () => end(null),
+        })
+        .catch(() => end(null));
+    });
+  }
+  // an action (backend/lib/json/wallet.hoon); { error } holds the agent's
+  // refusal when it won't
+  async walletAction(action: Record<string, unknown>) {
+    return this.poke(action, "trill-wallet");
+  }
+  // debates (%debates agent): everything we host or follow, live
+  async subscribeDebates(handler: Handler) {
+    return await this.sub("/ui", handler, "debates");
+  }
+  async createDebate(config: NewDebate) {
+    return this.poke({ create: config }, "debates");
+  }
+  // an action on a debate; guests' go to its host, whose refusals come
+  // back on /ui as { error }
+  async debateAct(key: DebateKey, action: Record<string, unknown>) {
+    return this.poke({ act: { host: key.host, action } }, "debates");
+  }
+  async watchDebate(key: DebateKey) {
+    return this.poke({ watch: key }, "debates");
+  }
+  async forgetDebate(key: DebateKey) {
+    return this.poke({ forget: key }, "debates");
+  }
+  // the page of messages before `before` (a message id); arrives as an update
+  async olderDebateMessages(key: DebateKey, before: string) {
+    return this.poke({ older: { key, before } }, "debates");
+  }
+  async dismissDebateInvite(key: DebateKey) {
+    return this.poke({ dismiss: key }, "debates");
+  }
+  // whose debate presence to follow (replaces the set)
+  async trackDebates(who: string[]) {
+    return this.poke({ track: { who } }, "debates");
   }
   // scries
 
@@ -134,7 +250,7 @@ export default class IO {
     if ("error" in res) return res;
     const r = res.ok as { thread: PeekThreadRes };
     if (!("thread" in r)) return { error: "wrong result" };
-    return { ok: r.thread };
+    return { ok: normalizeThread(r.thread) };
   }
   async scryGwid(patp: string): AsyncRes<GroundwireID>{
     const path = `/j/gwid/${patp}`;
@@ -210,6 +326,8 @@ export default class IO {
 
   // pokes
 
+  // NOTE: the backend ++ui decoder has no %alive, %gate or post %perms poke;
+  // pokeAlive, setFeedPerms and setPostPerms are acked and ignored (bad-ui-poke)
   async pokeAlive() {
     return await this.poke({ alive: true });
   }
@@ -223,32 +341,65 @@ export default class IO {
     return this.poke({ post: json });
   }
   async addReply(content: string, host: UserType, id: string, thread: string) {
-    const json = { reply: { content, host, id, thread } };
+    const json = { reply: { content, host: toWireUser(host), id, thread } };
     return this.poke({ post: json });
   }
   async addQuote(content: string, host: UserType, id: string) {
-    const json = { quote: { content, host, id } };
+    const json = { quote: { content, host: toWireUser(host), id } };
     return this.poke({ post: json });
   }
+  // a post sharing a UI card, see logic/cards.ts
+  async addCardPost(content: string, card: string) {
+    return this.poke({ post: { card: { content, card } } });
+  }
+  // trending topics from %topics; null when %topics isn't running
+  async scryTopics() {
+    return await this.scry("/j/topics");
+  }
+  // a trending topic's related articles, by its source and id (TopicItem);
+  // null once it's been refetched away
+  async scryTopicLinks(source: string, id: string) {
+    return await this.scry(`/j/topic-links/${source}/${id}`);
+  }
+  // AI model providers, from %trill-ai-client (logic/aiClient.ts). errors
+  // when it isn't running
+  async scryAiProviders() {
+    return await this.scry("/providers", "trill-ai-client");
+  }
+  async scryAiSuggestions() {
+    return await this.scry("/suggestions", "trill-ai-client");
+  }
+  // apiKey null keeps the key the provider has; "" removes it
+  // evalUrl null: evaluations go to <baseUrl>/systemone
+  async setAiProvider(name: string, baseUrl: string, evalUrl: string | null, apiKey: string | null) {
+    return this.poke({ "set-provider": { name, baseUrl, evalUrl, apiKey } }, "trill-ai-client");
+  }
+  async deleteAiProvider(name: string) {
+    return this.poke({ "del-provider": { name } }, "trill-ai-client");
+  }
+  // %topics refetches everything for the new prefs; %nostrill forwards them
+  async setTopicPrefs(prefs: TopicPrefs) {
+    return this.poke({ topics: { "set-prefs": prefs } });
+  }
+  // which %trill-ai-client provider judges trending spam; null turns it off
+  async setTopicSpamProvider(provider: string | null) {
+    return this.poke({ topics: { "set-spam-provider": { provider } } });
+  }
+  // the owner's word on a flagged topic (FlaggedTopic.key): true spam,
+  // false not spam, null back to Jev's judgement
+  async markTopic(key: string, spam: boolean | null) {
+    return this.poke({ topics: { mark: { key, spam } } });
+  }
   async addRP(host: UserType, id: string) {
-    const json = { rp: { host, id } };
+    const json = { rp: { host: toWireUser(host), id } };
     return this.poke({ post: json });
   }
 
-  // async addPost(post: SentPoast, gossip: boolean) {
-  //   const json = {
-  //     "new-post": {
-  //       "sent-post": post,
-  //       gossip,
-  //     },
-  //   };
-  //   return this.poke(json);
-  // }
 
   async deletePost(host: UserType, id: string) {
     const json = {
       del: {
-        host,
+        host: toWireUser(host),
         id,
       },
     };
@@ -260,11 +411,27 @@ export default class IO {
       reaction: {
         reaction: reaction,
         id,
-        host,
+        host: toWireUser(host),
       },
     };
 
     return this.poke({ post: json });
+  }
+
+  async removeReact(host: UserType, id: PostID) {
+    const json = { "del-reaction": { host: toWireUser(host), id } };
+    return this.poke({ post: json });
+  }
+
+  // lists: bookmarks, mutes, reports. the agent answers with a %lists fact
+  async bookmark(ref: PostRef, add: boolean) {
+    return this.poke({ lists: { bookmark: { add, ref } } });
+  }
+  async mute(user: UserType, add: boolean) {
+    return this.poke({ lists: { mute: { add, user: toWireUser(user) } } });
+  }
+  async report(ref: PostRef, reason: string) {
+    return this.poke({ lists: { report: { ref, reason } } });
   }
 
   async setFeedPerms(gate: Gate) {
@@ -277,24 +444,27 @@ export default class IO {
   }
 
   //
+  // plain hark-action, not hark-action-1: %hark re-dispatches every
+  // non-%new-yarn action-1 as %hark-action with the action-1-typed vase,
+  // which fails its cast (nest-fail), so marking read never worked
   async dismissAllNotifications() {
     const json = { "saw-seam": { desk: "nostrill" } };
-    return this.poke(json, "hark", "hark-action-1");
+    return this.poke(json, "hark", "hark-action");
   }
   async dismissNotification(rope: Rope) {
     const json = { "saw-rope": rope };
-    return this.poke(json, "hark", "hark-action-1");
+    return this.poke(json, "hark", "hark-action");
   }
   //
 
   //  follows
   async follow(user: UserType) {
-    const json = { add: user };
+    const json = { add: toWireUser(user) };
     return this.poke({ fols: json });
   }
 
   async unfollow(user: UserType) {
-    const json = { del: user };
+    const json = { del: toWireUser(user) };
     return await this.poke({ fols: json });
   }
   // profiles
@@ -310,12 +480,13 @@ export default class IO {
     return await this.poke({ keys: null });
   }
   async getProfiles(users: UserType[]) {
-    const json = { fetch: users };
+    const json = { fetch: users.map(toWireUser) };
     return await this.poke({ prof: json });
   }
   async scryProfile(user?: UserType): AsyncRes<UserProfile> {
-    const path = user
-      ? `/j/profile/${Object.keys(user)[0]}/${Object.values(user)[0]}`
+    const wire = user && toWireUser(user);
+    const path = wire
+      ? `/j/profile/${Object.keys(wire)[0]}/${Object.values(wire)[0]}`
       : "/j/profile";
     return await this.scry(path);
   }
@@ -365,8 +536,18 @@ export default class IO {
   async syncRelays(relays: number[]) {
     return await this.relayGet(relays, SYNC_SUB_NAME, { sync: null });
   }
-  async nostrFeed(pubkey: string, relays: number[]) {
-    const filters = [{ kinds: [1], authors: [pubkey] }];
+  // a user's notes, their profile and follow list (kinds 0 and 3; the
+  // backend pushes profiles to the UI at eose when a req asked for kind 0).
+  // with `until` (unix seconds): one page of notes older than that, filed
+  // into the same feed
+  async nostrFeed(pubkey: string, relays: number[], until?: number) {
+    const filters =
+      until === undefined
+        ? [
+            { kinds: [1], authors: [pubkey] },
+            { kinds: [0, 3], authors: [pubkey] },
+          ]
+        : [{ kinds: [1], authors: [pubkey], until, limit: NOSTR_PAGE_SIZE }];
     return await this.relayCustom(relays, `user/${pubkey}`, filters);
   }
   async nostrThread(id: string, relays: number[]) {
@@ -397,7 +578,7 @@ export default class IO {
       const json = { begs: { thread: { host, id } } };
       const res = (await this.thread("beg", json)) as PeekRes;
       if (!("thread" in res)) return { error: "request error" };
-      else return { ok: res.thread };
+      else return { ok: normalizeThread(res.thread) };
     } catch (e) {
       return { error: `${e}` };
     }
@@ -464,7 +645,6 @@ export default class IO {
     const id = dm.lastId!.toString();
     const peer = dm.peer.patp;
     const json = { read: { id, peer} };
-    console.log("sending poke...", json)
     return this.poke( json , "noschat");
   }
   // requests

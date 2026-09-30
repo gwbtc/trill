@@ -1,3 +1,4 @@
+import "@/styles/trill.css";
 import type { PostID, Poast, Reference } from "@/types/trill";
 
 import Header from "./Header";
@@ -5,13 +6,14 @@ import Body from "./Body";
 import Footer from "./Footer";
 import { useLocation } from "wouter";
 import useLocalState from "@/state/state";
+import { createContext, useContext } from "react";
+import { isHiddenPost } from "@/logic/lists";
 import RP from "./RP";
 import UserModal from "../modals/UserModal";
 import type { Ship } from "@/types/urbit";
-import Sigil from "../Sigil";
 import type { UserProfile, UserType } from "@/types/nostrill";
 import { getThreadPath } from "@/logic/utils";
-import { AvatarPic, UrbitAvatar } from "../Avatar";
+import { AvatarPic } from "../Avatar";
 
 export interface PostProps {
   poast: Poast;
@@ -24,12 +26,18 @@ export interface PostProps {
   refetch?: Function;
   profile?: UserProfile;
 }
+// set by pages that show a muted author's posts on purpose (their profile)
+export const ShowMutedPosts = createContext(false);
+
 function Post(props: PostProps) {
-  // console.log("post", props);
   const { poast } = props;
+  const lists = useLocalState((s) => s.lists);
+  const showMuted = useContext(ShowMutedPosts);
   if (!poast || poast.contents === null) {
     return null;
   }
+  // reported posts and muted authors, wherever posts are listed
+  if (isHiddenPost(poast, lists, showMuted)) return null;
   const isRP =
     poast.contents.length === 1 &&
     "ref" in poast.contents[0] &&
@@ -47,18 +55,22 @@ function Post(props: PostProps) {
 }
 export default Post;
 
+const INTERACTIVE_SELECTOR = "a, button, video, audio, input, textarea, select, label";
+
 function TrillPost(props: PostProps) {
   const { poast, profile, fake, rp, spine = true } = props;
   const setModal = useLocalState((s) => s.setModal);
   const [_, navigate] = useLocation();
-  function openThread(_e: React.MouseEvent) {
+  function openThread(e: React.MouseEvent) {
+    // links, buttons, media controls etc. inside the post do their own thing
+    if ((e.target as HTMLElement).closest(INTERACTIVE_SELECTOR)) return;
+    // a nested post (repost, quote) handles its own click; don't let the
+    // outer post navigate over it
+    e.stopPropagation();
     const sel = window.getSelection()?.toString();
-    const path = getThreadPath(poast);
-    if (poast.hash.includes("000000")) {
-      console.warn("bad hash", poast);
-      return;
-    }
-    if (!sel) navigate(path);
+    // (no hash check: urbit-only posts have an all-zero hash, and the thread
+    // route doesn't use it: /t/u/host/id for urbit, the event id for nostr)
+    if (!sel) navigate(getThreadPath(poast));
   }
 
   function openModal(e: React.MouseEvent) {

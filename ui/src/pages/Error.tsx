@@ -35,8 +35,6 @@ export function P404() {
 export function ErrorPage({ msg }: { msg: string }) {
   return (
     <div>
-      <P404 />
-      <h3>{msg}</h3>
       <div className="error-page">
         <div className="error-content">
           <div className="error-icon-wrapper">
@@ -46,7 +44,8 @@ export function ErrorPage({ msg }: { msg: string }) {
           <h2 className="error-subtitle">Something went wrong</h2>
           <p className="error-message">{msg}</p>
           <div className="error-actions">
-            <Link href="/apps/nostrill/f/nostr">
+            {/* relative to the router's /apps/nostrill base */}
+            <Link href="/f/nostr">
               <button className="error-btn primary">
                 <Icon name="home" size={18} />
                 Go to Feed

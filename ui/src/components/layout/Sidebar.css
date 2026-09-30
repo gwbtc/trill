@@ -3,8 +3,7 @@
   50%       { opacity: 0.35; transform: scale(0.78); }
 }
 
-.left-rail,
-.trill-sidebar {
+.left-rail {
   width: 282px;
   flex-shrink: 0;
   padding: 14px 12px 24px;
@@ -310,4 +309,162 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--color-primary, #5b46e5);
+}
+
+/* "More": phone bottom bar only */
+.nav-more {
+  display: none;
+}
+
+button.sidebar-nav-item {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Tablets: an icon rail */
+@media (max-width: 1000px) and (min-width: 601px) {
+  .left-rail {
+    width: 76px;
+    padding: 14px 10px 24px;
+    align-items: center;
+  }
+
+  .sidebar-logo {
+    padding: 8px 0 14px;
+  }
+
+  .sidebar-logo-text,
+  .nav-label,
+  .ship-card-info,
+  .ship-card-status,
+  .system-notices {
+    display: none;
+  }
+
+  .sidebar-ship-card {
+    margin: 0 0 14px;
+    padding: 6px;
+    border-radius: 14px;
+  }
+
+  .sidebar-nav {
+    width: 100%;
+    align-items: center;
+  }
+
+  .sidebar-nav-item {
+    justify-content: center;
+    width: 52px;
+    height: 48px;
+    padding: 0;
+  }
+
+  .sidebar-compose {
+    width: 52px;
+    height: 52px;
+    padding: 0;
+    border-radius: 50%;
+  }
+}
+
+/* Phones: a bottom tab bar and a floating compose button */
+@media (max-width: 600px) {
+  .left-rail {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 50;
+    width: 100%;
+    height: calc(58px + env(safe-area-inset-bottom));
+    padding: 0 6px env(safe-area-inset-bottom);
+    flex-direction: row;
+    align-items: center;
+    border-right: 0;
+    border-top: 1px solid var(--color-border-light, #eef0f2);
+    background: var(--color-background, #fff);
+    overflow: visible;
+  }
+
+  .sidebar-logo,
+  .sidebar-ship-card,
+  .system-notices,
+  .nav-label,
+  .nav-secondary {
+    display: none;
+  }
+
+  .sidebar-nav {
+    flex: 1;
+    flex-direction: row;
+    justify-content: space-around;
+    align-items: center;
+  }
+
+  .sidebar-nav-item {
+    justify-content: center;
+    width: 52px;
+    height: 44px;
+    padding: 0;
+  }
+
+  .nav-more {
+    display: block;
+    position: relative;
+  }
+
+  .nav-more-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+  }
+
+  .nav-more-menu {
+    position: fixed;
+    right: 8px;
+    bottom: calc(66px + env(safe-area-inset-bottom));
+    z-index: 60;
+    min-width: 210px;
+    padding: 6px;
+    border: 1px solid var(--color-border-light, #eef0f2);
+    border-radius: 14px;
+    background: var(--color-background, #fff);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.14);
+  }
+
+  .nav-more-item {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 11px 12px;
+    border-radius: 10px;
+    color: var(--color-text, #15181c);
+    font-size: 15px;
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  .nav-more-item:hover,
+  .nav-more-item.active {
+    background: var(--color-surface, #f5f6f7);
+  }
+
+  .nav-more-item.active {
+    color: var(--color-primary, #5b46e5);
+  }
+
+  .sidebar-compose {
+    position: fixed;
+    right: 16px;
+    bottom: calc(74px + env(safe-area-inset-bottom));
+    z-index: 50;
+    width: 56px;
+    height: 56px;
+    margin: 0;
+    padding: 0;
+    border-radius: 50%;
+  }
 }

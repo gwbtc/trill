@@ -424,8 +424,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
     // Legacy variables for backward compatibility
     root.style.setProperty("--text-color", theme.colors.text);
     root.style.setProperty("--background-color", theme.colors.background);
-
-    localStorage.setItem("theme", themeName);
   }, [themeName, theme]);
 
   useEffect(() => {
@@ -443,6 +441,8 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
 
   const setTheme = (name: ThemeName) => {
     if (themes[name]) {
+      // only an explicit choice is saved; until then the OS preference applies
+      localStorage.setItem("theme", name);
       setThemeName(name);
     }
   };

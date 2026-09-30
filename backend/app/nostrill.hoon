@@ -1,11 +1,12 @@
 /-  sur=nostrill, nsur=nostr, comms=nostrill-comms, ui=nostrill-ui
-/+  lib=nostrill, sr=sortug, scri,
+/+  lib=nostrill, sr=sortug, scri, nostr-keys,
     ws=websockets,
     nreq=nostr-req,
     nostr-client,
     dbug,
     relay-lib=nostrill-relay,
     posts-lib=nostrill-posts,
+    lists-lib=nostrill-lists,
     reqs-lib=nostrill-reqs,
     profile-lib=nostrill-profile,
     jsonlib=json-nostrill,
@@ -23,6 +24,7 @@
     cards  ~(. cards:lib bowl)
     relay  ~(. relay-lib [state bowl])
     posts  ~(. posts-lib [state bowl])
+    lists  ~(. lists-lib [state bowl])
     reqs   ~(. reqs-lib [state bowl])
     prof   ~(. profile-lib [state bowl])
     scry   ~(. scri [state bowl])
@@ -41,15 +43,18 @@
 ++  on-load
   |~  old-state=vase
   ^-  (quip card:agent:gall agent:gall)
-  =/  maybe-state  %-  (soft state-0:sur)  +.old-state
-  ?~  maybe-state
-    =.  state  *state-0:sur  `this
-
+  ::  no soft-cast-or-bunt fallback: when the old state doesn't fit, that
+  ::  silently replaced everything (feed, follows, profiles) with the bunt,
+  ::  including a zero keypair that can't sign. crash instead, so gall keeps
+  ::  the running agent and its state; add a migration when state changes
   =/  old-state  !<(versioned-state old-state)
-  
   ?-  -.old-state
     %0
       =.  state  old-state
+      ::  heal ships that went through that fallback: schnorr rejects a
+      ::  zero secret key, so every signed (global/relay) post crashed
+      =?  keys.state  =(0 priv.i.keys.state)
+        [(gen-keys:nostr-keys eny.bowl) t.keys.state]
       ::  heal relays whose socket vanished while we were down
       =^  cs  state  reconcile:relay
       :_  this
@@ -151,6 +156,14 @@
       =^  cs  state  (handle:dbg +.pok)
       [cs this]
     ?:  ?=(%ted -.pok)  (ws-proxy +.pok)
+    ?:  ?=(%sign -.pok)
+      [(sign-drafts:relay +.pok) this]
+    ?:  ?=(%watch -.pok)
+      =^  cs  state  (watch:relay name.pok filters.pok &)
+      [cs this]
+    ?:  ?=(%fetch -.pok)
+      =^  cs  state  (watch:relay name.pok filters.pok |)
+      [cs this]
     =^  cs  state  (handle-eng:posts +.pok)
     [cs this]
   ::  +on-ui: JSON pokes from our own frontend
@@ -167,8 +180,16 @@
       %prof  =^  cs  state  (handle-prof:prof +.u.upoke)
              [cs this]
       %rela  (handle-rela +.u.upoke)
+      %lists  =^  cs  state  (handle:lists +.u.upoke)
+              [cs this]
       %post  =^  cs  state  (handle-post:posts +.u.upoke)
              [cs this]
+      ::  trending topics settings and spam marks: %topics keeps them
+      %topics
+        :_  this
+        :~  :*  %pass  /topics/prefs  %agent  [our.bowl %topics]
+                %poke  %noun  !>(act.u.upoke)
+        ==  ==
     ==
   ::
   ++  handle-fols
@@ -224,6 +245,7 @@
       =/  msg  ?~  rest.pole  ''  -.rest.pole
       =^  cs  state  (handle-req:reqs [msg %fols] pole)
       [cs this]
+    [%profile ~]  [give-prof:prof this]
     [%beg %feed rest=*]
       =/  msg  ?~  rest.pole  ''  -.rest.pole
       =^  cs  state  (handle-req:reqs [msg %begs %feed] pole)
@@ -262,10 +284,14 @@
     [%x %j %profile ~]  own-profile:scry
     [%x %j %profile which=@ id=@ ~]  (profile:scry which.pole id.pole)
     [%x %j %relays ~]  relays:scry
+    [%x %j %topics ~]  trending:scry
+    [%x %j %topic-links source=@ id=@ ~]  (topic-links:scry source.pole id.pole)
     [%x %j %nostr ~]   nostr-feeds-scry:scry
     ::
     [%x %j %gwid patp=@ ~]  (sgwid:scry patp.pole)
     [%x %j %patp gwid=@ ~]  (patp:scry gwid.pole)
+    ::  our nostr public key: public, it's on everything we publish
+    [%x %pubkey ~]  ``noun+!>(`@ux`pub.i.keys.state)
   ==
 ::
 ++  on-agent
@@ -291,6 +317,13 @@
           %prof  (handle-prof-fact:prof +.fact)
         ==
       [cs this]
+    ::  one-shot profile fetch, see %fetch in +handle-prof
+    [%profile ship=@ ~]
+      ?.  ?=(%fact -.sign)  `this
+      =/  ufact  %-  (soft fact:comms)  q.q.cage.sign
+      ?.  ?=([~ %prof *] ufact)  `this
+      =^  cs  state  (handle-prof-fact:prof +.u.ufact)
+      [cs this]
   ==
 ::
 ++  on-arvo
@@ -303,10 +336,16 @@
       =/  gift  +.sign-arvo
       =/  ev    +>.gift
       ::  %reject: failed handshake (no on-leave will ever fire);
-      ::  %disconnect: precedes on-leave, only meaningful while
-      ::  %connecting. %accept/%message are handled elsewhere
+      ::  %disconnect: the socket's gone. %accept/%message are handled
+      ::  elsewhere
       ?.  ?=(?(%reject %disconnect) -.ev)  `this
-      =^  cs  state  (handle-ws-sign:relay (slav %t url.wire))
+      =^  cs  state  (handle-ws-sign:relay (slav %t url.wire) +<.gift -.ev)
+      [cs this]
+    [%ws-ping url=@ wid=@ what=@ ~]
+      ?.  ?=([%behn %wake *] sign-arvo)  `this
+      =^  cs  state
+        %^  handle-ping:relay  (slav %t url.wire)  (slav %ud wid.wire)
+        =(%check what.wire)
       [cs this]
     [%ws-retry url=@ at=@ ~]
       ?.  ?=([%behn %wake *] sign-arvo)  `this

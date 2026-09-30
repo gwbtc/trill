@@ -103,11 +103,13 @@
   |=  [poke=post-poke:ui p=post:post]  ^-  engagement:comms
   ?-  -.poke
     %add  !!
+    %card  !!
     %reply     [%reply id.poke p]
     %quote     [%quote id.poke p]
     %rp        [%rp [host.poke id.poke] id.p]
     %del       [%del-reply [host.poke id.poke] id.p]
     %reaction  [%reaction [host.poke id.poke] reaction.poke]
+    %del-reaction  [%del-reaction [host.poke id.poke]]
   ==
 ::
 ++  handle-post  |=  poke=post-poke:ui
@@ -177,9 +179,16 @@
               (update-followers:cards:lib f)
               (update-ui:cards:lib f)
             ==
-          ::  case: delete quote
+          ::  case: delete quote or repost. a repost is a lone ref block, a
+          ::  quote has text around its ref. a repost has to untoggle the
+          ::  host's shared set (the %rp headsup, as in the non-our-host
+          ::  branch); sending %del-quote left it in shared forever
           =/  ref=[ship @da]  u.is-ref
-          =/  eng-poke  [%eng [%del-quote [urbit+our.bowl +.ref] id.p]]
+          =/  is-rp=?
+            ?=([[%ref *] ~] (latest-post-content:postlib contents.p))
+          =/  eng-poke
+            ?:  is-rp  [%eng (headsup-poke [%rp host.poke +.ref] p)]
+            [%eng [%del-quote [urbit+our.bowl +.ref] id.p]]
           :_  state
           %+  snoc  cards
           (poke-host:crds `@p`-.ref eng-poke)
@@ -219,6 +228,24 @@
           :~  ui-card
               fact-card
           ==
+      ::  a shared card: our text, then the card as a %json block. like
+      ::  quotes, not sent to nostr
+      %card
+        ?~  (de:json:html card.poke)  ~&  >>>  bad-card-json=card.poke  `state
+        =/  sp  (build-sp:postlib our.bowl our.bowl content.poke ~ ~)
+        =.  contents.sp  (snoc contents.sp [%json %card card.poke])
+        =/  p=post:post  (build-post:postlib now.bowl pubkey sp)
+        =.  state  (add-to-feed p)
+        =/  fact  [%post %add (wrap-post p)]
+        =/  mentions
+          (extract-mentions:postlib content.poke (silt ~[our.bowl]))
+        :_  state
+        %+  weld
+          %+  turn  mentions  |=  s=@p
+          (poke-host:crds s [%eng %mention p])
+        :~  (update-ui:cards:lib fact)
+            (update-followers:cards:lib fact)
+        ==
       %quote
         =/  quote  ?-  -.host.poke
           %urbit  [%ref %trill +.host.poke /(crip (scow:sr %ud id.poke))]
@@ -367,6 +394,29 @@
               :~  ui-card
                   eng-card
               ==
+      ::  mirrors %reaction: drop our react locally where we hold the post,
+      ::  and tell the host so it drops it from the canonical copy
+      %del-reaction
+        =/  host  (user-to-atom:lib host.poke)
+        =/  eng-poke  [%eng (headsup-poke poke *post:post)]
+        =/  eng-card  (poke-host:crds host eng-poke)
+        =/  fed=(unit feed:feed)
+          ?:  .=(host our.bowl)  `feed.state
+          (~(get by following.state) host.poke)
+        ?~  fed  :_  state  :~(eng-card)
+        =/  up  (get:orm:feed u.fed id.poke)
+        ?~  up  :_  state  :~(eng-card)
+        =/  p  u.up
+        =.  reacts.engagement.p  (~(del by reacts.engagement.p) our.bowl)
+        =.  state  (add-to-feed p)
+        =/  fact  [%post %add (wrap-post p)]
+        =/  cards=(list card)
+          :~  (update-ui:cards:lib fact)
+              eng-card
+          ==
+        :_  state
+        ?.  .=(host our.bowl)  cards
+        [(update-followers:cards:lib fact) cards]
     ==
   --
 
@@ -446,6 +496,23 @@
         :~  (update-followers:cards:lib f)
             (update-ui:cards:lib [%post %add (wrap-post u.poast)])
             hark-card
+        ==
+      ::  someone reported one of our posts: just notify, if it's ours
+      %report
+        ?~  p=(get:orm:feed feed.state id.pid.e)  `state
+        [cards state]
+      ::  no notification for taking a reaction back
+      %del-reaction
+        =/  poast  (get:orm:feed feed.state id.pid.e)
+        ?~  poast  `state
+        ?.  (~(has by reacts.engagement.u.poast) src.bowl)  `state
+        =.  reacts.engagement.u.poast
+          (~(del by reacts.engagement.u.poast) src.bowl)
+        =.  state  (add-to-feed u.poast)
+        =/  f  [%post %upd (wrap-post u.poast)]
+        :_  state
+        :~  (update-followers:cards:lib f)
+            (update-ui:cards:lib [%post %add (wrap-post u.poast)])
         ==
       %del-reply
         ?~  p=(get:orm:feed feed.state child.e)  `state

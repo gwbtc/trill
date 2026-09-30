@@ -97,10 +97,12 @@ export default function PostActionMenu({
               <span>{bookmarked ? "Remove bookmark" : "Bookmark"}</span>
             </button>
             <div className="trill-post-menu-separator" />
-            <button type="button" role="menuitem" onClick={onToggleMute}>
-              <VolumeX size={17} strokeWidth={1.8} />
-              <span>{muted ? "Unmute author" : "Mute author"}</span>
-            </button>
+            {!isMine && (
+              <button type="button" role="menuitem" onClick={onToggleMute}>
+                <VolumeX size={17} strokeWidth={1.8} />
+                <span>{muted ? "Unmute author" : "Mute author"}</span>
+              </button>
+            )}
             {isMine && (
               <button
                 type="button"
@@ -112,15 +114,17 @@ export default function PostActionMenu({
                 <span>Delete post</span>
               </button>
             )}
-            <button
-              type="button"
-              role="menuitem"
-              className="danger"
-              onClick={onReport}
-            >
-              <Flag size={17} strokeWidth={1.8} />
-              <span>Report post</span>
-            </button>
+            {!isMine && (
+              <button
+                type="button"
+                role="menuitem"
+                className="danger"
+                onClick={onReport}
+              >
+                <Flag size={17} strokeWidth={1.8} />
+                <span>Report post</span>
+              </button>
+            )}
           </div>
         </>
       )}

@@ -31,10 +31,11 @@ export default function S3Browser({ onSelect }: S3BrowserProps) {
         secretKey: s3.secretAccessKey,
       });
 
-      const objs = new Set<S3Object>();
-      // There seems to be some reduplication issues with this library so let's just do sets
+      // the library can yield the same object more than once; dedupe by key
+      // (a Set of objects compares by identity, so it never deduped)
+      const objs = new Map<string, S3Object>();
       for await (const obj of client.listObjects()) {
-        objs.add(obj);
+        objs.set(obj.key, obj);
       }
       return objs;
     },
@@ -70,8 +71,10 @@ export default function S3Browser({ onSelect }: S3BrowserProps) {
         </div>
       ) : (
         <div className="image-grid">
-          {[...(objects || [])].map((obj) => {
-            const url = `${s3?.endpoint}/${s3?.currentBucket}/${obj.key}`;
+          {[...(objects?.values() ?? [])].map((obj) => {
+            // keys can hold spaces, "#", "?"...; encode each path segment
+            const key = obj.key.split("/").map(encodeURIComponent).join("/");
+            const url = `${s3?.endpoint}/${s3?.currentBucket}/${key}`;
             const isImg = obj.key.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i);
             const isVid = obj.key.match(/\.(mp4|mkv|webm)$/i);
             return (

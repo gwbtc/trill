@@ -2,7 +2,7 @@
     tf=trill-feed, tp=trill-post,
     wrap
 /+  sr=sortug, common=json-common, trill=json-trill, nostr=json-nostr,
-    gwid, gwidj=json-gwid
+    gwid, gwidj=json-gwid, topicsj=json-topics
 |%
 ++  en
 =,  enjs:format
@@ -20,6 +20,7 @@
     following+(enfollowing following)
     timeline+(global-with-cursor timeline ~ ~)
     ['followGraph' (engraph follow-graph)]
+    lists+(en-lists bookmarks muted reported)
   ~
   ==
 
@@ -190,6 +191,26 @@
       %prof    (en-profiles +.f)
       %fols    (folsfact +.f)
       %keys    (hex:en:common +.f)
+      %lists   (en-lists +.f)
+    ==
+  ++  en-post-ref  |=  r=post-ref:sur  ^-  json
+    ?-  -.r
+      %urbit  %+  frond  %urbit
+              (pairs ~[host+(patp:en:common host.r) id+(ud:en:common id.r)])
+      %nostr  (frond %nostr (hex:en:common id.r))
+    ==
+  ++  en-lists
+    |=  [b=(map post-ref:sur @da) m=(set user:sur) r=(set post-ref:sur)]
+    ^-  json
+    %:  pairs
+      :-  %bookmarks
+      :-  %a
+      %+  turn  ~(tap by b)
+      |=  [ref=post-ref:sur at=@da]
+      (pairs ~[ref+(en-post-ref ref) at+(time at)])
+      muted+a+(turn ~(tap in m) user)
+      reported+a+(turn ~(tap in r) en-post-ref)
+    ~
     ==
   ++  folsfact  |=  f=fols-fact:ui  ^-  json
     %+  frond  -.f
@@ -306,6 +327,19 @@
     prof+ui-prof
     post+ui-post
     rela+ui-relay
+    lists+ui-lists
+    topics+action:de:topicsj
+  ==
+++  ui-lists
+  %-  of  :~
+    bookmark+(ot ~[add+bo ref+post-ref])
+    mute+(ot ~[add+bo user+user])
+    report+(ot ~[ref+post-ref reason+so])
+  ==
+++  post-ref
+  %-  of  :~
+    urbit+(ot ~[host+(se:de:common %p) id+de-post-id])
+    nostr+hex:de:common
   ==
 ++  ui-fols
   %-  of  :~
@@ -354,9 +388,11 @@
     add+postadd
     reply+reply
     quote+quote
+    card+(ot ~[content+so card+so])
     rp+upid
     :: rt+de-rt
     reaction+reaction
+    del-reaction+upid
     del+upid
   ==
 ++  postadd
@@ -371,7 +407,7 @@
     content+so
     host+user
     id+de-post-id
-    id+de-post-id
+    thread+de-post-id
   ==
 ++  quote
   %-  ot  :~

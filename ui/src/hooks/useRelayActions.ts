@@ -1,7 +1,6 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
 import useLocalState from "@/state/state";
-import type { RelayStats } from "@/types/nostrill";
 import { isValidRelayUrl } from "@/logic/relayDisplay";
 
 export function useRelayActions() {

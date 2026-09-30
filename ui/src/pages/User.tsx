@@ -11,7 +11,7 @@ import { useLocation, useParams } from "wouter";
 import { decodeNostrKey } from "@/logic/nostr";
 import TrillFeed, { Inner } from "@/components/trill/User";
 import NostrFeed from "@/components/nostr/User";
-import Post from "@/components/post/Post";
+import Post, { ShowMutedPosts } from "@/components/post/Post";
 import { Images, Layers3, Link2, MessageCircle } from "lucide-react";
 import { gwidToUID, isOur, parseGwid, patpToUID } from "@/logic/gw";
 import {
@@ -41,10 +41,12 @@ function UserLoader() {
   const userString = params.user;
   if (!userString) return <ErrorPage msg="no such user" />;
   
+  // keyed by user so navigating between profiles remounts, instead of
+  // showing the previous user until (or if) the new lookup lands
   const nostrKey = decodeNostrKey(userString);
   if (nostrKey)
-    return <UserFeed user={{ nostr: nostrKey }} userString={userString} />;
-  else return <UrbitUser userString={userString} />
+    return <UserFeed key={userString} user={{ nostr: nostrKey }} userString={userString} />;
+  else return <UrbitUser key={userString} userString={userString} />
 }
 
 function UrbitUser({ userString }: { userString: string }) {
@@ -52,18 +54,19 @@ function UrbitUser({ userString }: { userString: string }) {
   const api = useLocalState(s => s.api);
   const [data, setData] = useState<DataType>(null);
   useEffect(() => {
+    if (!api) return;
     if (isValidPatp(userString))
-      patpToUID(api!, userString).then(res => {
+      patpToUID(api, userString).then(res => {
         if ("error" in res) setData({ error: "Error parsing @p" })
         else setData({ id: res.ok })
       })
     else if (parseGwid(userString))
-      gwidToUID(api!, userString).then(res => {
+      gwidToUID(api, userString).then(res => {
         if ("error" in res) setData({ error: "Error parsing groundwire ID" })
         else setData({ id: res.ok })
       })
     else setData({error: "no such user"})
-  }, [userString])
+  }, [api, userString])
   if (!data)
     return <div className="spinner" />
   else if ("error" in data) return <ErrorPage msg={data.error} />
@@ -105,6 +108,8 @@ function UserFeed({
   }, [storedFeed, userId]);
 
   return (
+    // a muted author's posts still show on their own profile
+    <ShowMutedPosts.Provider value={true}>
     <div id="screen-profile" className="trill-screen">
       <PageHeader
         title={title}
@@ -159,6 +164,7 @@ function UserFeed({
         <ProfileMedia feed={resolvedFeed} userId={userId} />
       </section>
     </div>
+    </ShowMutedPosts.Provider>
   );
 }
 
@@ -189,7 +195,7 @@ function ProfileReplies({
   return (
     <div className="profile-replies-list">
       {replies.map((reply) => (
-        <div className="profile-reply-row" key={reply.hash || reply.id}>
+        <div className="profile-reply-row" key={`${reply.host}/${reply.id}`}>
           <div className="profile-reply-context">
             <Link2 size={14} aria-hidden="true" />
             Replying to <span className="mono">{formatReplyTarget(getReplyTarget(reply))}</span>

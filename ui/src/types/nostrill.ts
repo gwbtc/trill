@@ -1,3 +1,4 @@
+import type { ListsFact } from "@/logic/lists";
 import type { Wevent as NostrEvent } from "./nostr";
 import type { NostrFilter } from "@nostrify/nostrify";
 import type { Cursor, FC, FlatFeed, FullNode, Poast } from "./trill";
@@ -102,7 +103,8 @@ export type Fact =
   | { post: PostFact }
   | { fols: FolsFact }
   | { prof: Record<string, UserProfile> }
-  | { keys: string };
+  | { keys: string }
+  | { lists: ListsFact };
 
 export type NamedWfeed = { name: string; feed: NostrEvent[] };
 export type NostrFact =
@@ -117,7 +119,10 @@ export type NostrFact =
   | { "sent-post": { host: any; id: string; relays: string[] } }
   | { "sent-prof": string[] };
 
-export type PostFact = { add: { post: Poast } } | { del: { post: Poast } };
+export type PostFact =
+  | { add: { post: Poast } }
+  | { upd: { post: Poast } }
+  | { del: { post: Poast } };
 
 export type EngaFact = { add: NostrEvent[] } | { del: NostrEvent[] };
 

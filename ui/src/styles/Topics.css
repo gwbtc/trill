@@ -1,0 +1,225 @@
+/* trending topics: the topic modal and the composer's topic snippet */
+
+.topic-modal {
+  width: min(480px, calc(100vw - 32px));
+  padding: 16px 18px 18px;
+}
+
+.topic-modal-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.topic-modal-source {
+  font-size: 12.5px;
+  color: var(--color-text-muted, #9aa2ab);
+}
+
+.topic-modal-pic {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  margin-bottom: 12px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: var(--color-border-light, #eef0f2);
+}
+
+.topic-modal-title {
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.3;
+  color: var(--color-text, #212529);
+}
+
+.topic-modal-meta {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--color-text-secondary, #566069);
+}
+
+.topic-modal-about {
+  margin: 12px 0 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--color-text, #212529);
+}
+
+.topic-modal-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted, #9aa2ab);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.topic-modal-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.topic-modal-cat {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--color-surface, #f7f8f9);
+  font-size: 12px;
+  color: var(--color-text-secondary, #566069);
+}
+
+.topic-modal-related {
+  margin-top: 14px;
+}
+
+.topic-modal-related-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0 -8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.topic-modal-related-row:hover {
+  background: var(--color-surface, #f7f8f9);
+}
+
+.topic-modal-related-title {
+  font-size: 13.5px;
+  line-height: 1.35;
+  color: var(--color-text, #212529);
+}
+
+.topic-modal-related-pub {
+  font-size: 12px;
+  color: var(--color-text-muted, #9aa2ab);
+}
+
+.topic-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.topic-modal-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border: 1px solid var(--color-border, #dfe3e7);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text, #212529);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.topic-modal-btn:hover {
+  background: var(--color-surface, #f7f8f9);
+}
+
+.topic-modal-btn.primary {
+  border-color: var(--color-primary, #543fd7);
+  background: var(--color-primary, #543fd7);
+  color: var(--color-background, #fff);
+}
+
+.topic-modal-btn.primary:hover {
+  background: var(--color-primary-hover, #4532c4);
+}
+
+.topic-snippet {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-light, #eef0f2);
+  border-left: 3px solid var(--color-primary, #543fd7);
+  border-radius: 10px;
+  background: var(--color-surface, #f7f8f9);
+}
+
+.topic-snippet-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.topic-snippet-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.topic-snippet-meta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--color-text-muted, #9aa2ab);
+}
+
+.topic-snippet-pic {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+/* hidden-as-spam review (components/topics/SpamReview.tsx) */
+.spam-review-copy,
+.spam-review-empty {
+  margin: 0 0 12px;
+  color: var(--color-text-secondary, #5f6b76);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.spam-review-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--color-border-light, #eef0f2);
+}
+
+.spam-review-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.spam-review-title {
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+a.spam-review-title:hover {
+  text-decoration: underline;
+}
+
+.spam-review-meta {
+  color: var(--color-text-muted, #8a929b);
+  font-size: 12px;
+}
+
+.spam-review-row .topic-modal-btn {
+  flex: none;
+}
+
+.spam-review-label {
+  margin-top: 14px;
+}

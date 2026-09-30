@@ -15,9 +15,9 @@ export type Post =
   | { quote: { user: Ship; src: PID; target: PID } }
   | { rp: { user: Ship; src: PID; target: PID } }
   | { reaction: { user: Ship; post: PID; reaction: string } }
+  | { report: { user: Ship; post: PID; reason: string } }
   | { mention: { user: Ship; post: PID } }
   | { delReply: { user: Ship; parent: PID; id: string } }
-  | { delParent: { user: Ship; parent: PID; id: string } }
   | { delQuote: { user: Ship; parent: PID; id: string } };
 
 type Nostr =
@@ -30,7 +30,9 @@ export type NotificationType =
   | { req: Req }
   | { res: Req }
   | { post: Post }
-  | { nostr: Nostr };
+  | { nostr: Nostr }
+  // %debates: a host inviting us, or a debate we're in starting
+  | { debate: { kind: "invite" | "start"; host: Ship; id: string } };
 
 export interface Notification {
   id: string;

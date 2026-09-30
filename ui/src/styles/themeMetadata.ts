@@ -1,27 +1,5 @@
 import type { ThemeName } from "@/styles/ThemeProvider";
 
-export const themeIcons: Record<ThemeName, string> = {
-  light: "☀️",
-  dark: "🌙",
-  sepia: "📜",
-  noir: "⚫",
-  ocean: "🌊",
-  forest: "🌲",
-  gruvbox: "🍂",
-  christmas: "🎄",
-};
-
-export const themeLabels: Record<ThemeName, string> = {
-  light: "Light",
-  dark: "Dark",
-  sepia: "Sepia",
-  noir: "Noir",
-  ocean: "Ocean",
-  forest: "Forest",
-  gruvbox: "Gruvbox",
-  christmas: "Christmas",
-};
-
 export const themeSwatches: { name: ThemeName; bg: string; accent: string }[] = [
   { name: "light", bg: "#ffffff", accent: "#543fd7" },
   { name: "dark", bg: "#0d1117", accent: "#7c6ef7" },

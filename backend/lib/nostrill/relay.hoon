@@ -10,7 +10,8 @@
     scri,
     constants,
     harklib=hark,
-    ws=websockets
+    ws=websockets,
+    nip44
 |_  [=state:sur =bowl:gall]
 +*  cardslib  ~(. cards:lib bowl)
 +$  card  card:agent:gall
@@ -83,7 +84,9 @@
     =^  cs  state  (do-get ~[wid] -.i.subs +.i.subs)
     $(subs t.subs, css (weld css cs))
   :_  state
-  [(update-ui:cardslib [%nostr %relays relays.state]) replay-cards]
+  :+  (update-ui:cardslib [%nostr %relays relays.state])
+    (ping-card url wid | (add now.bowl ws-ping-every:constants))
+  replay-cards
 ::  +unset-relay: deliberate close by wid. status=~ tells the
 ::    eventual on-leave to delete the entry instead of reconnecting
 ::
@@ -155,7 +158,14 @@
           ==
       ==
     `state
-  ?^  (check-connected:ws url bowl)
+  =/  zombie  (check-connected:ws url bowl)
+  ?:  &(?=(^ zombie) ?=(~ old))
+    ::  iris has a socket for a relay we don't track: left over (from
+    ::  before a restart, say). close it and connect anew
+    ~&  >>  closing-untracked-socket=[wid.u.zombie url]
+    =^  cs  state  (start-connect url 0 ~)
+    [[(cancel-connect:ws wid.u.zombie) cs] state]
+  ?^  zombie
     ~&  >>  already-connected-to=url
     `state
   ::  a re-added dormant entry starts fresh but keeps its subs
@@ -249,20 +259,22 @@
           !?=(%connected stage.u.status.rs)
       ==
     $(entries t.entries)
-  ?^  (check-connected:ws url.rs bowl)  $(entries t.entries)
+  ?^  (check-connected:ws url.rs bowl)
+    ::  live: (re)start its liveness pings; any older chain stops
+    ?~  wid.rs  $(entries t.entries)
+    =/  pc  (ping-card url.rs u.wid.rs | (add now.bowl ws-ping-every:constants))
+    $(entries t.entries, cards [pc cards])
   ~&  >>  reconcile-lost-socket=url.rs
   =.  relays.state
     (~(put by relays.state) url.rs rs(wid ~, reqs ~))
   =^  cs  state  (fail-relay url.rs)
   $(entries t.entries, cards (weld cards cs))
 ::  +handle-ws-sign: %reject or %disconnect arvo signs from iris.
-::    only meaningful while %connecting: %reject is the sole signal
-::    for a failed handshake (no on-leave ever fires), and a
-::    %disconnect sign always precedes any on-leave, which drives
-::    the connected case
+::    while %connecting, a failed handshake (no on-leave ever fires);
+::    for the current socket, a drop
 ::
 ++  handle-ws-sign
-  |=  url=@t
+  |=  [url=@t wid=@ud what=?(%reject %disconnect)]
   ^-  (quip card _state)
   =/  old  (~(get by relays.state) url)
   ?:  ?&  ?=(^ old)
@@ -270,7 +282,53 @@
           ?=(%connecting stage.u.status.u.old)
       ==
     (fail-relay url)
+  ::  the current socket closed. iris sends this ahead of on-leave, and
+  ::  alone for sockets it drops at a restart (where on-leave may never
+  ::  come). the on-leave after it finds the wid gone: inert
+  ?:  &(?=(%disconnect what) ?=(^ old) =(`wid wid.u.old))
+    (handle-drop wid)
   `state
+::  +ping-card: the liveness timer for one socket: %send a ping, or
+::  %check it was answered
+::
+++  ping-card
+  |=  [url=@t wid=@ud check=? at=@da]
+  ^-  card
+  =/  what  ?:(check %check %send)
+  [%pass /ws-ping/(scot %t url)/(scot %ud wid)/[what] %arvo %b %wait at]
+::  +handle-ping: liveness. %send: a tiny REQ named ~ping, checked
+::  ws-ping-timeout later. %check: answered (EOSE or CLOSED took it out
+::  of reqs), so ping again later; or not, and the socket is dead:
+::  cancel it in iris and drop it (which reconnects). a timer for a
+::  socket we no longer have ends its chain; so does one that finds
+::  another chain's ping out (after a reload, say)
+::
+++  handle-ping
+  |=  [url=@t wid=@ud check=?]
+  ^-  (quip card _state)
+  =/  urs  (~(get by relays.state) url)
+  ?~  urs  `state
+  =/  rs  u.urs
+  ?.  =(`wid wid.rs)  `state
+  =/  pings=(list req-state:nsur)
+    (skim ~(val by reqs.rs) |=(r=req-state:nsur =('~ping' name.r)))
+  ?.  check
+    ?^  pings  `state
+    =/  nclient  ~(. nostr-client [state bowl])
+    =/  rclient  ~(. relay.nclient [wid rs])
+    ::  an id no event has
+    =/  =filter:nsur  [`(silt ~[0x0]) ~ ~ ~ ~ ~ `1]
+    =/  [cs=(list card) rq=req-state:nsur]  (send-sub:rclient '~ping' ~[filter] | ~)
+    =.  reqs.rs  (~(put by reqs.rs) sub-id.rq rq)
+    =.  relays.state  (~(put by relays.state) url rs)
+    :_  state
+    (snoc cs (ping-card url wid & (add now.bowl ws-ping-timeout:constants)))
+  ?~  pings
+    [~[(ping-card url wid | (add now.bowl ws-ping-every:constants))] state]
+  ?.  (gte (sub now.bowl sent.i.pings) ws-ping-timeout:constants)  `state
+  ~&  >>  relay-silent=url
+  =^  cs  state  (handle-drop wid)
+  [[(cancel-connect:ws wid) cs] state]
 ::  +handle-client-event: a nostr client published an event to us.
 ::    we are not accepting submissions (yet)
 ::
@@ -318,6 +376,9 @@
     =.  received.u.req  +(received.u.req)
     =.  reqs.relay  (~(put by reqs.relay) sub-id u.req)
     =.  relays.state  (~(put by relays.state) url.relay relay)
+    ::  our agents' subs: theirs to handle
+    =/  fwd  (forward name.u.req `event)
+    ?^  fwd  [~[u.fwd] state]
     |^
     ::  https://nostrdata.github.io/kinds/
     ::  if it's an ongoing request past %eose,
@@ -331,7 +392,9 @@
         parse-metadata
       ?:  .=(kind.event 1)  ::  a poast
         parse-poast
-      ::  TODO kinds 3 (follow lists), 6 (reposts), 7 (reactions)
+      ?:  .=(kind.event 3)  ::  follow list
+        parse-follows
+      ::  TODO kinds 6 (reposts), 7 (reactions)
       `state
     [(weld cs1 cs) state]
     ::
@@ -343,7 +406,37 @@
       =/  umeta  (user-meta:de:njs u.ujon)
       ?~  umeta  ~&  >>  failed-dejs-metadata=ujon  `state
       =/  prof  (empty-nostr-profile:scri pubkey.event u.umeta)
+      ::  keep the follow list if their kind 3 came first
+      =/  old  (~(get by profiles.state) [%nostr pubkey.event])
+      =?  prof  ?=(^ old)
+        prof(following following.u.old, following-count following-count.u.old)
       =.  profiles.state  (~(put by profiles.state) [%nostr pubkey.event] prof)
+      `state
+    ::  +parse-follows: a kind 3 contact list, whose p tags are who they
+    ::  follow. replaceable, so the latest one simply replaces the last.
+    ::  their followers would need everyone else's lists; not tracked
+    ::
+    ++  parse-follows
+      ^-  (quip card _state)
+      =/  follows=(set user:sur)
+        %-  silt
+        %+  murn  tags.event
+        |=  tag=(list @t)
+        ^-  (unit user:sur)
+        ?~  tag  ~
+        ?.  =('p' i.tag)  ~
+        ?~  t.tag  ~
+        ::  a bare hex pubkey, no 0x
+        =/  pk  (rush i.t.tag hex)
+        ?~  pk  ~
+        `[%nostr `@ux`u.pk]
+      =/  key  [%nostr pubkey.event]
+      =/  prof
+        %+  ~(gut by profiles.state)  key
+        (empty-nostr-profile:scri pubkey.event *user-meta:nsur)
+      =.  following.prof  follows
+      =.  following-count.prof  ~(wyt in follows)
+      =.  profiles.state  (~(put by profiles.state) key prof)
       `state
     ::
     ++  parse-poast
@@ -372,6 +465,11 @@
     =/  ureq=(unit req-state:nsur)  (~(get by reqs.relay) sub-id)
     ?~  ureq  ~&  >>>  "sub id not found! on eose"  `state
     =/  reqs=req-state:nsur  u.ureq
+    ::  a liveness ping answered: close it, quietly
+    ?:  =('~ping' name.reqs)
+      =/  d  (close-sub-req:nclient sub-id wid relay)
+      =.  relays.state  (~(put by relays.state) url.relay +.d)
+      [~[(send-card:rclient -.d)] state]
     =^  cards  relay
       ?:  (is-feed:nreq filters.reqs)
         ::  TODO don't send all at once, stream in chunks
@@ -402,11 +500,13 @@
         =/  c  (update-ui:cardslib [%nostr %thread f])
         [:~(c) relay]
       ::
-      ?:  (profs-req:nreq filters.reqs)
-        =/  c  (update-ui:cardslib [%prof profiles.state])
-        [:~(c) relay]
-      ::
       [~ relay]
+    ::  any req that asked for profiles (kind 0) sends them on, whatever
+    ::  else it was: the timeline sub asks for its authors' profiles
+    ::  alongside their posts, and is caught by +user-req above
+    =/  prof-cards=(list card:agent:gall)
+      ?.  (profs-req:nreq filters.reqs)  ~
+      ~[(update-ui:cardslib [%prof profiles.state])]
     ::  TODO handle chunked requests: pop the queue, send the next sub
     ::  one-shot subs close at %eose; ongoing subs record it
     ::  and stay live
@@ -421,10 +521,12 @@
       [~ relay]
     =.  relays.state  (~(put by relays.state) url.relay relay)
     =/  eose-card    (update-ui:cardslib [%nostr %eose sub-id])
+    ::  our agents' subs hear of it too
+    =/  fwd=(list card)  (drop (forward name.reqs ~))
     =/  relays-card  (update-ui:cardslib [%nostr %relays relays.state])
     :_  state
     :-  eose-card  :-  relays-card
-    (weld cards cards3)
+    :(weld cards prof-cards cards3 fwd)
   --
 ::  +handle-ted: relay requests proxied through a thread
 ::
@@ -497,6 +599,125 @@
   =.  nostr-feeds.state
     (~(put by nostr-feeds.state) name (~(put by osfs) url.relay sourced-feed))
   $(wids t.wids, css (weld css -.d))
+::  +sign-drafts: sign (and seal) events for one of our own agents,
+::  publish them, and tell it their ids. only an agent on this ship may
+::  ask: gall gives a local agent's pokes the provenance /gall/<agent>
+::
+++  sign-drafts
+  |=  [ref=@ud drafts=(list draft:comms) to=(list @t)]
+  ^-  (list card)
+  ?>  =(our src):bowl
+  ?.  ?=([%gall @ ~] sap.bowl)  ~|(%sign-for-agents-only !!)
+  =/  ks=keys:nsur  i.keys.state
+  =/  ck  (conversation-key:nip44 priv.ks pub.ks)
+  =/  at=@ud  (div (sub now.bowl ~1970.1.1) ~s1)
+  =|  evs=(list event:nsur)
+  =/  n=@ud  0
+  |-
+  ?^  drafts
+    =/  d=draft:comms  i.drafts
+    =/  sed  (shas n eny.bowl)
+    =/  content=@t
+      ?.  seal.d  content.d
+      (encrypt:nip44 ck (end [3 32] (shas %nonce sed)) content.d)
+    =/  ev  (finalize-event:evlib ks sed [pub.ks at kind.d tags.d content])
+    $(drafts t.drafts, n +(n), evs [ev evs])
+  =.  evs  (flop evs)
+  %+  snoc  (weld (publish evs) (publish-to to evs))
+  :*  %pass  /signed  %agent  [our.bowl i.t.sap.bowl]
+      %poke  %noun  !>([%signed ref (turn evs |=(e=event:nsur id.e))])
+  ==
+::  +watch: a subscription for one of our agents, on every live relay;
+::  ongoing, or closed at EOSE. named @<agent>/<name>: +handle-event and
+::  +handle-eose forward what it finds
+::
+++  watch
+  |=  [name=@t filters=(list filter:nsur) ongoing=?]
+  ^-  (quip card _state)
+  ?>  =(our src):bowl
+  ?.  ?=([%gall @ ~] sap.bowl)  ~|(%watch-for-agents-only !!)
+  =/  full=@t  (rap 3 ~['@' i.t.sap.bowl '/' name])
+  =^  cs  state  (unwatch full)
+  =/  wids=(list @ud)  (murn ~(val by relays.state) |=(rs=relay-stats:nsur wid.rs))
+  =^  more  state  (do-get wids full [%custom full filters ongoing])
+  [(weld cs more) state]
+::  +unwatch: close every sub of this name, and forget it for replays
+::
+++  unwatch
+  |=  name=@t
+  ^-  (quip card _state)
+  =/  nclient  ~(. nostr-client [state bowl])
+  =/  entries=(list [@t relay-stats:nsur])  ~(tap by relays.state)
+  =|  cs=(list card)
+  |-
+  ?~  entries  [cs state]
+  =/  rs=relay-stats:nsur  +.i.entries
+  =/  sids=(list @t)
+    %+  murn  ~(tap by reqs.rs)
+    |=([sid=@t r=req-state:nsur] ?.(=(name name.r) ~ `sid))
+  =/  closes=(list card)
+    ?~  wid.rs  ~
+    =/  rclient  ~(. relay.nclient [u.wid.rs rs])
+    (turn sids |=(sid=@t (send-card:rclient [%close sid])))
+  =.  reqs.rs
+    =/  left  sids
+    |-
+    ?~  left  reqs.rs
+    $(left t.left, reqs.rs (~(del by reqs.rs) i.left))
+  =?  status.rs  ?=(^ status.rs)  `u.status.rs(subs (~(del by subs.u.status.rs) name))
+  =.  relays.state  (~(put by relays.state) url.rs rs)
+  $(entries t.entries, cs (weld closes cs))
+::  +forward: an event on one of our agents' subs (@<agent>/<name>),
+::  poked on to it; ~ for the sub's EOSE
+::
+++  forward
+  |=  [sub=@t ev=(unit event:nsur)]
+  ^-  (unit card)
+  ?.  =('@' (end 3 sub))  ~
+  =/  t  (trip (rsh 3 sub))
+  =/  i  (find "/" t)
+  ?~  i  ~
+  =/  dude  (slaw %tas (crip (scag u.i t)))
+  ?~  dude  ~
+  =/  name=@t  (crip (slag +(u.i) t))
+  :-  ~
+  :*  %pass  /forward  %agent  [our.bowl u.dude]
+      %poke  %noun
+      ?~  ev  !>([%nostr-eose name])
+      !>([%nostr-event name u.ev])
+  ==
+::  +publish-to: events to relays we aren't connected to, each by a one
+::  off connection
+::
+++  publish-to
+  |=  [urls=(list @t) evs=(list event:nsur)]
+  ^-  (list card)
+  =/  nclient  ~(. nostr-client [state bowl])
+  =/  have  ~(key by relays.state)
+  =/  urls  (skip urls |=(u=@t (~(has in have) u)))
+  =|  cs=(list card)
+  |-
+  ?~  urls  cs
+  =/  more=(list card)
+    %+  turn  evs
+    |=(e=event:nsur (one-off:ws i.urls (req-to-msg:nclient [%event e]) bowl))
+  $(urls t.urls, cs (weld more cs))
+::  +publish: signed events to every relay with a live socket. one that's
+::  down misses them; whoever sent them can send them again
+::
+++  publish
+  |=  evs=(list event:nsur)
+  ^-  (list card)
+  =/  nclient  ~(. nostr-client [state bowl])
+  =/  entries  ~(tap by relays.state)
+  =|  cs=(list card)
+  |-  ?~  entries  cs
+  =/  rs=relay-stats:nsur  +.i.entries
+  ?~  wid.rs  $(entries t.entries)
+  =/  rclient  ~(. relay.nclient [u.wid.rs rs])
+  =/  more=(list card)
+    (turn evs |=(e=event:nsur (send-card:rclient [%event e])))
+  $(entries t.entries, cs (weld more cs))
 ::  +handle-rela: pokes from UI related to relay interaction
 ::
 ++  handle-rela

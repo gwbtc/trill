@@ -1,7 +1,8 @@
-import type { NostrFeeds, Relays, UserProfile } from "@/types/nostrill";
+import type { Fact, NostrFeeds, Relays, UserProfile } from "@/types/nostrill";
 import type { FC } from "@/types/trill";
 import { SYNC_SUB_NAME } from "./constants";
 import { nostrFeedsToFcMap } from "./nostrill";
+import { parseLists, type Lists } from "./lists";
 
 export type UserTagged = { urbit: string } | { nostr: string };
 
@@ -16,6 +17,7 @@ export type StateFactSlices = {
   timeline: FC;
   followGraph: Record<string, UserTagged[]>;
   pubkey: string;
+  lists: Lists;
 };
 
 export const emptyFC = (): FC => ({ feed: {}, start: null, end: null });
@@ -50,5 +52,23 @@ export function parseStateFact(s: unknown): StateFactSlices {
     timeline,
     followGraph: isObject(st.followGraph) ? st.followGraph : {},
     pubkey: typeof st.key === "string" ? st.key : "",
+    lists: parseLists(st.lists),
   };
+}
+
+// the backend encodes an enbowl's user tagged ({ urbit: "~nec" }) while
+// everything in the UI (following keys, patp comparisons) uses the bare id;
+// flatten it once on arrival so every consumer of lastFact sees a string
+export function normalizeFact(fact: Fact): Fact {
+  if ("fols" in fact && "new-urbit" in fact.fols) {
+    const nu = fact.fols["new-urbit"];
+    const user = nu.user as string | UserTagged;
+    if (typeof user === "object" && user)
+      return {
+        fols: {
+          "new-urbit": { ...nu, user: "urbit" in user ? user.urbit : user.nostr },
+        },
+      };
+  }
+  return fact;
 }

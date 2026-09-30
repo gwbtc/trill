@@ -1,4 +1,5 @@
 import Avatar from "@/components/Avatar";
+import { unwrap } from "@/logic/result";
 import UserModal from "@/components/modals/UserModal";
 import ModalCloseButton from "@/components/ui/ModalCloseButton";
 import { fetchFollowers, fetchFollows } from "@/logic/nostr";
@@ -55,7 +56,12 @@ export default function ConnectionsModal({
     following: "urbit" in user,
     followers: "urbit" in user,
   });
-  const [loading, setLoading] = useState<ConnectionTab | null>(null);
+  // per tab: with a single "loading tab", one tab finishing cleared the flag
+  // while the other was still in flight, and the effect fetched it again
+  const [loading, setLoading] = useState<Record<ConnectionTab, boolean>>({
+    following: false,
+    followers: false,
+  });
   const [loadError, setLoadError] = useState<Record<ConnectionTab, string | null>>({
     following: null,
     followers: null,
@@ -70,7 +76,7 @@ export default function ConnectionsModal({
   const list = lists[activeTab];
 
   useEffect(() => {
-    if ("urbit" in user || loaded[activeTab] || loading === activeTab) return;
+    if ("urbit" in user || loaded[activeTab] || loading[activeTab]) return;
     void loadNostrConnections(activeTab);
   }, [activeTab, loaded, loading, user]);
 
@@ -87,7 +93,7 @@ export default function ConnectionsModal({
       return;
     }
 
-    setLoading(tab);
+    setLoading((current) => ({ ...current, [tab]: true }));
     setLoadError((current) => ({ ...current, [tab]: null }));
     try {
       const ids = tab === "following"
@@ -105,7 +111,7 @@ export default function ConnectionsModal({
         [tab]: "Connections could not be loaded from the relay.",
       }));
     } finally {
-      setLoading(null);
+      setLoading((current) => ({ ...current, [tab]: false }));
     }
   }
 
@@ -121,8 +127,8 @@ export default function ConnectionsModal({
     setFollowOverrides((current) => ({ ...current, [id]: nextFollowing }));
     setPending((current) => new Set(current).add(id));
     try {
-      if (nextFollowing) await api.follow(entry);
-      else await api.unfollow(entry);
+      if (nextFollowing) unwrap(await api.follow(entry));
+      else unwrap(await api.unfollow(entry));
       toast.success(nextFollowing ? "Followed" : "Unfollowed");
     } catch (error) {
       setFollowOverrides((current) => ({ ...current, [id]: wasFollowing }));
@@ -175,7 +181,7 @@ export default function ConnectionsModal({
       </div>
 
       <div className="subfollows-list" role="tabpanel">
-        {loading === activeTab ? (
+        {loading[activeTab] ? (
           <div className="connections-state" role="status">
             <LoaderCircle className="connections-spinner" size={24} />
             <span>Loading {activeTab}…</span>

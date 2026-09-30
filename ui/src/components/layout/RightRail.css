@@ -250,7 +250,14 @@
   display: flex;
   align-items: center;
   gap: 11px;
+  width: 100%;
   padding: 9px 17px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .rail-follow-row:hover {
@@ -277,4 +284,180 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Trending topics */
+.rail-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 10px;
+}
+
+.rail-card-share {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-muted, #9aa2ab);
+  cursor: pointer;
+}
+
+.rail-card-share:hover,
+.rail-card-share:focus-visible {
+  background: var(--color-surface, #f7f8f9);
+  color: var(--color-primary, #4f46e5);
+}
+
+.rail-trending-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 0 17px 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.rail-trending-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.rail-trending-tab {
+  flex: none;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border-light, #eef0f2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary, #5f6b76);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.rail-trending-tab:hover {
+  background: var(--color-surface, #f7f8f9);
+}
+
+.rail-trending-tab.active {
+  border-color: var(--color-primary, #4f46e5);
+  color: var(--color-primary, #4f46e5);
+  font-weight: 600;
+}
+
+.rail-trending-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 17px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rail-trending-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.rail-trending-pic {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--color-border-light, #eef0f2);
+}
+
+.rail-trending-row:hover {
+  background: var(--color-surface, #f7f8f9);
+}
+
+.rail-trending-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.rail-trending-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--color-text-muted, #9aa2ab);
+}
+
+/* a source's favicon (components/topics/SourceIcon.tsx) */
+.source-icon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+}
+
+/* before the first state fact: placeholder lines, not an empty state */
+.rail-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 17px 8px;
+}
+
+.rail-loading span {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--color-surface, #f1f3f5);
+}
+
+.rail-loading span:first-child {
+  width: 45%;
+}
+
+/* grows the card by a page (components/layout/TrendingTopics.tsx) */
+.rail-trending-more {
+  display: block;
+  width: calc(100% - 34px);
+  margin: 6px 17px 8px;
+  padding: 7px 0;
+  border: 1px solid var(--color-border, #e1e5e9);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-primary, #4f46e5);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rail-trending-more:hover {
+  background: var(--color-surface, #f7f8f9);
+}
+
+/* the way into the spam review (components/topics/SpamReview.tsx) */
+.rail-trending-spam {
+  display: block;
+  margin: 2px 17px 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted, #8a929b);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.rail-trending-spam:hover {
+  color: var(--color-primary, #4f46e5);
+  text-decoration: underline;
 }

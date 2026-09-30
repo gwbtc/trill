@@ -19,7 +19,6 @@ export interface Contact {
   status: string;
 }
 export type Contacts = Record<Ship, Contact>;
-type AppName = string;
 
 export type SettingsValue =
   | string

@@ -1,0 +1,20 @@
+/* a bookmarked nostr note none of the loaded feeds has (pages/Bookmarks.tsx) */
+.bookmark-unloaded {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  padding: 1rem 1.25rem;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bookmark-unloaded:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}

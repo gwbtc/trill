@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import toast from "react-hot-toast";
-import useLocalState from "@/state/state";
+import useLocalState, { useStore } from "@/state/state";
+import { withoutMuted } from "@/logic/lists";
 import TabStrip, { type TabItem } from "@/components/ui/TabStrip";
 import UserModal from "@/components/modals/UserModal";
 import Icon, { type IconName } from "./Icon";
@@ -9,10 +10,13 @@ import Avatar from "./Avatar";
 import type { Notification } from "@/types/notifications";
 import type { UserProfile } from "@/types/nostrill";
 import {
+  displayYarn,
+  withoutActor,
   filterNotifications,
   formatNotificationTimestamp,
   getNotificationKind,
   notificationPath,
+  setNotificationsClearedAt,
   type NotificationFilter,
   type NotificationKind,
 } from "@/logic/notifications";
@@ -38,23 +42,27 @@ const NOTIFICATION_ICONS: Record<NotificationKind, IconName> = {
   quote: "quote",
   repost: "repost",
   reaction: "emoji",
+  report: "flag",
   mention: "messages",
   deletion: "trash",
   relay: "radio",
   keys: "key",
+  debate: "messages",
 };
 
 export default function NotificationCenter() {
   const {
     api,
-    notifications,
+    allNotifications,
+    lists,
     notificationsLoaded,
     profiles,
     setNotifications,
     setModal,
   } = useLocalState((state) => ({
     api: state.api,
-    notifications: state.notifications,
+    allNotifications: state.notifications,
+    lists: state.lists,
     notificationsLoaded: state.notificationsLoaded,
     profiles: state.profiles,
     setNotifications: state.setNotifications,
@@ -63,6 +71,11 @@ export default function NotificationCenter() {
   const [, navigate] = useLocation();
   const [filter, setFilter] = useState<NotificationFilter>("all");
   const [isUpdating, setIsUpdating] = useState(false);
+  // notifications from muted users stay on the ship but aren't shown
+  const notifications = useMemo(
+    () => withoutMuted(allNotifications, lists),
+    [allNotifications, lists],
+  );
 
   const filteredNotifications = filterNotifications(notifications, filter);
   const unreadCount = notifications.reduce(
@@ -70,9 +83,13 @@ export default function NotificationCenter() {
     0,
   );
 
+  // read the store at update time, not this render's snapshot: a
+  // notification arriving while a request is in flight would be dropped
+  const current = () => useStore.getState().notifications;
+
   function setNotificationRead(id: string) {
     setNotifications(
-      notifications.map((notification) =>
+      current().map((notification) =>
         notification.id === id ? { ...notification, unread: false } : notification,
       ),
     );
@@ -95,11 +112,9 @@ export default function NotificationCenter() {
   }
 
   async function markAllNotificationsRead() {
-    const previous = notifications;
+    const wereUnread = new Set(current().filter((n) => n.unread).map((n) => n.id));
     setIsUpdating(true);
-    setNotifications(
-      notifications.map((notification) => ({ ...notification, unread: false })),
-    );
+    setNotifications(current().map((n) => ({ ...n, unread: false })));
     if (!api) {
       setIsUpdating(false);
       return;
@@ -107,25 +122,27 @@ export default function NotificationCenter() {
 
     const result = await api.dismissAllNotifications();
     if ("error" in result) {
-      setNotifications(previous);
+      setNotifications(
+        current().map((n) => (wereUnread.has(n.id) ? { ...n, unread: true } : n)),
+      );
       toast.error("Could not mark notifications as read");
     }
     setIsUpdating(false);
   }
 
+  // see setNotificationsClearedAt: marks all read on the ship and hides
+  // everything shown so far, persistently, on this browser
   async function dismissAll() {
-    const previous = notifications;
+    if (!api) return;
+    const cleared = current();
     setIsUpdating(true);
-    setNotifications([]);
-    if (!api) {
-      setIsUpdating(false);
-      return;
-    }
-
     const result = await api.dismissAllNotifications();
     if ("error" in result) {
-      setNotifications(previous);
       toast.error("Could not clear notifications");
+    } else {
+      setNotificationsClearedAt(Math.max(0, ...cleared.map((n) => n.timestamp)));
+      const ids = new Set(cleared.map((n) => n.id));
+      setNotifications(current().filter((n) => !ids.has(n.id)));
     }
     setIsUpdating(false);
   }
@@ -238,15 +255,9 @@ function NotificationRow({
   const actorHandle = notification.from
     ? getHandleLabel(notification.from, actorId)
     : "";
-  const message = notification.message.filter(
-    (part) =>
-      !(
-        notification.from &&
-        typeof part !== "string" &&
-        "ship" in part &&
-        part.ship === actorId
-      ),
-  );
+  const message = notification.from
+    ? withoutActor(displayYarn(notification.message), actorId)
+    : displayYarn(notification.message);
 
   return (
     <article
@@ -294,7 +305,10 @@ function NotificationRow({
         <p className="notification-message">
           {message.map((part, index) =>
             typeof part === "string" ? (
-              <span key={`${part}-${index}`}>{part}</span>
+              <span key={`${part}-${index}`}>
+                {index > 0 ? " " : ""}
+                {part}
+              </span>
             ) : "ship" in part ? (
               <span className="ship mono" key={`${part.ship}-${index}`}>
                 {part.ship}

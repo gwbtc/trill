@@ -42,15 +42,29 @@ function emptyDm(peer: string): ChatData | null {
   }
 }
 
-export default function Loader() {
+function safeDecode(s: string) {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
+export default function DmRoute() {
   const params = useParams<{ id?: string }>();
+  const activePeer = params.id ? safeDecode(params.id) : "";
+  // keyed by peer: going from one conversation to another remounts, so
+  // the old peer's messages, draft and menus never carry over
+  return <Loader key={activePeer} activePeer={activePeer} />;
+}
+
+function Loader({ activePeer }: { activePeer: string }) {
   const [, navigate] = useLocation();
   const { api, lastChatFact } = useLocalState((s) => ({
     api: s.api,
     lastChatFact: s.lastChatFact,
   }));
   const [data, setData] = useState<ChatData>();
-  const activePeer = params.id ? decodeURIComponent(params.id) : "";
 
   function closeConversation() {
     navigate("/dms");
@@ -207,7 +221,7 @@ function ChatUser({ data, navigate }: { data: ChatData; navigate: (s: string) =>
   }
 
   useEffect(() => {
-    if (!api || !data.lastId || !data.live) return;
+    if (!api || !data.lastId) return;
     if (data.lastRead !== data.lastId) void api.markChatRead(data);
   }, [api, data]);
 

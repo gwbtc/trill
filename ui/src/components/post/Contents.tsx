@@ -1,3 +1,5 @@
+import { linkLabel, safeHref } from "@/logic/utils";
+import NostrText from "./NostrText";
 import type {
   Block,
   Inline,
@@ -8,7 +10,6 @@ import Media from "./Media";
 import { YoutubeSnippet } from "./External";
 import { useLocation } from "wouter";
 import type { Ship } from "@/types/urbit.ts";
-import { extractURLs } from "@/logic/nostrill.ts";
 import { IMAGE_REGEX } from "@/logic/constants.ts";
 
 function Body({ contents }: { contents: Content }) {
@@ -101,10 +102,7 @@ function Inlin({ i }: { i: Inline }) {
     e.stopPropagation();
     navigate(`/u/${ship}`);
   }
-  if ("text" in i)
-    return (
-      <span key={i.text + i}>{i.text}</span>
-    );
+  if ("text" in i) return <NostrText text={i.text} />;
   else {
     return "italic" in i ? (
       <i>{i.italic}</i>
@@ -122,7 +120,7 @@ function Inlin({ i }: { i: Inline }) {
       <span
         className="mention"
         role="link"
-        onMouseUp={(e) => gotoShip(e, i.ship)}
+        onClick={(e) => gotoShip(e, i.ship)}
       >
         {i.ship}
       </span>
@@ -149,7 +147,13 @@ function LinkParser({ href, show }: { href: string; show: string }) {
   ) : isImg ? (
     <img className="inline-pic" src={href} />
   ) : (
-    <a href={href}>{show}</a>
+    safeHref(href) ? (
+      <a href={href} title={href}>
+        {linkLabel(show)}
+      </a>
+    ) : (
+      <span>{linkLabel(show)}</span>
+    )
   );
 }
 function Heading({ string, num }: { string: string; num: number }) {

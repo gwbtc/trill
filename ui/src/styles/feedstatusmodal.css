@@ -265,26 +265,6 @@
   opacity: 0.7;
 }
 
-.feed-status-action.pause {
-  border-color: color-mix(in srgb, var(--color-error, #e0476b) 30%, var(--color-background));
-  color: var(--color-error, #e0476b);
-}
-
-.feed-status-action.pause:hover,
-.feed-status-action.pause:focus-visible {
-  background: color-mix(in srgb, var(--color-error, #e0476b) 11%, var(--color-background));
-}
-
-.feed-status-action.resume {
-  border-color: color-mix(in srgb, var(--color-success, #16a34a) 35%, var(--color-background));
-  color: var(--color-success, #16a34a);
-}
-
-.feed-status-action.resume:hover,
-.feed-status-action.resume:focus-visible {
-  background: color-mix(in srgb, var(--color-success, #16a34a) 11%, var(--color-background));
-}
-
 .feed-status-action .is-spinning,
 .feed-resync-button .is-spinning {
   animation: feedstatus-spin 0.8s linear infinite;

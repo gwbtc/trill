@@ -1,5 +1,5 @@
 // import { generateSecretKey, getPublicKey } from "nostr-tools/pure";
-import { NPool, NRelay1, type NostrEvent } from "@nostrify/nostrify";
+import { NRelay1 } from "@nostrify/nostrify";
 import * as nip19 from "nostr-tools/nip19";
 import type { Event } from "@/types/nostr";
 
@@ -22,31 +22,35 @@ export function generateNprofile(pubkey: string) {
   const nprofile = nip19.nprofileEncode(prof);
   return nprofile;
 }
+const HEX64 = /^[0-9a-f]{64}$/i;
+
+// a user's pubkey (hex) from npub/nprofile/naddr or raw hex. never decodes
+// an nsec: that would turn a pasted secret key into a "pubkey" that ends up
+// in URLs and relay filters. note/nevent ids are not users either
 export function decodeNostrKey(key: string): string | null {
+  if (HEX64.test(key)) return key.toLowerCase();
   try {
     const { type, data } = nip19.decode(key);
-    if (type === "nevent") return data.id;
-    else if (type === "nprofile") return data.pubkey;
-    else if (type === "naddr") return data.pubkey;
-    else if (type === "npub") return data;
-    else if (type === "nsec") return uint8ArrayToHexString(data);
-    else if (type === "note") return data;
-    else return null;
-  } catch (e) {
-    try {
-      // TODO do we want this for something
-      nip19.npubEncode(key);
-      return key;
-    } catch (e2) {
-      console.error(e2, "not valid nostr key");
-      return null;
-    }
+    if (type === "npub") return data;
+    if (type === "nprofile") return data.pubkey;
+    if (type === "naddr") return data.pubkey;
+    return null;
+  } catch {
+    return null;
   }
 }
-function uint8ArrayToHexString(uint8Array: Uint8Array) {
-  return Array.from(uint8Array)
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+
+// an event id (hex) from note/nevent or raw hex
+export function decodeNostrEventId(id: string): string | null {
+  if (HEX64.test(id)) return id.toLowerCase();
+  try {
+    const { type, data } = nip19.decode(id);
+    if (type === "note") return data;
+    if (type === "nevent") return data.id;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchProfiles(relayURL: string, pubkeys: string[]) {
@@ -65,7 +69,8 @@ export async function fetchFollows(relayURL: string, pubkey: string) {
   for await (const msg of res) {
     if (msg[0] === "EVENT") {
       //
-      ret = msg[2].tags.map((t) => t[1]);
+      // only p tags are follows; contact lists can carry others (t, r…)
+      ret = msg[2].tags.filter((t) => t[0] === "p" && t[1]).map((t) => t[1]);
     }
     if (msg[0] === "EOSE") {
       break;
@@ -81,19 +86,3 @@ export async function fetchFollowers(relayURL: string, pubkey: string) {
   const res = await relay.query([{ kinds: [3], "#p": [pubkey] }]);
   return res.map((ev) => ev.pubkey);
 }
-
-// let pk = getPublicKey(generateSecretKey())
-// let npub = nip19.npubEncode(pk)
-// let { type, data } = nip19.decode(npub)
-// assert(type === 'npub')
-// assert(data === pk)
-
-// let pk = getPublicKey(generateSecretKey())
-// let relays = ['wss://relay.nostr.example.mydomain.example.com', 'wss://nostr.banana.com']
-// let nprofile = nip19.nprofileEncode({ pubkey: pk, relays })
-// let { type, data } = nip19.decode(nprofile)
-// assert(type === 'nprofile')
-// assert(data.pubkey === pk)
-// assert(data.relays.length === 2)
-//
-// nevent1qqsp3faj5jy9fpc6779rcs9kdccc0mxwlv2pnhymwqtjmletn72u5echttguv;

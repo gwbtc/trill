@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import useLocalState from "@/state/state";
-import { Zap, MessageCircle, Activity } from "lucide-react";
+import { Zap, Activity } from "lucide-react";
 
 export default function NostrSignals() {
     const lastNostrEventTime = useLocalState((s) => s.lastNostrEventTime);
@@ -16,7 +16,7 @@ export default function NostrSignals() {
     }, [lastNostrEventTime]);
 
     return (
-        <div className="fixed bottom-6 right-6 z-50 pointer-events-none">
+        <div className="nostr-signal fixed bottom-6 right-6 z-50 pointer-events-none">
             <div className="relative flex items-center justify-center">
                 {/* Ripple Effect */}
                 {active && (
