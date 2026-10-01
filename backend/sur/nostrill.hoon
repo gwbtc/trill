@@ -1,9 +1,9 @@
 /-  *wrap, nostr, comms=nostrill-comms,
     trill=trill-feed, tp=trill-post, gate=trill-gate
 |%
-+$  state  state-0
-+$  state-0
-  $:  %0
++$  state  state-1
++$  state-1
+  $:  %1
       ::  identity
       keys=(lest keys:nostr)  ::  cycled, i.keys is current
       profiles=(map user user-profile:comms)

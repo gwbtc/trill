@@ -1,4 +1,8 @@
-/-  sur=nostrill, nsur=nostr, comms=nostrill-comms, ui=nostrill-ui
+/-  sur=nostrill,
+    oldsur=old,
+    nsur=nostr,
+    comms=nostrill-comms,
+    ui=nostrill-ui
 /+  lib=nostrill, sr=sortug, scri, nostr-keys,
     ws=websockets,
     nreq=nostr-req,
@@ -13,7 +17,10 @@
     followlib=nostrill-follows,
     dbuglib=nostrill-dbug
 |%
-+$  versioned-state  $%(state-0:sur)
++$  versioned-state
+  $%  state-1:sur
+      state-0:oldsur
+  ==
 --
 =|  state:sur
 =*  state  -
@@ -48,18 +55,19 @@
   ::  including a zero keypair that can't sign. crash instead, so gall keeps
   ::  the running agent and its state; add a migration when state changes
   =/  old-state  !<(versioned-state old-state)
+  =.  state
   ?-  -.old-state
-    %0
-      =.  state  old-state
-      ::  heal ships that went through that fallback: schnorr rejects a
-      ::  zero secret key, so every signed (global/relay) post crashed
-      =?  keys.state  =(0 priv.i.keys.state)
-        [(gen-keys:nostr-keys eny.bowl) t.keys.state]
-      ::  heal relays whose socket vanished while we were down
-      =^  cs  state  reconcile:relay
-      :_  this
-      (weld init:cards cs)
+    %0  (state-0-to-1:oldsur old-state)
+    %1  old-state
   ==
+  ::  heal ships that went through that fallback: schnorr rejects a
+  ::  zero secret key, so every signed (global/relay) post crashed
+  =?  keys.state  =(0 priv.i.keys.state)
+    [(gen-keys:nostr-keys eny.bowl) t.keys.state]
+  ::  heal relays whose socket vanished while we were down
+  =^  cs  state  reconcile:relay
+  :_  this
+  (weld init:cards cs)
 ::
 ++  on-poke
   |~  [=mark =vase]
