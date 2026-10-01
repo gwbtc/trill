@@ -22,3 +22,5 @@ devenv.local.yaml
 bulk
 bun-deps
 ts-topics
+.claude
+.playwright*
