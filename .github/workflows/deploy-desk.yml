@@ -7,15 +7,17 @@ on:
 env:
   DESK:      trill
   SRC:       backend
+  DIST_PIER: ${{ vars.SPONSOR_URBIT_ID_NO_TILDE }}
   SCREEN:    sponsor
+  SHIP_IP:   ${{ vars.SPONSOR_IP }}
   SHIP_HOST: root@${{ vars.SPONSOR_IP }}
   PIER_PATH: /root
   PIER:      sponsor
-  DIST_PIER: ${{ vars.SPONSOR_URBIT_ID_NO_TILDE }}
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    name: deploy (sponsor)
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,7 +31,7 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.SPONSOR_VPS_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H ${{ vars.SPONSOR_IP }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${SHIP_IP} >> ~/.ssh/known_hosts
 
       - name: Clear deployed desk
         run: ssh ${SHIP_HOST} "find ${PIER_PATH}/${PIER}/${DESK} -mindepth 1 -maxdepth 1 -exec rm -rf {} +"
