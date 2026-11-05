@@ -9,14 +9,14 @@ type UserTagged = { urbit: string } | { nostr: string };
 // follow, or anyone we muted
 export function suggestFollows(
   followGraph: Record<string, UserTagged[]>,
-  following: Disaggregated<ReadonlyMap<string, FC>>,
+  following: { has: (id: string) => boolean },
   lists: Lists,
   ourIds: string[],
   limit = 4,
 ): { id: string; followedBy: number }[] {
   const exclude = new Set(ourIds);
   const isFollowing = (id: string) =>
-    following.urbit.has(id) || following.nostr.has(id);
+    following.has(id);
   const counts = new Map<string, number>();
   for (const [follower, follows] of Object.entries(followGraph)) {
     // only the graph of people we follow counts

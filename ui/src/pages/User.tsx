@@ -90,17 +90,15 @@ function UserFeed({
   const [isFollowLoading, setIsFollowLoading] = useState(false);
   const [isAccessLoading, setIsAccessLoading] = useState(false);
   const [profileTab, setProfileTab] = useState<ProfileTab>("posts");
-  const { following, myFeed } = useStore();
+  const { following, myFeed, nostrUserFeeds, nostrFeeds } = useLocalState(s => ({ following: s.following, myFeed: s.myFeed, nostrUserFeeds: s.nostrUserFeeds, nostrFeeds: s.nostrFeeds }));
 
   const isMe = isOur(api!, pubkey, user);
   const userId = "urbit" in user ? user.urbit.patp : user.nostr;
-  console.log({ following });
-  console.log({ userId });
   const storedFeed = isMe
     ? myFeed
     : "urbit" in user
       ? following.urbit.get(userId)
-      : following.nostr.get(userId);
+      : nostrFeeds[`user/${userId}`] ?? nostrUserFeeds.get(userId);
   const [resolvedFeed, setResolvedFeed] = useState<FC | undefined>(storedFeed);
   const profile = profiles.get(userId) || profiles.get(userString);
   const feedPosts = getProfileFeedPosts(resolvedFeed, userId);

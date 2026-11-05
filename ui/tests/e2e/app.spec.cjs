@@ -3,12 +3,28 @@ const { expect, test } = require("./playwright-runtime.cjs");
 let dmInboxFixtureKind = "empty";
 let notificationFixtureKind = "empty";
 let feedFixtureKind = "empty";
-let channelBatch = 0;
+let mockReconnectMs = 10;
+let fixtureSnapshotsPending = true;
+let walletSubscriptions = new Set();
+let chatSubscriptions = new Set();
+let walletPending = false;
+const walletFixture = () => ({
+  balance: 12060,
+  mints: [{ url: "https://mint.example", balance: 12060, proofs: 3, keysets: 1 }],
+  ops: [], history: [], sent: [], log: [], nostr: { sync: false, syncing: false },
+  lightning: { link: "open", balance: 12000, relay: "wss://relay.example", service: "1".repeat(64), methods: ["make_invoice", "pay_invoice"], invoices: [] },
+});
+let mockWallet = walletFixture();
+let state2Snapshot;
+let state2Facts = [];
+let state2Subscriptions = new Set();
+let state2Initialized = new Set();
 
 // IO.poke resolves only once the ship acks the poke over the event stream,
 // so every poke PUT to the channel is recorded here and acked on the next
 // stream GET (the mocked stream closes after each batch and the client
-// reconnects)
+// reconnects). Advertise a short SSE retry delay so acknowledgements do not
+// wait for the client's default one-second reconnect interval.
 let pendingPokeAcks = [];
 let ackEventId = 10_000;
 // every poke's json, for asserting what the UI actually sends
@@ -78,7 +94,6 @@ async function installUrbitMock(page) {
 async function handleChannel(route) {
   const request = route.request();
   if (request.method() === "GET") {
-    channelBatch += 1;
     await route.fulfill({
       status: 200,
       headers: {
@@ -86,16 +101,14 @@ async function handleChannel(route) {
         "cache-control": "no-cache",
         connection: "keep-alive",
       },
-      body:
-        (feedFixtureKind === "zap"
-          ? zapFeedFixtureBody(channelBatch)
-          : dmInboxFixtureKind === "requests"
-            ? dmRequestFixtureBody()
-            : [
-                'id: 1\ndata: {"response":"poke","id":1,"ok":null}\n\n',
-                'id: 2\ndata: {"response":"poke","id":2,"ok":null}\n\n',
-              ].join("")) + takePokeAcks(),
+      body: `retry: ${mockReconnectMs}\n\n` + (
+        feedFixtureKind === "state2" ? state2FixtureBody()
+          : fixtureSnapshotsPending && feedFixtureKind === "zap" ? zapFeedFixtureBody()
+          : fixtureSnapshotsPending && dmInboxFixtureKind === "requests" ? dmRequestFixtureBody()
+          : ""
+      ) + walletFixtureBody() + takePokeAcks() + ": heartbeat\n\n",
     });
+    fixtureSnapshotsPending = false;
     return;
   }
 
@@ -103,7 +116,27 @@ async function handleChannel(route) {
   try {
     const actions = JSON.parse(request.postData() || "[]");
     for (const action of actions) {
+      if (action.action === "subscribe") fixtureSnapshotsPending = true;
+      if (action.action === "subscribe" && action.app === "noschat" && action.path === "/ui") chatSubscriptions.add(action.id);
+      if (action.action === "subscribe" && action.app === "trill-wallet" && action.path === "/ui") {
+        walletSubscriptions.add(action.id);
+        walletPending = true;
+      }
+      if (action.action === "subscribe" && action.app === "nostrill" && action.path === "/ui") {
+        state2Subscriptions.add(action.id);
+        state2Initialized.delete(action.id);
+      }
       if (action.action !== "poke") continue;
+      if (feedFixtureKind === "state2" && action.json?.fols?.del?.nostr) {
+        const key = action.json.fols.del.nostr;
+        state2Snapshot.nostr.following = state2Snapshot.nostr.following.filter(id => id !== key);
+        state2Facts.push({ fols: { quit: key } }, { nostr: { data: state2Snapshot.nostr } });
+      }
+      if (action.app === "trill-wallet" && action.json?.deposit) {
+        const { mint, amount } = action.json.deposit;
+        mockWallet.ops.push({ id: 1, kind: "deposit", mint, amount, step: "pending", invoice: `lnbc${amount}fixture` });
+        walletPending = true;
+      }
       pendingPokeAcks.push(action.id);
       pokeLog.push(action.json);
     }
@@ -111,6 +144,14 @@ async function handleChannel(route) {
     // not json (e.g. a delete beacon); nothing to ack
   }
   await route.fulfill({ status: 200, body: "ok" });
+}
+
+function walletFixtureBody() {
+  if (!walletPending || walletSubscriptions.size === 0) return "";
+  walletPending = false;
+  return [...walletSubscriptions].map(id =>
+    `id: ${++ackEventId}\ndata: ${JSON.stringify({ response: "diff", id, json: mockWallet })}\n\n`,
+  ).join("");
 }
 
 function takePokeAcks() {
@@ -231,15 +272,15 @@ function dmInboxFixture() {
 }
 
 function dmRequestFixtureBody() {
-  return [
-    `id: 1\ndata: ${JSON.stringify({
+  return [...chatSubscriptions].map(id =>
+    `id: ${++ackEventId}\ndata: ${JSON.stringify({
       response: "diff",
-      id: 1,
+      id,
       json: {
         init: dmInboxFixture(),
       },
     })}\n\n`,
-  ].join("");
+  ).join("");
 }
 
 function notificationFixture() {
@@ -292,7 +333,7 @@ function notificationFixture() {
   ];
 }
 
-function zapFeedFixtureBody(batch) {
+function zapFeedFixtureBody() {
   const user = makeUrbitId("~litzod", "wicket");
   const post = {
     id: "zap-post",
@@ -307,7 +348,7 @@ function zapFeedFixtureBody(batch) {
       write: { lock: { open: null }, manual: false, begs: {}, mute: { open: null }, backlog: 0 },
     },
     tags: [],
-    contents: [{ paragraph: [{ text: postFixture.text }] }],
+    contents: postFixture.contents || [{ paragraph: [{ text: postFixture.text }] }],
     time: 1_700_000_000_000,
     children: [],
     engagement: { reacts: postFixture.reacts, quoted: [], shared: [] },
@@ -317,32 +358,30 @@ function zapFeedFixtureBody(batch) {
     relays: {},
     feed: { start: null, end: null, feed: {} },
     nostr: {},
-    profiles: { "~litzod": { name: "wicket" } },
+    profiles: { "~litzod": { name: "wicket", pubkey: "a".repeat(64) } },
     following: { "~litzod": feed },
     timeline: { global: {}, start: null, end: null },
     followGraph: {},
     key: "",
     lists: listsFixture,
   };
-  const outerId = batch * 100;
-  return [
-    `id: ${outerId + 1}\ndata: {"response":"poke","id":1,"ok":null}\n\n`,
-    ...[2, 3, 4, 5, 6, 7, 8].map(
-      (subscriptionId, index) =>
-        `id: ${outerId + index + 2}\ndata: ${JSON.stringify({
-          response: "diff",
-          id: subscriptionId,
-          json: { state },
-        })}\n\n`,
-    ),
-  ].join("");
+  return [...state2Subscriptions].map(id =>
+    `id: ${++ackEventId}\ndata: ${JSON.stringify({ response: "diff", id, json: { state } })}\n\n`,
+  ).join("");
 }
 
 test.beforeEach(async ({ page }) => {
   dmInboxFixtureKind = "empty";
   notificationFixtureKind = "empty";
   feedFixtureKind = "empty";
-  channelBatch = 0;
+  fixtureSnapshotsPending = true;
+  walletSubscriptions = new Set();
+  chatSubscriptions = new Set();
+  walletPending = false;
+  mockWallet = walletFixture();
+  state2Facts = [];
+  state2Subscriptions = new Set();
+  state2Initialized = new Set();
   pokeLog = [];
   nackPokes = false;
   postFixture = { ...DEFAULT_POST };
@@ -364,7 +403,7 @@ test("shell loads and right-rail search supports its keyboard flow", async ({
   await expect(page).toHaveURL(/\/apps\/nostrill\/search$/);
   await expect(search).toBeFocused();
   await expect(page.getByRole("heading", { name: "Search", exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Trending channels" })).toBeVisible();
+  await expect(page.locator(".search-empty")).toBeVisible();
 
   await search.fill("relays");
   await expect(page).toHaveURL(/\/apps\/nostrill\/search\?q=relays$/);
@@ -376,7 +415,7 @@ test("shell loads and right-rail search supports its keyboard flow", async ({
   );
   await expect(page.getByRole("tab", { name: "People" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Posts" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Channels" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Hashtags" })).toBeVisible();
 
   await page.keyboard.press("Escape");
   await expect(page).toHaveURL(/\/apps\/nostrill\/search$/);
@@ -495,8 +534,8 @@ test("wallet actions and settings follow the handoff flow", async ({ page }) => 
   await page.getByRole("button", { name: "Receive" }).click();
   await expect(page.locator("#wallet-modal")).toBeVisible();
   await page.getByLabel("Amount (sats)").fill("5000");
-  await page.getByRole("button", { name: "Generate invoice" }).click();
-  await expect(page.locator(".wallet-invoice-preview code")).toContainText("lnbc5000");
+  await page.getByRole("button", { name: "Create invoice" }).click();
+  await expect(page.getByText("lnbc5000fixture", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Close wallet dialog" }).click();
 
   await page.getByRole("button", { name: "Wallet settings" }).click();
@@ -504,10 +543,11 @@ test("wallet actions and settings follow the handoff flow", async ({ page }) => 
   await page.getByRole("button", { name: "Close wallet dialog" }).click();
   await expect(page.locator(".wallet-total")).toHaveClass(/hidden/);
 
-  await page.getByRole("button", { name: "Send" }).click();
-  await page.getByLabel("Invoice or Cashu token").fill("cashuAeyJ0b2tlbiI6W10");
-  await expect(page.getByText("Cashu token", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Redeem token" })).toBeEnabled();
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByLabel("Lightning invoice", { exact: true })).toBeVisible();
+  await page.getByRole("tab", { name: "Ecash token", exact: true }).click();
+  await page.getByLabel("Amount (sats)").fill("21");
+  await expect(page.getByRole("button", { name: "Make token", exact: true })).toBeEnabled();
 });
 
 test("Zap sheet validates, submits, succeeds, and updates the post", async ({
@@ -527,15 +567,14 @@ test("Zap sheet validates, submits, succeeds, and updates the post", async ({
 
   const amount = page.getByLabel("Custom amount");
   await amount.fill("13000");
-  await expect(page.getByText("Amount exceeds your Lightning balance")).toBeVisible();
+  await expect(page.getByText("More than your ecash balance")).toBeVisible();
   await expect(page.getByRole("button", { name: "Zap 13,000 sats" })).toBeDisabled();
 
   await amount.fill("750");
   await page.getByLabel("Comment").fill("great post");
   await page.getByRole("button", { name: "Zap 750 sats" }).click();
-  await expect(page.getByRole("button", { name: "Sending zap…" })).toBeDisabled();
-  await expect(page.getByText("Zapped 750 sats")).toBeVisible();
-  await expect(page.getByText("Sent to wicket via Lightning")).toBeVisible();
+  await expect(page.getByText("Nutzapping 750 sats")).toBeVisible();
+  await expect(page.getByText("On its way to wicket as Cashu ecash")).toBeVisible();
 
   await expect(page.locator("#zap-sheet")).toBeHidden({ timeout: 4_000 });
   await expect(page.getByRole("button", { name: "Zap post, 1 sent" })).toContainText("1");
@@ -737,12 +776,12 @@ test("muted authors and reported posts are hidden from feeds", async ({ page }) 
   feedFixtureKind = "zap";
   listsFixture = { ...EMPTY_LISTS, muted: [{ urbit: "~litzod" }] };
   await page.goto("f/following");
-  await page.waitForTimeout(1500);
+  await expect(page.getByText("No relays configured", { exact: true })).toBeVisible();
   await expect(page.getByText("A post ready for a zap")).toHaveCount(0);
 
   listsFixture = { ...EMPTY_LISTS, reported: [ZAP_REF] };
   await page.reload();
-  await page.waitForTimeout(1500);
+  await expect(page.getByText("No relays configured", { exact: true })).toBeVisible();
   await expect(page.getByText("A post ready for a zap")).toHaveCount(0);
 });
 
@@ -764,4 +803,203 @@ test("bookmarks page lists saved posts and settings lists muted accounts", async
   await expect
     .poll(() => pokeLog)
     .toContainEqual({ lists: { mute: { add: false, user: { urbit: "~bus" } } } });
+});
+
+
+// These fixtures mirror the state-2 Hoon encoders, including nullable values.
+const STATE2_KEY = "a".repeat(64);
+const STATE2_UNKNOWN = "b".repeat(64);
+const STATE2_KNOWN = "c".repeat(64);
+function state2Fixture() {
+  const event = (id, content) => ({ id: id.repeat(64), pubkey: STATE2_KEY, created_at: 1700000000, kind: 1, content, tags: [], sig: "0".repeat(128) });
+  const notes = [event("d", "First same-second note"), event("e", "Second same-second note")];
+  const sub = { name: "timeline", eventsReceived: 2, filters: [], ongoing: true };
+  return {
+    key: "f".repeat(64), relays: { "wss://one.example": { wid: 1, start: 1700000000000, reqs: {} } }, lists: EMPTY_LISTS,
+    feed: { feed: {}, start: null, end: null },
+    following: { "~nec": { feed: {}, start: null, end: null } },
+    followGraph: { "~zod": [{ urbit: "~nec" }], "~nec": [{ urbit: "~bud" }] },
+    profiles: { "~nec": { name: "Native friend", picture: "", about: "", following: [{ urbit: "~bud" }], followers: [], followingCount: 1, followerCount: 0, urbitID: makeUrbitId("~nec", "nec") } },
+    timeline: { global: {}, start: null, end: null },
+    nostr: {
+      feeds: { timeline: { "wss://one.example": { feed: notes, sub }, "wss://two.example": { feed: [notes[0]], sub } } },
+      following: [STATE2_KEY, STATE2_UNKNOWN],
+      "user-map": {
+        [STATE2_KEY]: { id: { pubkey: STATE2_KEY, npub: "" }, feed: notes, profile: { name: "Nostr friend", picture: "", about: "Nostr profile" }, following: [], other: [] },
+        [STATE2_KNOWN]: { id: { pubkey: STATE2_KNOWN, npub: "" }, feed: [], profile: { name: "Unfollowed author", picture: "", about: "" }, following: null, other: [] },
+      },
+    },
+  };
+}
+function state2FixtureBody() {
+  let body = "";
+  const emit = (id, json) => { body += `id: ${++ackEventId}\ndata: ${JSON.stringify({ response: "diff", id, json })}\n\n`; };
+  for (const id of state2Subscriptions) {
+    if (!state2Initialized.has(id)) {
+      emit(id, { state: state2Snapshot });
+      state2Initialized.add(id);
+    }
+    for (const fact of state2Facts) emit(id, { fact });
+  }
+  if (state2Subscriptions.size) state2Facts = [];
+  return body || ": heartbeat\n\n";
+}
+
+test("state-2 snapshot separates selected follows from known authors", async ({ page }, testInfo) => {
+  feedFixtureKind = "state2";
+  state2Snapshot = state2Fixture();
+  await page.goto("fols");
+  await expect(page.locator(".follow-card")).toHaveCount(3);
+  await expect(page.getByRole("heading", { name: "Native friend", exact: true })).toBeVisible();
+  await page.locator("#follows-filter").getByRole("button", { name: "Nostr", exact: true }).click();
+  await expect(page.locator(".follow-card")).toHaveCount(2);
+  await expect(page.getByText("Unfollowed author", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Nostr friend", exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("state2-follows.png"), fullPage: true });
+  await page.getByRole("heading", { name: "Nostr friend", exact: true }).click();
+  await expect(page.locator("#user-modal")).toBeVisible();
+  await page.locator("#user-modal").getByRole("button", { name: "Following", exact: true }).click();
+  await expect(page.locator("#user-modal").getByRole("button", { name: "Follow", exact: true })).toBeVisible();
+  await page.mouse.move(0, 0);
+  const followButton = page.locator("#user-modal .user-modal-follow");
+  await expect.poll(() => followButton.evaluate(button => {
+    const rect = button.getBoundingClientRect();
+    return [3, rect.height / 2, rect.height - 3].every(offset =>
+      button.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + offset)),
+    );
+  })).toBe(true);
+  await page.locator("#user-modal").screenshot({ path: testInfo.outputPath("state2-user-modal.png") });
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".follow-card")).toHaveCount(1);
+  await page.locator("#follows-filter").getByRole("button", { name: "Urbit", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Native friend", exact: true })).toBeVisible();
+});
+
+test("state-2 feeds keep same-second notes and apply Nostr data facts", async ({ page }, testInfo) => {
+  feedFixtureKind = "state2";
+  state2Snapshot = state2Fixture();
+  await page.goto("f");
+  await expect(page.getByText("First same-second note", { exact: true })).toBeVisible();
+  await expect(page.getByText("Second same-second note", { exact: true })).toBeVisible();
+  await expect(page.locator("#home-feed .trill-post")).toHaveCount(2);
+  state2Snapshot.nostr["user-map"][STATE2_KEY].profile.name = "Updated Nostr friend";
+  state2Facts.push({ nostr: { data: state2Snapshot.nostr } });
+  await expect(page.locator("#home-feed").getByText("Updated Nostr friend", { exact: true })).toHaveCount(2);
+  await page.screenshot({ path: testInfo.outputPath("state2-feed.png"), fullPage: true });
+  await page.goto(`u/${STATE2_KEY}`);
+  await expect(page.locator("#screen-profile")).toBeVisible();
+  await expect(page.getByText("First same-second note", { exact: true })).toBeVisible();
+});
+
+test("state-2 native follow facts and live Nostr events update shared views", async ({ page }, testInfo) => {
+  feedFixtureKind = "state2";
+  state2Snapshot = state2Fixture();
+  await page.goto("fols");
+  await expect(page.locator(".follow-card")).toHaveCount(3);
+  state2Facts.push({ fols: { "new-urbit": {
+    user: { urbit: "~bud" }, ts: 1700000000000,
+    data: { msg: "", data: { feed: { feed: {}, start: null, end: null }, profile: { name: "New native friend", following: [], followers: [] } } },
+  } } });
+  await expect(page.getByRole("heading", { name: "New native friend", exact: true })).toBeVisible();
+  await expect(page.locator(".follow-card")).toHaveCount(4);
+  state2Facts.push({ fols: { quit: "~bud" } });
+  await expect(page.locator(".follow-card")).toHaveCount(3);
+  await expect(page.getByRole("heading", { name: "New native friend", exact: true })).toHaveCount(0);
+  const hostedPost = Object.values(makeDm("~bud", "Bud", "A guest post on a followed host", 1700000000123).fc.feed)[0];
+  hostedPost.host = "~nec";
+  state2Facts.push({ post: { add: { post: hostedPost } } });
+  const nativeCard = page.locator(".follow-card").filter({ has: page.getByRole("heading", { name: "Native friend", exact: true }) });
+  await expect(nativeCard.locator(".stat-value").first()).toHaveText("1");
+  await expect(page.locator(".follow-card")).toHaveCount(3);
+  state2Facts.push({ post: { del: { post: hostedPost } } });
+  await expect(nativeCard.locator(".stat-value").first()).toHaveText("0");
+  await page.locator("#left-nav").getByRole("link", { name: "Home", exact: true }).click();
+  state2Facts.push({ nostr: { event: { id: "9".repeat(64), pubkey: STATE2_KEY, created_at: 1700000000, kind: 1, content: "Live same-second note", tags: [], sig: "0".repeat(128) } } });
+  await expect(page.getByText("Live same-second note", { exact: true })).toBeVisible();
+  await expect(page.locator("#home-feed .trill-post")).toHaveCount(3);
+  state2Facts.push({ nostr: { event: { id: "8".repeat(64), pubkey: STATE2_KEY, created_at: 1700000001, kind: 0, content: JSON.stringify({ name: "Live metadata" }), tags: [], sig: "0".repeat(128) } } });
+  await expect(page.locator("#home-feed").getByText("Live metadata", { exact: true })).toHaveCount(3);
+  await page.screenshot({ path: testInfo.outputPath("state2-live.png"), fullPage: true });
+});
+
+test("state-2 authoritative data survives an older EOSE scry", async ({ page }, testInfo) => {
+  feedFixtureKind = "state2";
+  state2Snapshot = state2Fixture();
+  let requested = false;
+  let completed = false;
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  await page.route("**/~/scry/nostrill/j/nostr.json", async route => {
+    requested = true;
+    await pending;
+    await route.fulfill({ json: {} });
+    completed = true;
+  });
+  await page.goto("f");
+  await expect(page.getByText("First same-second note", { exact: true })).toBeVisible();
+  state2Facts.push({ nostr: { eose: "fixture-old-sub" } });
+  await expect.poll(() => requested).toBe(true);
+  state2Snapshot.nostr["user-map"][STATE2_KEY].profile.name = "Authoritative metadata";
+  state2Facts.push({ nostr: { data: state2Snapshot.nostr } });
+  await expect(page.locator("#home-feed").getByText("Authoritative metadata", { exact: true })).toHaveCount(2);
+  release();
+  await expect.poll(() => completed).toBe(true);
+  await expect(page.getByText("First same-second note", { exact: true })).toBeVisible();
+  await expect(page.locator("#home-feed .trill-post")).toHaveCount(2);
+  await page.screenshot({ path: testInfo.outputPath("state2-eose-race.png"), fullPage: true });
+});
+
+
+test("post images open full-size without navigating and support dismissal", async ({ page }, testInfo) => {
+  feedFixtureKind = "zap";
+  const src = "https://images.example.com/post.png";
+  postFixture = { ...DEFAULT_POST, contents: [
+    { paragraph: [{ text: "Images to inspect" }, { link: { href: src, show: "Photo" } }] },
+    { paragraph: [{ text: src }] },
+    { media: { images: [src, src] } },
+  ] };
+  await page.route("https://images.example.com/**", route => route.fulfill({
+    contentType: "image/svg+xml",
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1200"><rect width="1600" height="1200" fill="#184e77"/><circle cx="800" cy="600" r="300" fill="#76c893"/></svg>',
+  }));
+  await page.goto("f/following");
+  const triggers = page.locator("article.trill-post .post-image-trigger");
+  await expect(triggers).toHaveCount(4);
+  const initialUrl = page.url();
+  await triggers.first().focus();
+  await page.keyboard.press("Enter");
+  const viewer = page.locator("#image-viewer");
+  await expect(viewer).toBeVisible();
+  await expect(viewer.getByRole("img")).toHaveAttribute("src", src);
+  await expect(viewer.getByRole("link", { name: "Open original" })).toHaveAttribute("href", src);
+  await expect(page).toHaveURL(initialUrl);
+  await expect(viewer.getByRole("button", { name: "Close" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(viewer.getByRole("link", { name: "Open original" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(viewer.getByRole("button", { name: "Close" })).toBeFocused();
+  await viewer.screenshot({ path: testInfo.outputPath("post-image-desktop.png") });
+  await page.keyboard.press("Escape");
+  await expect(viewer).toHaveCount(0);
+  await expect(triggers.first()).toBeFocused();
+  for (let i = 1; i < 4; i++) {
+    await triggers.nth(i).click();
+    await expect(viewer).toBeVisible();
+    await viewer.getByRole("button", { name: "Close" }).click();
+    await expect(page).toHaveURL(initialUrl);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await triggers.first().focus();
+  await page.keyboard.press("Space");
+  await expect(viewer).toBeVisible();
+  await expect.poll(() => viewer.getByRole("img").evaluate(img => img.complete && img.naturalWidth === 1600)).toBe(true);
+  const bounds = await viewer.getByRole("img").boundingBox();
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(844);
+  expect(bounds.width / bounds.height).toBeCloseTo(4 / 3, 1);
+  await page.screenshot({ path: testInfo.outputPath("post-image-mobile.png") });
+  await page.locator("#modal-background").click({ position: { x: 3, y: 3 } });
+  await expect(viewer).toHaveCount(0);
+  await expect(page).toHaveURL(initialUrl);
 });

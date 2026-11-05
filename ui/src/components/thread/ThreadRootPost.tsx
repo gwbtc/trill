@@ -31,7 +31,7 @@ export default function ThreadRootPost({
   const { api, pubkey, following, setModal } = useLocalState((s) => ({
     api: s.api,
     pubkey: s.pubkey,
-    following: s.following,
+    following: s.followedUsers,
     setModal: s.setModal,
   }));
   const [isLoading, setLoading] = useState(false);

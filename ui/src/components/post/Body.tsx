@@ -1,3 +1,4 @@
+import PostImage from "./PostImage";
 import { linkLabel, safeHref } from "@/logic/utils";
 import NostrText from "./NostrText";
 import type {
@@ -131,7 +132,7 @@ function Inlin({ i }: { i: Inline }) {
           ),
         )}
         {tokens.pics.map((p, i) => (
-          <img key={p + i} src={p} />
+          <PostImage key={p + i} src={p} />
         ))}
         {tokens.vids.map((p, i) => (
           <video key={p + i} src={p} controls />
@@ -180,7 +181,7 @@ function LinkParser({ href, show }: { href: string; show: string }) {
   return ytb ? (
     <YoutubeSnippet href={href} id={ytb} />
   ) : isImg ? (
-    <img className="inline-pic" src={href} />
+    <PostImage className="inline-pic" src={href} />
   ) : (
     safeHref(href) ? (
       <a href={href} title={href}>

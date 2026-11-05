@@ -8,34 +8,23 @@ export type FollowEntryData = {
   feed: FC | null;
 };
 
-// Graph keys retain full identities and include follows without a loaded feed.
-// Merge feed-map keys too, since graph and feed updates arrive separately.
+// Membership is independent from cached author data and social-graph neighbors.
 export function buildFollowEntries(
   following: Disaggregated<ReadonlyMap<string, FC>>,
   graph: DFollowGraph,
   ownIds: readonly string[],
+  selected: ReadonlySet<string>,
 ): Disaggregated<FollowEntryData[]> {
   const excluded = new Set(ownIds);
-  const urbit = new Map<string, FollowEntryData>();
-  const nostr = new Map<string, FollowEntryData>();
-
-  for (const [identity] of graph.urbit) {
-    const id = identity.patp;
-    if (!excluded.has(id))
-      urbit.set(id, { id, user: { urbit: identity }, feed: following.urbit.get(id) ?? null });
+  const identities = new Map(graph.urbit.map(([identity]) => [identity.patp, identity]));
+  const entries: Disaggregated<FollowEntryData[]> = { urbit: [], nostr: [] };
+  for (const id of selected) {
+    if (excluded.has(id)) continue;
+    if (id.startsWith("~")) {
+      entries.urbit.push({ id, user: { urbit: identities.get(id) ?? patpToFallbackUID(id) }, feed: following.urbit.get(id) ?? null });
+    } else {
+      entries.nostr.push({ id, user: { nostr: id }, feed: following.nostr.get(id) ?? null });
+    }
   }
-  for (const [identity] of graph.nostr) {
-    const id = identity.pubkey;
-    if (!excluded.has(id))
-      nostr.set(id, { id, user: { nostr: id }, feed: following.nostr.get(id) ?? null });
-  }
-  for (const [id, feed] of following.urbit) {
-    if (!excluded.has(id) && !urbit.has(id))
-      urbit.set(id, { id, user: { urbit: patpToFallbackUID(id) }, feed });
-  }
-  for (const [id, feed] of following.nostr) {
-    if (!excluded.has(id) && !nostr.has(id))
-      nostr.set(id, { id, user: { nostr: id }, feed });
-  }
-  return { urbit: [...urbit.values()], nostr: [...nostr.values()] };
+  return entries;
 }

@@ -17,6 +17,8 @@ export type UrbitFollowGraph = [UrbitID, UserTypeFull[]];
 export type NostrFollowGraph = [NostrID, NostrID[]];
 
 export interface UserProfile extends BasicProfile {
+  followingKnown?: boolean;
+  followersKnown?: boolean;
   pubkey: string;
   following: UserType[];
   followingCount: number;
@@ -101,6 +103,24 @@ export type RelayRequest = {
 // served it and the request (sub) that asked for it.
 export type SourcedFeed = { feed: NostrEvent[]; sub: RelayRequest };
 export type NostrFeeds = Record<string, Record<string, SourcedFeed>>; // subName → relayUrl
+// State-2 Nostr subtree: known users and selected follows are independent.
+export type NostrUserData = {
+  id: NostrID;
+  feed: NostrEvent[];
+  following: string[] | null;
+  profile: BasicProfile | null;
+  other: NostrEvent[];
+};
+export type NostrDataWire = {
+  feeds: NostrFeeds;
+  following: string[];
+  "user-map": Record<string, NostrUserData>;
+};
+export type NostrData = {
+  feeds: NostrFeeds;
+  following: Set<string>;
+  users: Map<string, NostrUserData>;
+};
 export type Timeline = { global: FlatFeed; start: Cursor; end: Cursor };
 
 export type PeekRes = { feed: PeekFeedRes } | { thread: PeekThreadRes };
@@ -118,6 +138,7 @@ export type Fact =
 
 export type NamedWfeed = { name: string; feed: NostrEvent[] };
 export type NostrFact =
+  | { data: NostrDataWire }
   | { feed: NamedWfeed }
   | { user: NamedWfeed }
   | { thread: NostrEvent[] }
@@ -136,7 +157,7 @@ export type PostFact =
 
 export type EngaFact = { add: NostrEvent[] } | { del: NostrEvent[] };
 
-export type FollowGraph = Array<FollowType>;
+export type FollowGraph = Record<string, UserTagged[]>;
 export type DFollowGraph = {
   urbit: UrbitFollowGraph[];
   nostr: NostrFollowGraph[];

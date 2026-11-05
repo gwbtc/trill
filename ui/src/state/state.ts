@@ -13,6 +13,7 @@ import type {
   DMs,
   Fact,
   FollowGraph,
+  NostrData,
   NostrFeeds,
   Relays,
   UrbitID,
@@ -40,9 +41,9 @@ import {
   emptyFC,
   normalizeFact,
   type UserTagged,
-  disaggregateFollowGraph,
   updateFollowing,
 } from "@/logic/stateFact";
+import { applyNostrEvent, mergeSourcedFeeds, emptyNostrData, normalizeProfile, parseProfiles, parseNostrData, parseFollowGraph, projectSocial } from "@/logic/socialState";
 import { emptyLists, parseLists, type Lists } from "@/logic/lists";
 import { SYNC_SUB_NAME } from "@/logic/constants";
 import type { S3Config, UrbitContacts } from "@/types/urbit";
@@ -85,13 +86,15 @@ export type LocalState = {
   // measured http round-trip per relay url; null = unreachable
   relayLatency: Record<string, number | null>;
   nostrSubs: Relays;
-  profiles: Map<string, UserProfile>; // pubkey key
-  setProfiles: (m: Map<string, UserProfile>) => void; // pubkey key
+  profiles: Map<string, UserProfile>; // shared display view; ship or pubkey key
   addProfile: (key: string, u: UserProfile) => void;
   timeline: FC;
-  ofollowing: Map<string, FC>;
+  nostrData: NostrData;
+  urbitProfiles: Map<string, UserProfile>;
+  nativeFollowGraph: FollowGraph;
+  followedUsers: Set<string>;
+  nostrUserFeeds: Map<string, FC>;
   following: Disaggregated<Map<string, FC>>;
-  ofollowGraph: Map<string, any>;
   followGraph: DFollowGraph;
   // bookmarks, muted users, reported posts (kept by the agent)
   lists: Lists;
@@ -146,6 +149,22 @@ export const useStore = creator((set, get) => ({
       const airlock = await start();
       const api = new IO(airlock);
       const patp = api.airlock.our!;
+      const updateSocial = (patch: Partial<Pick<LocalState, "urbitProfiles" | "nativeFollowGraph" | "nostrData">> & { nativeFeeds?: Map<string, FC> }) => {
+        const current = get();
+        const { nativeFeeds, ...values } = patch;
+        if (nativeFeeds && Object.keys(values).length === 0) {
+          const followedUsers = new Set([...nativeFeeds.keys(), ...current.nostrData.following]);
+          for (const ref of current.nativeFollowGraph[patp] ?? [])
+            if ("urbit" in ref) followedUsers.add(ref.urbit);
+          followedUsers.delete(patp);
+          set({ following: { ...current.following, urbit: nativeFeeds }, followedUsers });
+          return;
+        }
+        const urbitProfiles = values.urbitProfiles ?? current.urbitProfiles;
+        const nativeFollowGraph = values.nativeFollowGraph ?? current.nativeFollowGraph;
+        const nostrData = values.nostrData ?? current.nostrData;
+        set({ ...values, ...projectSocial(nativeFeeds ?? current.following.urbit, nativeFollowGraph, urbitProfiles, nostrData, patp) });
+      };
 
       api.scryGwid(patp).then((gwid) => {
         if ("error" in gwid) {
@@ -249,6 +268,7 @@ export const useStore = creator((set, get) => ({
       // eose fires once per relay per sub, and each one used to start its own
       // /j/nostr scry whose responses could land out of order. run one at a
       // time, and once more afterwards if any eose came in meanwhile
+      let nostrDataRevision = 0;
       let nostrScrying = false;
       let nostrRescry = false;
       // people mentioned in notes (nostr:npub…) aren't their authors, so no
@@ -276,6 +296,7 @@ export const useStore = creator((set, get) => ({
           return;
         }
         nostrScrying = true;
+        const revision = nostrDataRevision;
         api
           .scryNostr()
           .then((r) => {
@@ -283,8 +304,10 @@ export const useStore = creator((set, get) => ({
               console.error("error scrying nostr feeds", r);
               return;
             }
+            if (revision !== nostrDataRevision) return;
             const nostrFeedsRaw = r.ok;
             const nostrFeeds = nostrFeedsToFcMap(nostrFeedsRaw);
+            updateSocial({ nostrData: mergeSourcedFeeds(get().nostrData, nostrFeedsRaw) });
             set({
               nostrFeedsRaw,
               nostrFeeds,
@@ -367,9 +390,9 @@ export const useStore = creator((set, get) => ({
         }
       });
       api.subscribeNostrill((data) => {
-        console.log("data", data);
         if ("state" in data) {
-          set({ ...parseStateFact(data.state), stateLoaded: true });
+          nostrDataRevision++;
+          set({ ...parseStateFact(data.state, patp), stateLoaded: true });
         } else if ("fact" in data) {
           const fact: Fact = normalizeFact(data.fact);
           set({ lastFact: fact });
@@ -377,28 +400,35 @@ export const useStore = creator((set, get) => ({
           // useShallow selectors see no change and nothing re-renders
           if ("fols" in fact) {
             if ("graph" in fact.fols) {
-              set({ followGraph: disaggregateFollowGraph(fact.fols.graph) });
+              updateSocial({ nativeFollowGraph: parseFollowGraph(fact.fols.graph) });
             }
             if ("new-urbit" in fact.fols) {
               const { user, data } = fact.fols["new-urbit"];
               if (data.data === "maybe") return;
               if (data.data) {
                 const { feed, profile } = data.data;
-                const of = get().following;
-                const uf = new Map(of.urbit).set(user, feed);
-                const following = { ...of, urbit: uf };
-                if (profile) {
-                  const profiles = new Map(get().profiles).set(user, profile);
-                  set({ following, profiles });
-                } else set({ following });
+                const nativeFeeds = new Map(get().following.urbit).set(user, feed);
+                const urbitProfiles = profile
+                  ? new Map(get().urbitProfiles).set(user, normalizeProfile(profile))
+                  : get().urbitProfiles;
+                updateSocial({ nativeFeeds, urbitProfiles });
               }
             }
             if ("quit" in fact.fols) {
-              const of = get().following;
-              const uf = new Map(of.urbit);
-              uf.delete(fact.fols.quit);
-              const following = { ...of, urbit: uf };
-              set({ following });
+              const id = fact.fols.quit;
+              if (id.startsWith("~")) {
+                const nativeFeeds = new Map(get().following.urbit);
+                nativeFeeds.delete(id);
+                const nativeFollowGraph = { ...get().nativeFollowGraph };
+                delete nativeFollowGraph[id];
+                if (nativeFollowGraph[patp])
+                  nativeFollowGraph[patp] = nativeFollowGraph[patp].filter(ref => !("urbit" in ref) || ref.urbit !== id);
+                updateSocial({ nativeFeeds, nativeFollowGraph });
+              } else {
+                const following = new Set(get().nostrData.following);
+                following.delete(id);
+                updateSocial({ nostrData: { ...get().nostrData, following } });
+              }
             }
           }
           if ("post" in fact) {
@@ -408,7 +438,7 @@ export const useStore = creator((set, get) => ({
                 "add" in fact.post ? fact.post.add.post : fact.post.upd.post;
               const { api, following, myFeed } = get();
               const our = api?.airlock?.our;
-              if (post.author === our) {
+              if (post.host === our) {
                 set({
                   myFeed: {
                     ...myFeed,
@@ -416,34 +446,34 @@ export const useStore = creator((set, get) => ({
                   },
                 });
               } else {
-                const nfollowing = {
-                  ...following,
-                  urbit: updateFollowing(following.urbit, post, "add"),
-                };
-                set({ following: nfollowing });
+                updateSocial({ nativeFeeds: updateFollowing(following.urbit, post, "add") });
               }
             }
             if ("del" in fact.post) {
               const post: Poast = fact.post.del.post;
               const { api, following, myFeed } = get();
-              // our own posts live in myFeed, mirroring the "add" branch
-              if (post.author === api?.airlock?.our) {
+              // Feeds belong to the host, including replies by other authors.
+              if (post.host === api?.airlock?.our) {
                 if (myFeed.feed[post.id]) {
                   const feed = { ...myFeed.feed };
                   delete feed[post.id];
                   set({ myFeed: { ...myFeed, feed } });
                 }
               } else {
-                const nfollowing = {
-                  ...following,
-                  urbit: updateFollowing(following.urbit, post, "del"),
-                };
-                set({ following: nfollowing });
+                updateSocial({ nativeFeeds: updateFollowing(following.urbit, post, "del") });
               }
             }
           }
           if ("nostr" in fact) {
             set({ lastNostrEventTime: Date.now() });
+            if ("data" in fact.nostr) {
+              nostrDataRevision++;
+              const nostrData = parseNostrData(fact.nostr.data);
+              const nostrFeeds = nostrFeedsToFcMap(nostrData.feeds);
+              updateSocial({ nostrData });
+              set({ nostrFeedsRaw: nostrData.feeds, nostrFeeds, nostrFeed: nostrFeeds[SYNC_SUB_NAME] ?? emptyFC() });
+              fetchMentionedProfiles(nostrFeeds);
+            }
             if ("feed" in fact.nostr || "user" in fact.nostr) {
               const { name, feed } =
                 "feed" in fact.nostr ? fact.nostr.feed : fact.nostr.user;
@@ -468,6 +498,8 @@ export const useStore = creator((set, get) => ({
             if ("event" in fact.nostr) {
               // console.log("san event", fact.nostr.event);
               const event: Wevent = fact.nostr.event;
+              nostrDataRevision++;
+              updateSocial({ nostrData: applyNostrEvent(get().nostrData, event) });
               if (event.kind === 1) {
                 // %event facts carry no sub name; only ongoing subs stream
                 // past eose, and the sync sub is the only one we keep ongoing
@@ -478,21 +510,14 @@ export const useStore = creator((set, get) => ({
                   nostrFeeds: { ...nostrFeeds, [SYNC_SUB_NAME]: nf },
                 });
               }
-              if (event.kind === 0) {
-                const prof = eventToProfile(event);
-                if (!prof) return;
-                set({
-                  profiles: new Map(get().profiles).set(event.pubkey, prof),
-                });
-              }
+
             }
             // if ("thread" in data.fact.nostr)
           }
           if ("prof" in fact) {
-            const profiles = new Map(get().profiles);
-            for (const [user, prof] of Object.entries(fact.prof))
-              profiles.set(user, prof);
-            set({ profiles });
+            const urbitProfiles = new Map(get().urbitProfiles);
+            for (const [id, profile] of parseProfiles(fact.prof)) urbitProfiles.set(id, profile);
+            updateSocial({ urbitProfiles });
           }
           if ("keys" in fact) set({ pubkey: fact.keys });
           if ("lists" in fact) set({ lists: parseLists(fact.lists) });
@@ -543,9 +568,10 @@ export const useStore = creator((set, get) => ({
   pubkey: "",
   profiles: new Map(),
   addProfile: (key, profile) => {
-    set({ profiles: new Map(get().profiles).set(key, profile) });
+    const normalized = normalizeProfile(profile);
+    const urbitProfiles = new Map(get().urbitProfiles).set(key, normalized);
+    set({ urbitProfiles, profiles: new Map(get().profiles).set(key, normalized) });
   },
-  setProfiles: (profiles) => set({ profiles }),
   lastFact: null,
   relays: {},
   relayLatency: {},
@@ -556,11 +582,14 @@ export const useStore = creator((set, get) => ({
   nostrFeed: { feed: {}, start: null, end: null },
   nostrFeeds: {},
   nostrFeedsRaw: {},
-  ofollowing: new Map(),
+  nostrData: emptyNostrData(),
+  urbitProfiles: new Map(),
+  nativeFollowGraph: {},
+  followedUsers: new Set(),
+  nostrUserFeeds: new Map(),
   following: { urbit: new Map(), nostr: new Map() },
   followers: [],
   timeline: { feed: {}, start: null, end: null },
-  ofollowGraph: new Map(),
   followGraph: { urbit: [], nostr: [] },
   lists: emptyLists(),
   uiSettings: {},

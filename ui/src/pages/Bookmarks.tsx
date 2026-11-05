@@ -48,7 +48,7 @@ function BookmarkedPost({ postRef }: { postRef: PostRef }) {
   if ("urbit" in postRef) {
     const { host, id } = postRef.urbit;
     // cached in our own feed or a followed ship's; else ask the host
-    const cached = myFeed.feed[id]?.host === host ? myFeed.feed[id] : following.get(host)?.feed[id];
+    const cached = myFeed.feed[id]?.host === host ? myFeed.feed[id] : following.urbit.get(host)?.feed[id];
     if (cached) return <Post poast={cached} user={userFromPost(cached)} />;
     return <RemotePost host={host} id={id} />;
   }

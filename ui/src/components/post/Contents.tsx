@@ -1,3 +1,4 @@
+import PostImage from "./PostImage";
 import { linkLabel, safeHref } from "@/logic/utils";
 import NostrText from "./NostrText";
 import type {
@@ -145,7 +146,7 @@ function LinkParser({ href, show }: { href: string; show: string }) {
   return ytb ? (
     <YoutubeSnippet href={href} id={ytb} />
   ) : isImg ? (
-    <img className="inline-pic" src={href} />
+    <PostImage className="inline-pic" src={href} />
   ) : (
     safeHref(href) ? (
       <a href={href} title={href}>

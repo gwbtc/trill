@@ -21,7 +21,7 @@ export default function ThreadLoader() {
   }));
   const params = useParams<{ host: string; id: string }>();
   const { host, id } = params;
-  const feed = following.get(host);
+  const feed = following.urbit.get(host);
   const profile = profiles.get(host);
 
   useEffect(() => {

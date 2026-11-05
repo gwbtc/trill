@@ -55,20 +55,20 @@ function Profile({
   isMe: boolean;
   onSave?: () => void;
 }) {
-  const { followers, following, setModal } = useLocalState((s) => ({
+  const { followers, followedUsers, setModal } = useLocalState((s) => ({
     followers: s.followers,
-    following: s.following,
+    followedUsers: s.followedUsers,
     setModal: s.setModal,
   }));
   const bannerImage = getProfileBanner(profile);
   const customFields = getCustomProfileFields(profile);
   const displayName = getDisplayName(user, profile, "");
-  const folSize = "urbit" in user ? following.urbit.size : following.nostr.size;
-  const followingCount = Math.max(
+  const folSize = "urbit" in user ? followedUsers.size : [...followedUsers].filter(id => !id.startsWith("~")).length;
+  const followingCount = !isMe && profile?.followingKnown === false ? "—" : Math.max(
     getFollowingCount(profile),
     isMe ? folSize : 0,
   );
-  const followerCount = Math.max(
+  const followerCount = !isMe && profile?.followersKnown === false ? "—" : Math.max(
     getFollowerCount(profile),
     isMe ? followers.length : 0,
   );

@@ -1,3 +1,4 @@
+import PostImage from "./PostImage";
 import type { Media } from "@/types/trill";
 interface Props {
   media: Media[];
@@ -23,11 +24,10 @@ function Images({ urls }: { urls: string[] }) {
   return (
     <>
       {urls.map((u, i) => (
-        <img
+        <PostImage
           key={u + i}
           className={`body-img body-img-1-of-${urls.length}`}
           src={u}
-          alt=""
         />
       ))}
     </>

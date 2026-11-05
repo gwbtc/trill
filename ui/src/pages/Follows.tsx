@@ -23,7 +23,7 @@ const FOLLOW_FILTERS: TabItem<FollowFilter>[] = [
 ];
 
 export default function Follows() {
-  const { following, followGraph, profiles, setModal, stateLoaded, our, pubkey } =
+  const { following, followGraph, profiles, setModal, stateLoaded, our, pubkey, followedUsers } =
     useLocalState((s) => ({
       following: s.following,
       followGraph: s.followGraph,
@@ -32,11 +32,12 @@ export default function Follows() {
       stateLoaded: s.stateLoaded,
       our: s.api?.airlock.our,
       pubkey: s.pubkey,
+      followedUsers: s.followedUsers,
     }));
   const [filter, setFilter] = useState<FollowFilter>("all");
   const entries = useMemo(
-    () => buildFollowEntries(following, followGraph, [our ?? "", pubkey]),
-    [following, followGraph, our, pubkey],
+    () => buildFollowEntries(following, followGraph, [our ?? "", pubkey], followedUsers),
+    [following, followGraph, our, pubkey, followedUsers],
   );
   const visible = filter === "all"
     ? [...entries.urbit, ...entries.nostr]
@@ -103,7 +104,7 @@ function FollowEntry({
   const displayName = getDisplayName(user, profile);
   const kind = getUserKind(user);
   const postCount = feed ? Object.keys(feed.feed).length : null;
-  const followerCount = profile ? getFollowerCount(profile) : null;
+  const followerCount = profile && profile.followersKnown !== false ? getFollowerCount(profile) : null;
 
   return (
     <div

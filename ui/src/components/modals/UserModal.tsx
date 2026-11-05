@@ -39,7 +39,8 @@ export default function UserModal({ user }: { user: UserType }) {
     profiles,
     following,
     followers,
-    followGraph,
+    followedUsers,
+    nostrUserFeeds,
     relays,
   } = useLocalState((s) => ({
     setModal: s.setModal,
@@ -48,7 +49,8 @@ export default function UserModal({ user }: { user: UserType }) {
     profiles: s.profiles,
     following: s.following,
     followers: s.followers,
-    followGraph: s.followGraph,
+    followedUsers: s.followedUsers,
+    nostrUserFeeds: s.nostrUserFeeds,
     lastFact: s.lastFact,
     relays: s.relays,
   }));
@@ -65,23 +67,17 @@ export default function UserModal({ user }: { user: UserType }) {
   const userString = getUserId(user);
   const userKind = getUserKind(user);
   const profile = profiles.get(userString);
-  const foling = "urbit" in user ? following.urbit : following.nostr;
-  const fgraph = "urbit" in user ? followGraph.urbit : followGraph.nostr;
-  const isInFollowing = foling.has(userString);
-  const isInGraph = Object.hasOwn(followGraph, userString);
-  const isFollowing = isInFollowing || isInGrap;
-  const isPending = fgraph?.[userString]?.length == 0;
+  const isFollowing = followedUsers.has(userString);
   const isFollower = followers.includes(userString);
-  const userFeed = following.get(userString);
+  const userFeed = "urbit" in user ? following.urbit.get(userString) : nostrUserFeeds.get(userString);
   const postCount = userFeed ? Object.keys(userFeed.feed).length : 0;
-  const followingCount = getFollowingCount(profile);
-  const followerCount = getFollowerCount(profile);
+  const followingCount = !profile || profile.followingKnown === false ? "—" : getFollowingCount(profile);
+  const followerCount = !profile || profile.followersKnown === false ? "—" : getFollowerCount(profile);
   const displayName = getDisplayName(user, profile);
   const idLabel = getHandleLabel(user, userString);
   const bannerImage = getProfileBanner(profile);
   const otherFields = getCustomProfileFields(profile);
 
-  console.log({ following });
 
   useEffect(() => {
     if (!lastFact || !("fols" in lastFact)) return;
@@ -127,7 +123,6 @@ export default function UserModal({ user }: { user: UserType }) {
     if (!api) return;
 
     setLoading(true);
-    console.log("following", user);
     try {
       if (isFollowing) {
         unwrap(await api.unfollow(user));
@@ -187,20 +182,14 @@ export default function UserModal({ user }: { user: UserType }) {
               <Avatar user={user} profile={profile} size={84} picOnly />
             </button>
 
-            {"nostr" in user && Object.keys(relays).length === 0 ? (
-              <span className="user-modal-relay-note">
-                Connect to a relay to follow
-              </span>
-            ) : (
-              !itsMe && (
-                <button
-                  className={`user-modal-follow ${isFollowing ? "following" : ""}`}
-                  onClick={handleFollow}
-                  disabled={isLoading}
-                >
-                  {isLoading ? "..." : isFollowing ? "Following" : "Follow"}
-                </button>
-              )
+            {!itsMe && (
+              <button
+                className={`user-modal-follow ${isFollowing ? "following" : ""}`}
+                onClick={handleFollow}
+                disabled={isLoading}
+              >
+                {isLoading ? "..." : isFollowing ? "Following" : "Follow"}
+              </button>
             )}
           </div>
 

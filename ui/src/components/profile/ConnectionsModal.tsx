@@ -40,7 +40,7 @@ export default function ConnectionsModal({
   } = useLocalState((state) => ({
     api: state.api,
     followers: state.followers,
-    following: state.following,
+    following: state.followedUsers,
     our: state.our,
     pubkey: state.pubkey,
     profiles: state.profiles,
@@ -53,7 +53,7 @@ export default function ConnectionsModal({
     followers: initialFollowerList(user, profile, followers, our?.patp, pubkey),
   }));
   const [loaded, setLoaded] = useState<Record<ConnectionTab, boolean>>({
-    following: "urbit" in user,
+    following: "urbit" in user || profile?.followingKnown === true || getUserId(user) === pubkey,
     followers: "urbit" in user,
   });
   // per tab: with a single "loading tab", one tab finishing cleared the flag
@@ -248,7 +248,7 @@ export default function ConnectionsModal({
 function initialFollowingList(
   user: UserType,
   profile: UserProfile | undefined,
-  following: Map<string, unknown>,
+  following: ReadonlySet<string>,
   ourPatp: string | undefined,
   pubkey: string,
 ) {
@@ -256,7 +256,7 @@ function initialFollowingList(
   const isMe = userId === ourPatp || userId === pubkey;
   if (!isMe || following.size === 0) return profile?.following || [];
 
-  return Array.from(following.keys()).flatMap((id) => {
+  return Array.from(following).filter(id => "urbit" in user || !id.startsWith("~")).flatMap((id) => {
     const parsed = stringToUser(id);
     return "ok" in parsed ? [parsed.ok] : [];
   });

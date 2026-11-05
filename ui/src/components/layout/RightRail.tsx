@@ -25,6 +25,7 @@ export default function RightRail() {
     our,
     pubkey,
     stateLoaded,
+    followedUsers,
   } = useLocalState((s) => ({
     relays: s.relays,
     relayLatency: s.relayLatency,
@@ -37,10 +38,11 @@ export default function RightRail() {
     our: s.api?.airlock.our,
     pubkey: s.pubkey,
     stateLoaded: s.stateLoaded,
+    followedUsers: s.followedUsers,
   }));
 
   const relayModels = buildRelayModels(relays, relayLatency);
-  const contactCount = following.urbit.size + following.nostr.size;
+  const contactCount = followedUsers.size;
   const openRelayDashboard = () => {
     import("@/components/RelayDashboard").then(({ default: RelayDashboard }) => {
       setModal(<RelayDashboard />);
@@ -51,11 +53,11 @@ export default function RightRail() {
     () =>
       suggestFollows(
         followGraphWithProfiles(followGraph, profiles),
-        following,
+        followedUsers,
         lists,
         [our ?? "", pubkey].filter(Boolean),
       ),
-    [followGraph, profiles, following, lists, our, pubkey],
+    [followGraph, profiles, followedUsers, lists, our, pubkey],
   );
   const searchParams = new URLSearchParams(searchString);
   const isSearchScreen = location === "/search";
