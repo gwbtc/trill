@@ -17,10 +17,10 @@
     :: TODO proper cursors
     feed+(feed-with-cursor:en:trill feed ~ ~)
     timeline+(global-with-cursor timeline ~ ~)
-    ::
+    :: ::
     following+(enfollowing following)
     ['followGraph' (engraph follow-graph)]
-    ::
+    :: ::
     nostr+(nostr-data:en:nostr nostr-data)
     lists+(en-lists bookmarks muted reported)
   ~
@@ -87,32 +87,14 @@
 
   ++  relay-reqs  |=  rm=(map @t req-state:nsur)
     %-  pairs  %+  turn  ~(tap by rm)  |=  [sub-id=@t rs=req-state:nsur]
-      :-  sub-id  (req-state rs)
+      :-  sub-id  (req-state:en:nostr rs)
 
-  ++  req-state  |=  rs=req-state:nsur
-    %-  pairs
-    :~  :+  'name'     %s  name.rs
-        :+  'subId'    %s  sub-id.rs
 
-        :-   'sent'    (time sent.rs)
-        :-   'eose'  ?~  eose.rs  ~  (eose u.eose.rs)
-        :+  'filters'  %a  (turn filters.rs filter:en:nostr)
-        :: ::  TODO  chunks...
-        :-  'eventsReceived'  (numb received.rs)
-        :-  'ongoing'   [%b ongoing.rs]
-    ==
-
-  ++  eose  |=  e=eose:nsur  ^-  json
+  ++  en-profiles  |=  m=(map @p user-profile:comms)
     %-  pairs
-    :~  ts+(time ts.e)
-        count+(numb event-count.e)
-    ==
-  ++  en-profiles  |=  m=(map user:sur user-profile:comms)
-    %-  pairs
-      %+  turn  ~(tap by m)  |=  [key=user:sur p=user-profile:comms]
-        =/  jkey  (user-string key)
-        ?>  ?=(%s -.jkey)
-        :-  +.jkey  (en-profile p)
+      %+  turn  ~(tap by m)  |=  [key=@p p=user-profile:comms]
+        =/  jkey  (scot %p key)
+        :-  jkey  (en-profile p)
 
   ++  en-profile  |=  prof=user-profile:comms
     %-  pairs  %+  weld
@@ -138,7 +120,7 @@
   |=  m=(map @p (set user:sur))
     ^-  json
     %-  pairs  %+  turn  ~(tap by m)  |=  [key=@p s=(set user:sur)]
-      :-  (scot @p key)
+      :-  (scot %p key)
       :-  %a   %+  turn  ~(tap in s)  user
       
   ++  follow-list
@@ -146,20 +128,16 @@
     ^-  json
     :-  %a
       %+  turn  ~(tap by m)  |=  [key=@p val=(set user:sur)]
-        %+  frond  -.key
-        =/  uid  (urbit-id)
+        %+  frond  (scot %p key)
+        =/  urid  (uid key)
         =/  jval  :-  %a
-          %+  turn  ~(tap in val)
-          ?-  -.key
-            %nostr  user-full
-            %urbit  user-full-tagged
-          ==
-        :-  %a  ~[uid jval]
+          %+  turn  ~(tap in val)  user-full
+        :-  %a  ~[urid jval]
 
 
   ++  uid  |=  p=@p  ^-  json
-      =/  u  (make-urbit-id +.u)
-      (urbit-id:en:gwidj y)
+      =/  u  (make-urbit-id p)
+      (urbit-id:en:gwidj u)
 
   ++  user-full  |=  u=user:sur  ^-  json
     ?-  -.u
@@ -218,9 +196,9 @@
   ++  en-nostr  |=  nf=nostr-fact:ui  ^-  json
     %+  frond  -.nf
     ?-  -.nf
-      %feed    (named-wfeed +.nf)
-      %user    (named-wfeed +.nf)
-      %thread  (en-nostr-feed +.nf)
+      %feed    (named-wfeed:en:nostr +.nf)
+      %user    (named-wfeed:en:nostr +.nf)
+      %thread  (feed:en:nostr +.nf)
       %event   (event:en:nostr +.nf)
       %eose    (cord:en:common +.nf)
       %drop    (cord:en:common +.nf)
@@ -228,6 +206,8 @@
       ::
       %sent-post  (en-nostr-sent-post +.nf)
       %sent-prof  [%a (turn relays.nf cord:en:common)]
+      ::
+      %data       (nostr-data:en:nostr +.nf)
     ==
   ++  en-followed  |=  [pubkey=@ux profile=(unit user-profile:comms) relays=(list @t)]
     %-  pairs  :~

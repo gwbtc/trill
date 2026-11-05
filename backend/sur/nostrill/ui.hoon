@@ -76,7 +76,7 @@
   $%  [%nostr nostr-fact]
       [%post post-fact:comms]
       [%fols fols-fact]
-      [%prof (map user:sur user-profile:comms)]
+      [%prof (map @p user-profile:comms)]
       :: our own keys!
       [%keys pub=@ux]
       ::  the full lists after any change to them

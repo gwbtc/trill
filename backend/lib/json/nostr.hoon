@@ -30,6 +30,24 @@
       pubkey+(hex:en:common pubkey)
       npub+s+(crip (ux-to-npub:bip pubkey))
   ==
+  ++  req-state  |=  rs=req-state:sur
+    %-  pairs
+    :~  :+  'name'     %s  name.rs
+        :+  'subId'    %s  sub-id.rs
+
+        :-   'sent'    (time sent.rs)
+        :-   'eose'  ?~  eose.rs  ~  (eose u.eose.rs)
+        :+  'filters'  %a  (turn filters.rs filter)
+        :: ::  TODO  chunks...
+        :-  'eventsReceived'  (numb received.rs)
+        :-  'ongoing'   [%b ongoing.rs]
+    ==
+
+  ++  eose  |=  e=eose:sur  ^-  json
+    %-  pairs
+    :~  ts+(time ts.e)
+        count+(numb event-count.e)
+    ==
 
   ++  raw-event  |=  raw-event:sur
     :-  %a  :~
@@ -115,7 +133,7 @@
   ==
   ++  feeds
   |=  fs=feeds:sur  ^-  json
-    %-  pairs  %+  turn  ~(tap by feeds)
+    %-  pairs  %+  turn  ~(tap by fs)
     |=  [name=@t sf=sourced-feeds:sur]
       :-  name  (sourced-feeds sf)
   
@@ -146,7 +164,7 @@
 
   ++  en-wfeed
   |=  feed=wfeed:sur  ^-  json
-    :-  %a  %+  turn  (tap:worm:sur feed)  |=  [id=@ud ev=wevent:sur]
+    :-  %a  %+  turn  (tap:worm:sur feed)  |=  [=ek:sur ev=wevent:sur]
       (wevent ev)
 
   ++  following  |=  s=(set @ux)  ^-  json
@@ -162,8 +180,10 @@
   |=  um=(map @ux user-data:sur)  ^-  json
   %-  pairs  %+  turn  ~(tap by um)
     |=  [pubkey=@ux ud=user-data:sur]
-    :-  (hex:en:common pubkey)
-        (user-data ud)
+         =/  hexs  (hex:en:common pubkey)
+          ?>  ?=(%s -.hexs)
+          :-  +.hexs
+          (user-data ud)
   ++  user-data
   |=  ud=user-data:sur  ^-  json
     =/  prof  ?~  profile.ud  ~  (user-meta u.profile.ud)
@@ -173,7 +193,7 @@
         feed+(feed feed.ud)
         following+foli
         profile+prof
-        other+a+(turn events.ud event)
+        other+a+(turn other.ud event)
     ==
     
   

@@ -69,7 +69,7 @@
     |-  ?~  l  w
       =/  url=@t  -.i.l
       =/  sf=sourced-feed:nsur  +.i.l
-      =/  f=nostr-feed:nsur  feed.sf
+      =/  f=feed:nsur  feed.sf
       =/  posts=(list [@ud event:nsur])  (tap:norm:nsur f)
       =/  nw
         |-  ?~  posts  w

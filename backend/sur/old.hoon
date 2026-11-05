@@ -46,38 +46,16 @@
       chunked=(list filter:nostr)
   ==
 ::
-++  state-0-to-1
-  |=  s=state-0  ^-  state-1:sur
-  |^
-  :*
-    %1
-    keys=keys.s
-    profiles=profiles.s
-    feed=feed.s
-    feed-perms=feed-perms.s
-    following=following.s
-    timeline=global-feed.s
-    follow-graph=make-follow-graph
-    ::  keyed by url now, not by socket id
-    relays=migrate-relays
-    nostr-feeds=~
-    requests=requests.s
-    responses=responses.s
-    bookmarks=~
-    muted=~
-    reported=~
-  ==
   ::  each relay by its url, marked connected with no socket: on-load's
   ::  +reconcile reconnects those. the old subs went with their sockets
   ::
-  ++  migrate-relays  ^-  (map @t relay-stats:nostr)
-    %-  malt
-    %+  turn  ~(val by relays.s)
-    |=  r=relay-stats-0
-    ^-  [@t relay-stats:nostr]
-    [url.r [start.r url.r ~ `[%connected 0 start.r ~ ~] ~]]
+  :: ++  migrate-relays  ^-  (map @t relay-stats:nostr)
+  ::   %-  malt
+  ::   %+  turn  ~(val by relays.s)
+  ::   |=  r=relay-stats-0
+  ::   ^-  [@t relay-stats:nostr]
+  ::   [url.r [start.r url.r ~ `[%connected 0 start.r ~ ~] ~]]
   
-  ++  make-follow-graph  ^-  (map user:sur (set user:sur))
-    ~
-  --
+  :: ++  make-follow-graph  ^-  (map user:sur (set user:sur))
+  ::   ~
 --
