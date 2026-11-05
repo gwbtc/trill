@@ -45,7 +45,7 @@ const ProfileEditor: React.FC<ProfileEditorProps> = ({
 
   // profiles are copied to followers and republished to nostr as kind-0, so
   // an inlined data: url would ship the whole image in every copy. upload to
-  // S3 when it's configured; otherwise only allow small images inline
+  // the ship’s media storage when it’s available; otherwise only allow small images inline
   const handleFilePreview =
     (setter: (value: string) => void) =>
     async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -63,7 +63,7 @@ const ProfileEditor: React.FC<ProfileEditorProps> = ({
       }
       if (file.size > MAX_INLINE_IMAGE_BYTES) {
         toast.error(
-          `Images over ${MAX_INLINE_IMAGE_BYTES / 1024} KB need S3 storage; configure it or paste an image URL`,
+          `Images over ${MAX_INLINE_IMAGE_BYTES / 1024} KB need Jars media storage on your ship; you can also paste an image URL`,
         );
         return;
       }

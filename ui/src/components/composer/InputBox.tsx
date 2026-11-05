@@ -9,7 +9,7 @@ import {
 } from "./Autocomplete";
 import ConfirmationDialog from "../modals/ConfirmationDialog";
 import ComposerLayer from "./ComposerLayer";
-import { restoreComposerCaret, saveComposerCaret } from "./composerDom";
+import { restoreComposerCaret, saveComposerCaret, serializeComposerContent } from "./composerDom";
 import useLocalState from "@/state/state";
 import toast from "react-hot-toast";
 import { uploadToS3 } from "@/logic/s3";
@@ -157,13 +157,15 @@ export default function ({
         imgEl.removeAttribute("id"); // cleanup
       }
     } catch (e: any) {
-      console.error(e);
       toast.error("Upload failed: " + e.message);
       // Remove the failed image?
       const imgEl = inputRef.current.querySelector(`#${tempId}`);
       imgEl?.remove();
     } finally {
       URL.revokeObjectURL(blobUrl);
+      if (inputRef.current) {
+        setInput(serializeComposerContent(inputRef.current, inputRef.current.innerText));
+      }
     }
   };
 
@@ -173,7 +175,7 @@ export default function ({
       const file = e.clipboardData.files[0];
       if (file.type.startsWith("image/")) {
         if (!s3) {
-          toast.error("S3 not configured. Cannot upload image.");
+          toast.error("Media storage is unavailable. Open the media picker to retry.");
           return;
         }
         setPendingPaste({
@@ -260,7 +262,7 @@ export default function ({
       {pendingPaste && (
         <ComposerLayer onClose={cancelPaste}>
           <ConfirmationDialog
-            message={`Do you want to upload ${pendingPaste.file.name} to your S3 bucket?`}
+            message={`Upload ${pendingPaste.file.name} to your ship’s media storage?`}
             onConfirm={confirmPaste}
             onCancel={cancelPaste}
           >

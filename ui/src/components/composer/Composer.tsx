@@ -62,7 +62,6 @@ function Composer({
     contacts,
     profiles,
     relays,
-    s3,
     setModal,
   } = useLocalState((s) => ({
     api: s.api,
@@ -72,7 +71,6 @@ function Composer({
     contacts: s.contacts,
     profiles: s.profiles,
     relays: s.relays,
-    s3: s.s3,
     setModal: s.setModal,
   }));
   const [input, setInput] = useState("");
@@ -330,10 +328,6 @@ function Composer({
   };
 
   const openS3Browser = () => {
-    if (!s3) {
-      toast.error("S3 media is not configured");
-      return;
-    }
     caretRef.current = saveComposerCaret(inputRef.current);
     setS3Open(true);
   };
@@ -618,7 +612,7 @@ function Composer({
       </div>
       {s3Open && (
         <ComposerLayer onClose={closeS3Browser}>
-          <S3Browser onSelect={handleS3Select} onClose={closeS3Browser} />
+          <S3Browser onSelect={handleS3Select} />
         </ComposerLayer>
       )}
     </form>

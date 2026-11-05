@@ -1,98 +1,44 @@
 import "@/styles/s3.css";
-
 import useLocalState from "@/state/state";
-import { S3Client, type S3Object } from "@bradenmacdonald/s3-lite-client";
 import { useQuery } from "@tanstack/react-query";
-
-import spinner from "@/assets/triangles.svg";
+import { listMedia, mediaUrl } from "@/logic/s3";
 
 interface S3BrowserProps {
   onSelect: (url: string) => void;
-  onClose: () => void;
 }
 
 export default function S3Browser({ onSelect }: S3BrowserProps) {
-  const { s3 } = useLocalState((s) => ({ s3: s.s3 }));
-
-  const {
-    data: objects,
-    isLoading: loading,
-    error,
-  } = useQuery({
+  const { s3, status, initMedia } = useLocalState(s => ({ s3: s.s3, status: s.s3Status, initMedia: s.initMedia }));
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["s3-objects", s3?.endpoint, s3?.currentBucket],
-    queryFn: async () => {
-      if (!s3) throw new Error("S3 not configured");
-
-      const client = new S3Client({
-        bucket: s3.currentBucket,
-        endPoint: s3.endpoint,
-        region: "us-east-1",
-        accessKey: s3.accessKeyId,
-        secretKey: s3.secretAccessKey,
-      });
-
-      // the library can yield the same object more than once; dedupe by key
-      // (a Set of objects compares by identity, so it never deduped)
-      const objs = new Map<string, S3Object>();
-      for await (const obj of client.listObjects()) {
-        objs.set(obj.key, obj);
-      }
-      return objs;
+    queryFn: ({ signal }) => {
+      if (!s3) throw new Error("Media storage is unavailable");
+      return listMedia(s3, signal);
     },
-    enabled: !!s3,
-    staleTime: 1000 * 60 * 5, // 5 minutes cache
+    enabled: Boolean(s3),
+    staleTime: 0,
+    retry: false,
   });
-
-  return (
-    <div id="s3-browser">
-      <div
-        style={{
-          textAlign: "center",
-        }}
-      >
-        <h2>Choose Media</h2>
+  const keys = data?.keys.filter(key => /\.(jpe?g|png|gif|webp|svg|avif|mp4|mkv|webm)$/i.test(key)) ?? [];
+  const failed = status === "unavailable" || status === "error" || Boolean(error);
+  return <div id="s3-browser">
+    <h2>Choose Media</h2>
+    {status === "loading" || (s3 && isLoading) ? <p className="media-status" role="status">Loading media…</p>
+      : failed ? <div className="media-status" role="status">
+        <p>{status === "unavailable" ? "Media storage is unavailable on this ship." : status === "error" ? "Couldn’t prepare media storage." : "Couldn’t load your media."}</p>
+        <button type="button" onClick={() => { if (s3) void refetch(); else void initMedia(); }}>Retry</button>
       </div>
-
-      {loading ? (
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            flex: 1,
-          }}
-        >
-          <img src={spinner} />
-        </div>
-      ) : error ? (
-        <div style={{ textAlign: "center", color: "red" }}>
-          <p>Error: {(error as Error).message || "Unknown error"}</p>
-          <p>Please check your S3 configuration in Settings.</p>
-        </div>
-      ) : (
+      : <>
+        {keys.length === 0 && <p className="media-status">No images or videos yet. Paste an image into your post to upload it.</p>}
         <div className="image-grid">
-          {[...(objects?.values() ?? [])].map((obj) => {
-            // keys can hold spaces, "#", "?"...; encode each path segment
-            const key = obj.key.split("/").map(encodeURIComponent).join("/");
-            const url = `${s3?.endpoint}/${s3?.currentBucket}/${key}`;
-            const isImg = obj.key.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i);
-            const isVid = obj.key.match(/\.(mp4|mkv|webm)$/i);
-            return (
-              <div
-                className="entry"
-                key={obj.key}
-                onClick={() => onSelect(url)}
-              >
-                {isImg ? (
-                  <img src={url} loading="lazy" />
-                ) : isVid ? (
-                  <video src={url} />
-                ) : null}
-              </div>
-            );
+          {s3 && keys.map(key => {
+            const url = mediaUrl(s3, key);
+            return <button type="button" className="entry" key={key} aria-label={`Choose ${key}`} onClick={() => onSelect(url)}>
+              {/\.(mp4|mkv|webm)$/i.test(key) ? <video src={url} preload="metadata" /> : <img src={url} alt={key} loading="lazy" />}
+            </button>;
           })}
         </div>
-      )}
-    </div>
-  );
+        {data?.limited && <p className="media-status">Showing the first 1,000 stored files.</p>}
+      </>}
+  </div>;
 }

@@ -72,6 +72,7 @@ import {
   type Presence,
 } from "@/logic/debates";
 import { generateNevent } from "@/logic/nostr";
+import { ensureMediaBucket, jarsConfig } from "@/logic/s3";
 // TODO handle airlock connection issues
 // the SSE pipeline has a "status-update" event FWIW
 // type AirlockState = "connecting" | "connected" | "failed";
@@ -119,6 +120,8 @@ export type LocalState = {
   feedPerms: Gate;
   contacts: UrbitContacts;
   s3: S3Config | null;
+  s3Status: "loading" | "ready" | "unavailable" | "error";
+  initMedia: () => Promise<void>;
   lastEose: string;
   // the /ui subscription's first state fact has landed: until then empty
   // relays, follows etc. mean "not loaded", not "none"
@@ -148,11 +151,35 @@ export type LocalState = {
 };
 
 let initPromise: Promise<void> | null = null;
+let mediaInitPromise: Promise<void> | null = null;
 const creator = create<LocalState>();
 export const useStore = creator((set, get) => ({
   isNew: false,
   contacts: {},
   s3: null,
+  s3Status: "loading",
+  initMedia: () => {
+    if (mediaInitPromise) return mediaInitPromise;
+    const api = get().api;
+    if (!api) return Promise.resolve();
+    mediaInitPromise = (async () => {
+      set({ s3: null, s3Status: "loading" });
+      const result = await api.scryS3Server();
+      if ("error" in result) {
+        set({ s3Status: "unavailable" });
+        return;
+      }
+      try {
+        const s3 = jarsConfig(result.ok);
+        await ensureMediaBucket(s3);
+        set({ s3, s3Status: "ready" });
+      } catch {
+        // Do not log config or credential-bearing S3 request errors.
+        set({ s3Status: "error" });
+      }
+    })().finally(() => { mediaInitPromise = null; });
+    return mediaInitPromise;
+  },
   api: null,
   // memoized: the subscriptions and timers below must only be set up once,
   // and a second caller (StrictMode, HMR) should wait for the same setup
@@ -223,12 +250,6 @@ export const useStore = creator((set, get) => ({
         const uiSettings = r.ok.desk;
         set({ uiSettings, uiSettingsLoaded: true });
       });
-      api.scryStorage().then((r) => {
-        if ("ok" in r) {
-          set({ s3: r.ok });
-        }
-      });
-
       api.scryHark().then((r) => {
         const clearedAt = getNotificationsClearedAt();
         if ("ok" in r) {
@@ -637,6 +658,7 @@ export const useStore = creator((set, get) => ({
       setTimeout(measureLatency, 3000);
       setInterval(measureLatency, 60_000);
       set({ api });
+      void get().initMedia();
     })()),
   pubkey: "",
   profiles: new Map(),

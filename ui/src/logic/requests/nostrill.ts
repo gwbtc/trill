@@ -3,11 +3,9 @@ import type { Cursor, FullNode, Gate, PostID, PostPerms } from "@/types/trill";
 import { patpToFallbackUID } from "@/logic/gw";
 import type { PostRef } from "@/logic/lists";
 import type {
-  S3Config,
+  S3ServerConfig,
   SettingsRes,
   Ship,
-  StorageConfigurationRes,
-  StorageCredentialsRes,
   UrbitContacts,
 } from "@/types/urbit";
 import {
@@ -316,22 +314,9 @@ export default class IO {
     const res = await this.poke(json, "settings", "settings-event");
     return res;
   }
-  async scryStorage(): AsyncRes<S3Config> {
-    const path = "/credentials";
-    const path2 = "/configuration";
-    const res = await this.scry(path, "storage");
-    const res2 = await this.scry(path2, "storage");
-    if ("error" in res) return res;
-    if ("error" in res2) return res2;
-    const creds: StorageCredentialsRes = res.ok;
-    if (!creds["storage-update"].credentials.endpoint)
-      return { error: "no credentials" };
-    const conf: StorageConfigurationRes = res2.ok;
-    const ret = {
-      ...creds["storage-update"].credentials,
-      ...conf["storage-update"].configuration,
-    };
-    return { ok: ret };
+  // A successful config scry also establishes that the agent is available.
+  async scryS3Server(): AsyncRes<S3ServerConfig> {
+    return await this.scry("/config", "s3-server");
   }
 
   // pokes

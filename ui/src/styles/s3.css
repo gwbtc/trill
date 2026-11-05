@@ -1,38 +1,68 @@
 #s3-browser {
-  height: 80vh;
   display: flex;
   flex-direction: column;
+  gap: 16px;
+  width: min(600px, 100%);
+  max-height: 75dvh;
+  padding: 20px;
+  overflow: auto;
+}
 
-  h2 {
-    font-size: 1.8rem;
-  }
+#s3-browser h2 {
+  margin: 0;
+  font-size: 20px;
+}
 
-  .image-grid {
-    display: flex;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 1rem;
-    overflow-y: auto;
-  }
+#s3-browser .media-status {
+  margin: 0;
+  padding-block: 16px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  text-align: center;
+}
 
-  .entry {
-    border: 1px solid;
-    border-color: 1px solid var--(color-primary);
-    border-radius: 0.5rem;
-    width: 30%;
-    cursor: pointer;
-    aspect-ratio: 1;
+#s3-browser .media-status p {
+  margin: 0 0 12px;
+}
 
-    img,
-    video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
+#s3-browser .media-status button {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-background);
+  color: var(--color-text);
+  cursor: pointer;
+}
 
-    img:hover,
-    video:hover {
-      opacity: 0.1;
-    }
-  }
+#s3-browser .image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 12px;
+}
+
+#s3-browser .entry {
+  aspect-ratio: 1;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface, var(--color-background));
+  cursor: pointer;
+}
+
+#s3-browser .entry img,
+#s3-browser .entry video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#s3-browser .entry:hover {
+  border-color: var(--color-primary);
+}
+
+#s3-browser .entry:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }

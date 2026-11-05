@@ -1435,3 +1435,123 @@ test("posting waits for a saved global-feed opt-out instead of using the default
   release();
   await expect.poll(() => pokeLog).toContainEqual({ post: { add: { content: "Respect the opt-out", global: false, anon: false, reply: "everyone" } } });
 });
+
+// Public fixture credentials only. Never use or record real Jars credentials.
+async function installJarsMock(page, { exists = false, headStatus, createStatus = 200 } = {}) {
+  const calls = [];
+  let present = exists;
+  let failUpload = false;
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jC3sAAAAASUVORK5CYII=", "base64");
+  await page.route("**/~/scry/s3-server/config.json", route => route.fulfill({ status: 200, json: { region: "us-east-1", accessKeyId: "~zod", secretAccessKey: "public-jars-test-fixture" } }));
+  await page.route(/\/jars\/trill(?:\/.*)?(?:\?.*)?$/, async route => {
+    const request = route.request();
+    const method = request.method();
+    const url = new URL(request.url());
+    const bucket = /^\/jars\/trill\/?$/.test(url.pathname);
+    const headers = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "HEAD, GET, PUT, OPTIONS" };
+    if (method === "OPTIONS") return route.fulfill({ status: 200, headers });
+    calls.push({ method, path: url.pathname, signed: url.searchParams.has("X-Amz-Signature"), type: request.headers()["content-type"] });
+    if (method === "HEAD" && bucket) return route.fulfill({ status: headStatus ?? (present ? 200 : 404), headers });
+    if (method === "PUT" && bucket) {
+      if (createStatus === 200) present = true;
+      return route.fulfill({ status: createStatus, headers, body: createStatus === 200 ? "" : '<Error><Code>AccessDenied</Code><Message>Bucket creation denied</Message></Error>' });
+    }
+    if (method === "GET" && bucket) return route.fulfill({ status: 200, headers: { ...headers, "content-type": "application/xml" }, body: '<?xml version="1.0"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>trill</Name><IsTruncated>false</IsTruncated><Contents><Key>folder/photo #1?.png</Key><Size>68</Size></Contents></ListBucketResult>' });
+    if (method === "PUT") return route.fulfill({ status: failUpload ? 500 : 200, headers, body: failUpload ? '<Error><Code>InternalError</Code><Message>Fixture upload failed</Message></Error>' : "" });
+    return route.fulfill({ status: 200, headers: { ...headers, "content-type": "image/png" }, body: png });
+  });
+  return { calls, failUploads: () => { failUpload = true; } };
+}
+
+async function pasteJarsImage(page, editor) {
+  await editor.focus();
+  await editor.evaluate(element => {
+    const transfer = new DataTransfer();
+    const bytes = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jC3sAAAAASUVORK5CYII="), c => c.charCodeAt(0));
+    transfer.items.add(new File([bytes], "pasted.png", { type: "image/png" }));
+    element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer, bubbles: true, cancelable: true }));
+  });
+  await page.locator(".confirmation-dialog").getByRole("button", { name: "Yes", exact: true }).click();
+}
+
+test("Jars creates the Trill bucket and supports browsing and pasted uploads without storage", async ({ page }, testInfo) => {
+  const jars = await installJarsMock(page);
+  const storageReads = [];
+  page.on("request", request => { if (request.url().includes("/~/scry/storage/")) storageReads.push(request.url()); });
+  await page.goto("f");
+  await expect.poll(() => jars.calls.filter(call => call.method === "PUT").length).toBe(1);
+  expect(jars.calls.slice(0, 2).map(call => call.method)).toEqual(["HEAD", "PUT"]);
+  await page.getByRole("button", { name: "Compose", exact: true }).click();
+  const modal = page.locator("#compose-modal");
+  await modal.getByTitle("Add image", { exact: true }).click();
+  const browser = page.locator("#s3-browser");
+  const existing = browser.getByRole("button", { name: "Choose folder/photo #1?.png", exact: true });
+  await expect(existing).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("jars-media-browser.png") });
+  await existing.click();
+  const editor = modal.locator(".input-editor");
+  await expect(editor.locator("img")).toHaveAttribute("src", "http://localhost:8900/jars/trill/folder/photo%20%231%3F.png");
+  await editor.fill("");
+  await pasteJarsImage(page, editor);
+  await expect(editor.locator("img")).toHaveAttribute("src", /\/jars\/trill\/.+\.png$/);
+  await expect(editor.locator("img")).not.toHaveAttribute("src", /^blob:/);
+  await expect(modal.getByRole("button", { name: "Broadcast", exact: true })).toBeEnabled();
+  expect(jars.calls.filter(call => call.method === "PUT" && call.path.endsWith(".png"))).toHaveLength(1);
+  expect(jars.calls.filter(call => call.method !== "GET" || /^\/jars\/trill\/?$/.test(call.path)).every(call => call.signed)).toBe(true);
+  expect(jars.calls.find(call => call.method === "PUT" && call.path.endsWith(".png")).type).toBe("image/png");
+  expect(storageReads).toEqual([]);
+  expect(await editor.locator("img").getAttribute("src")).not.toContain("X-Amz-");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath("jars-upload-mobile.png") });
+  jars.failUploads();
+  await pasteJarsImage(page, editor);
+  await expect(page.getByText(/Upload failed:/)).toBeVisible();
+  await expect(editor.locator("img")).toHaveCount(1);
+  const uploadedUrl = await editor.locator("img").getAttribute("src");
+  await modal.getByRole("button", { name: "Broadcast", exact: true }).click();
+  await expect.poll(() => pokeLog.find(poke => poke.post?.add)?.post.add.content).toContain(uploadedUrl);
+  expect(pokeLog.find(poke => poke.post?.add).post.add.content).not.toContain("blob:");
+});
+
+test("Jars preserves an existing bucket and reports setup failure with retry", async ({ page }) => {
+  let jars = await installJarsMock(page, { headStatus: 403 });
+  await page.goto("f");
+  await page.getByRole("button", { name: "Compose", exact: true }).click();
+  await page.locator("#compose-modal").getByTitle("Add image", { exact: true }).click();
+  const browser = page.locator("#s3-browser");
+  await expect(browser.getByText(/Couldn’t prepare media storage/)).toBeVisible();
+  expect(jars.calls.some(call => call.method === "PUT")).toBe(false);
+  jars = await installJarsMock(page, { exists: true });
+  await browser.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(browser.getByRole("button", { name: "Choose folder/photo #1?.png", exact: true })).toBeVisible();
+  expect(jars.calls.some(call => call.method === "PUT")).toBe(false);
+});
+
+test("missing Jars leaves the composer usable and explains unavailable media", async ({ page }, testInfo) => {
+  const jarRequests = [];
+  page.on("request", request => { if (request.url().includes("/jars/")) jarRequests.push(request.url()); });
+  await page.goto("f");
+  await page.getByRole("button", { name: "Compose", exact: true }).click();
+  await page.locator("#compose-modal").getByTitle("Add image", { exact: true }).click();
+  await expect(page.locator("#s3-browser").getByText("Media storage is unavailable on this ship.", { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("jars-unavailable.png") });
+  expect(jarRequests).toEqual([]);
+  await page.keyboard.press("Escape");
+  await page.locator("#compose-modal .input-editor").fill("Text posts still work");
+  await expect(page.locator("#compose-modal").getByRole("button", { name: "Broadcast", exact: true })).toBeEnabled();
+});
+
+test("Jars bucket creation and invalid configuration failures do not enable uploads", async ({ page }) => {
+  const jars = await installJarsMock(page, { createStatus: 403 });
+  await page.goto("f");
+  await page.getByRole("button", { name: "Compose", exact: true }).click();
+  await page.locator("#compose-modal").getByTitle("Add image", { exact: true }).click();
+  const browser = page.locator("#s3-browser");
+  await expect(browser.getByText("Couldn’t prepare media storage.", { exact: true })).toBeVisible();
+  expect(jars.calls.map(call => call.method)).toEqual(["HEAD", "PUT"]);
+  const before = jars.calls.length;
+  await page.route("**/~/scry/s3-server/config.json", route => route.fulfill({ status: 200, json: {} }));
+  await browser.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(browser.getByText("Couldn’t prepare media storage.", { exact: true })).toBeVisible();
+  expect(jars.calls).toHaveLength(before);
+});

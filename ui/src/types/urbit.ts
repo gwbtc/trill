@@ -6,7 +6,15 @@ export interface S3Bucket {
   bucket: string;
   region: string;
 }
-export type S3Config = StorageCredentials & StorageConfiguration;
+export type S3ServerConfig = {
+  region: string;
+  accessKeyId: string;
+  secretAccessKey?: string;
+};
+export type S3Config = S3ServerConfig & {
+  endpoint: string;
+  currentBucket: string;
+};
 export type UrbitContacts = Record<Ship, Contact | null>;
 
 export interface Contact {
