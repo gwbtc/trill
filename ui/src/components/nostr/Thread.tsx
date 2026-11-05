@@ -1,3 +1,5 @@
+import { usePostUser } from "@/hooks/usePostUser";
+import { usePostProfile } from "@/hooks/usePostProfile";
 import useLocalState from "@/state/state";
 import type { FullNode } from "@/types/trill";
 import ComposerModal from "@/components/modals/ComposerModal";
@@ -22,11 +24,11 @@ type Props = {
 };
 
 export default function Thread({ event, relays }: Props) {
-  const { profile, composerData, setModal, configuredRelays } =
+  const profile = usePostProfile(event.pubkey);
+  const { composerData, setModal, configuredRelays } =
     useLocalState((s) => ({
       composerData: s.composerData,
       setModal: s.setModal,
-      profile: s.profiles.get(event.pubkey),
       configuredRelays: Object.keys(s.relays).join("\n"),
     }));
 
@@ -111,8 +113,9 @@ export default function Thread({ event, relays }: Props) {
 
 const Ancestor = memo(function Ancestor({ event }: { event: Wevent }) {
   const post = useMemo(() => eventToPoast(event), [event]);
-  const profile = useLocalState(s => s.profiles.get(event.pubkey));
-  return post ? <div data-thread-event={event.id}><Post poast={post} user={{ nostr: event.pubkey }} profile={profile} /></div> : null;
+  const profile = usePostProfile(event.pubkey);
+  const userFromPost = usePostUser();
+  return post ? <div data-thread-event={event.id}><Post poast={post} user={userFromPost(post)} profile={profile} /></div> : null;
 });
 
 function ContextGap({ retry }: { retry: () => void }) {
@@ -131,8 +134,9 @@ function ReplyList({ events }: { events: Wevent[] }) {
 
 const Reply = memo(function Reply({ event, spine }: { event: Wevent; spine: boolean }) {
   const post = useMemo(() => eventToPoast(event), [event]);
-  const profile = useLocalState(s => s.profiles.get(event.pubkey));
-  return post ? <Post poast={post} user={{ nostr: event.pubkey }} profile={profile} spine={spine} /> : null;
+  const profile = usePostProfile(event.pubkey);
+  const userFromPost = usePostUser();
+  return post ? <Post poast={post} user={userFromPost(post)} profile={profile} spine={spine} /> : null;
 });
 
 function Head({ node, profile, relay, replyIds }: {
@@ -141,8 +145,10 @@ function Head({ node, profile, relay, replyIds }: {
   relay?: string;
   replyIds: string[];
 }) {
+  const userFromPost = usePostUser();
+  const post = toFlat(node);
   return <>
-    <ThreadRootPost poast={{ ...toFlat(node), children: replyIds }} user={{ nostr: node.author }} profile={profile} provenance={relay} />
+    <ThreadRootPost poast={{ ...post, children: replyIds }} user={userFromPost(post)} profile={profile} provenance={relay} />
     <NostrThreadReplyComposer node={node} />
   </>;
 }

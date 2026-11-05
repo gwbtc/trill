@@ -1,11 +1,12 @@
+import { usePostUser } from "@/hooks/usePostUser";
+import { usePostProfile } from "@/hooks/usePostProfile";
 import type { NostrMetadata } from "@/types/nostrill";
 import Post from "../Post";
-import useLocalState from "@/state/state";
 
 export function NostrSnippet({ meta }: { meta: NostrMetadata }) {
-  const profile = useLocalState((s) => s.profiles.get(meta.pubkey));
-  const user = { nostr: meta.pubkey };
+  const profile = usePostProfile(meta.pubkey);
+  const userFromPost = usePostUser();
 
-  if (meta.post) return <Post user={user} poast={meta.post} profile={profile} />;
+  if (meta.post) return <Post user={userFromPost(meta.post)} poast={meta.post} profile={profile} />;
   else return <div className="nostr snippet">{meta.eventId}</div>;
 }

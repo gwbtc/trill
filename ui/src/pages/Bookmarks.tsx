@@ -1,3 +1,4 @@
+import { usePostProfile } from "@/hooks/usePostProfile";
 import "@/styles/Profile.css";
 import "@/styles/Bookmarks.css";
 import { Bookmark } from "lucide-react";
@@ -6,11 +7,10 @@ import useLocalState from "@/state/state";
 import PageHeader from "@/components/layout/PageHeader";
 import Post from "@/components/post/Post";
 import PostData from "@/components/post/Loader";
-import { toFlat } from "@/components/post/RP";
 import { refKey, type PostRef } from "@/logic/lists";
-import { userFromAuthor } from "@/logic/trill/helpers";
 import { usePostUser } from "@/hooks/usePostUser";
-import type { FullNode, Poast } from "@/types/trill";
+import { getUserId } from "@/logic/userDisplay";
+import type { Poast } from "@/types/trill";
 
 export default function Bookmarks() {
   const lists = useLocalState((s) => s.lists);
@@ -43,13 +43,12 @@ function BookmarkedPost({ postRef }: { postRef: PostRef }) {
     nostrFeeds: s.nostrFeeds,
     globalFeed: s.globalFeed,
   }));
-  const userFromPost = usePostUser();
 
   if ("urbit" in postRef) {
     const { host, id } = postRef.urbit;
     // cached in our own feed or a followed ship's; else ask the host
     const cached = myFeed.feed[id]?.host === host ? myFeed.feed[id] : following.urbit.get(host)?.feed[id];
-    if (cached) return <Post poast={cached} user={userFromPost(cached)} />;
+    if (cached) return <BookmarkedPostRow poast={cached} />;
     return <RemotePost host={host} id={id} />;
   }
 
@@ -57,7 +56,7 @@ function BookmarkedPost({ postRef }: { postRef: PostRef }) {
   const note: Poast | undefined = [globalFeed, ...Object.values(nostrFeeds)]
     .flatMap((fc) => Object.values(fc.feed))
     .find((p) => p.hash === postRef.nostr);
-  if (note) return <Post poast={note} user={userFromPost(note)} />;
+  if (note) return <BookmarkedPostRow poast={note} />;
   return <UnloadedNote id={postRef.nostr} />;
 }
 
@@ -65,8 +64,17 @@ function RemotePost(props: { host: string; id: string }) {
   return PostData(props)(NodePost);
 }
 
-function NodePost({ data, refetch }: { data: FullNode; refetch: Function }) {
-  return <Post poast={toFlat(data)} user={userFromAuthor(data.author)} refetch={refetch} />;
+// PostData already flattens the fetched thread node before rendering its child.
+function NodePost({ data, refetch }: { data: Poast; refetch: Function }) {
+  return <BookmarkedPostRow poast={data} refetch={refetch} />;
+}
+
+function BookmarkedPostRow({ poast, refetch }: { poast: Poast; refetch?: Function }) {
+  const userFromPost = usePostUser();
+  const user = userFromPost(poast);
+  const userId = getUserId(user);
+  const profile = usePostProfile(userId);
+  return <Post poast={poast} user={user} profile={profile} refetch={refetch} />;
 }
 
 // a bookmarked nostr note that none of our loaded feeds has

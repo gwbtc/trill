@@ -42,6 +42,7 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
   );
   const our = api!.airlock.our!;
   function getComposerData(): SPID {
+    if (poast.event) return { nostr: { post: poast, pubkey: poast.event.pubkey, eventId: poast.event.id } };
     return "urbit" in user
       ? { trill: poast }
       : { nostr: { post: poast, pubkey: user.nostr, eventId: poast.hash } };

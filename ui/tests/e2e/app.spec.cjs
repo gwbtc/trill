@@ -793,8 +793,9 @@ test("bookmarks page lists saved posts and settings lists muted accounts", async
     reported: [],
   };
   await page.goto("bookmarks");
-  await expect(page.getByRole("heading", { name: "Bookmarks" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Bookmarks", exact: true })).toBeVisible();
   await expect(page.getByText("A post ready for a zap")).toBeVisible();
+  await expect(page.locator("#screen-bookmarks article.trill-post header .name")).toHaveText("wicket");
 
   await page.goto("sets");
   const muted = page.locator("#settings-muted");
@@ -1288,4 +1289,81 @@ test("Nostr composer snippets retain profiles and receive metadata updates", asy
   await expect(modalReply.locator("img").first()).toHaveAttribute("src", updatedPicture);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: testInfo.outputPath("nostr-reply-profile-mobile.png") });
+});
+
+test("bookmarked Nostr posts show cached profiles and update metadata", async ({ page }, testInfo) => {
+  feedFixtureKind = "state2";
+  state2Snapshot = state2Fixture();
+  const id = "d".repeat(64);
+  const picture = "https://avatars.example/bookmarked-author.svg";
+  const updatedPicture = "https://avatars.example/bookmarked-author-updated.svg";
+  await page.route("https://avatars.example/**", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="purple"/></svg>' }));
+  state2Snapshot.nostr["user-map"][STATE2_KEY].profile.picture = picture;
+  state2Snapshot.lists.bookmarks = [{ ref: { nostr: id }, at: 1700000000000 }];
+  await page.goto("bookmarks");
+  const post = page.locator("#screen-bookmarks article.trill-post");
+  await expect(post).toHaveCount(1);
+  await expect(post).toContainText("First same-second note");
+  await expect(post.locator("header .name")).toHaveText("Nostr friend");
+  await expect(post.locator("img").first()).toHaveAttribute("src", picture);
+  state2Snapshot.nostr["user-map"][STATE2_KEY].profile = { name: "Updated bookmarked author", picture: updatedPicture, about: "Updated profile" };
+  state2Facts.push({ nostr: { data: state2Snapshot.nostr } });
+  await expect(post.locator("header .name")).toHaveText("Updated bookmarked author");
+  await expect(post.locator("img").first()).toHaveAttribute("src", updatedPicture);
+  await page.screenshot({ path: testInfo.outputPath("bookmark-author-profile.png") });
+});
+
+test("our Nostr notes use our local profile in bookmarks, threads and reply snippets", async ({ page }, testInfo) => {
+  feedFixtureKind = "state2";
+  state2Snapshot = state2Fixture();
+  state2Snapshot.key = STATE2_KEY;
+  const picture = "https://avatars.example/our-profile.svg";
+  await page.route("https://avatars.example/**", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="purple"/></svg>' }));
+  state2Snapshot.profiles["~zod"] = { name: "Our Trill profile", picture, about: "Our profile", following: [], followers: [], urbitID: makeUrbitId("~zod", "zod") };
+  state2Snapshot.lists.bookmarks = [{ ref: { nostr: "d".repeat(64) }, at: 1700000000000 }];
+  await page.goto("bookmarks");
+  const bookmark = page.locator("#screen-bookmarks article.trill-post");
+  await expect(bookmark.locator("header .name")).toHaveText("Our Trill profile");
+  await expect(bookmark.locator("img").first()).toHaveAttribute("src", picture);
+  await page.routeWebSocket(/wss:\/\/one\.example/, ws => ws.onMessage(raw => {
+    const msg = JSON.parse(String(raw));
+    if (msg[0] === "REQ") ws.send(JSON.stringify(["EOSE", msg[1]]));
+  }));
+  await page.goto(`t/n/${"d".repeat(64)}`);
+  const selected = page.getByRole("region", { name: "Selected post", exact: true });
+  await expect(selected).toContainText("Our Trill profile");
+  await expect(selected.locator("img").first()).toHaveAttribute("src", picture);
+  await selected.locator("#thread-reply-composer").click();
+  const snippet = page.locator("#compose-modal .reply-snippet");
+  await expect(snippet.locator("header .name")).toHaveText("Our Trill profile");
+  await expect(snippet.locator("img").first()).toHaveAttribute("src", picture);
+  state2Facts.push({ prof: { "~zod": { ...state2Snapshot.profiles["~zod"], name: "Our updated profile" } } });
+  await expect(snippet.locator("header .name")).toHaveText("Our updated profile");
+  await expect(selected).toContainText("Our updated profile");
+  await page.screenshot({ path: testInfo.outputPath("own-nostr-profile.png") });
+});
+
+test("our live Nostr replies use our ship identity even without cached profile metadata", async ({ page }, testInfo) => {
+  feedFixtureKind = "state2";
+  state2Snapshot = state2Fixture();
+  const { root, direct } = replyFixture();
+  state2Snapshot.key = direct.pubkey;
+  state2Snapshot.nostr.feeds.timeline["wss://one.example"].feed = [root];
+  state2Snapshot.nostr.feeds.timeline["wss://two.example"].feed = [];
+  // No own entry in profiles or nostr user-map, as with a default local profile.
+  await page.routeWebSocket(/wss:\/\/one\.example/, ws => ws.onMessage(raw => {
+    const msg = JSON.parse(String(raw));
+    if (msg[0] !== "REQ") return;
+    if (msg[2]["#e"]?.includes(root.id)) ws.send(JSON.stringify(["EVENT", msg[1], direct]));
+    ws.send(JSON.stringify(["EOSE", msg[1]]));
+  }));
+  await page.goto(`t/n/${root.id}`);
+  const reply = page.getByRole("region", { name: "Replies", exact: true }).locator("article.trill-post");
+  await expect(reply.locator("header .name")).toHaveText("zod");
+  await expect(reply.locator(".sigil svg")).toBeVisible();
+  await reply.locator(".reply-action").click();
+  const snippet = page.locator("#compose-modal .reply-snippet");
+  await expect(snippet).toContainText(direct.content);
+  await expect(snippet.locator("header .name")).toHaveText("zod");
+  await page.screenshot({ path: testInfo.outputPath("own-live-reply-ship-identity.png") });
 });

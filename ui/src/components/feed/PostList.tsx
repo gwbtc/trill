@@ -1,7 +1,7 @@
+import { usePostProfile } from "@/hooks/usePostProfile";
 import { memo, useCallback, useMemo, useRef } from "react";
 import TrillPost from "@/components/post/Post";
 import type { FC, Poast } from "@/types/trill";
-import useLocalState from "@/state/state";
 import { usePostUser } from "@/hooks/usePostUser";
 import { getUserId } from "@/logic/userDisplay";
 
@@ -21,7 +21,7 @@ const PostRow = memo(function PostRow({ poast, refetch, spine }: { poast: Poast;
   const userFromPost = usePostUser();
   const user = useMemo(() => userFromPost(poast), [poast, userFromPost]);
   const userId = getUserId(user);
-  const profile = useLocalState(s => s.profiles.get(userId));
+  const profile = usePostProfile(userId);
   return <TrillPost poast={poast} user={user} profile={profile} refetch={refetch} spine={spine} />;
 });
 
