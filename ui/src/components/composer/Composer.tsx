@@ -2,7 +2,13 @@ import "@/styles/Composer.css";
 import useLocalState, { useStore } from "@/state/state";
 import spinner from "@/assets/triangles.svg";
 import Sigil from "@/components/Sigil";
-import { useCallback, useState, useEffect, useRef, type FormEvent } from "react";
+import {
+  useCallback,
+  useState,
+  useEffect,
+  useRef,
+  type FormEvent,
+} from "react";
 import Snippets, { ReplySnippet } from "./Snippets";
 import toast from "react-hot-toast";
 import Icon from "@/components/Icon";
@@ -35,6 +41,7 @@ import {
   saveComposerCaret,
   serializeComposerContent,
 } from "./composerDom";
+import type { Wevent } from "@/types/nostr";
 
 function Composer({
   isAnon,
@@ -53,6 +60,7 @@ function Composer({
     setComposerData,
     contacts,
     profiles,
+    relays,
     s3,
     setModal,
   } = useLocalState((s) => ({
@@ -62,6 +70,7 @@ function Composer({
     setComposerData: s.setComposerData,
     contacts: s.contacts,
     profiles: s.profiles,
+    relays: s.relays,
     s3: s.s3,
     setModal: s.setModal,
   }));
@@ -71,7 +80,9 @@ function Composer({
   const [relayStatus, setRelayStatus] = useState<string | null>(null);
   const [replyMenuOpen, setReplyMenuOpen] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
-  const [replyMode, setReplyMode] = useState<"everyone" | "following" | "mentioned">("everyone");
+  const [replyMode, setReplyMode] = useState<
+    "everyone" | "following" | "mentioned"
+  >("everyone");
 
   const [isGlobal, setGlobal] = useState(true);
   function toggleGlobal() {
@@ -99,41 +110,63 @@ function Composer({
 
   async function addSimple(content: string) {
     if (!api) return;
-    return await api.addPost(content.trim(), isGlobal, isAnon || false, replyMode);
+    return await api.addPost(
+      content.trim(),
+      isGlobal,
+      isAnon || false,
+      replyMode,
+    );
   }
 
+  console.log({ composerData });
   async function addComplex(content: string) {
     if (!api) return;
     if (!composerData) return;
     if (composerData.type === "card")
-      return await api.addCardPost(content, encodeSharedCard(composerData.card));
+      return await api.addCardPost(
+        content,
+        encodeSharedCard(composerData.card),
+      );
     // to the backend, a post like any other
     if (composerData.type === "topic")
       return await addSimple(topicPostContent(content, composerData.topic));
-    const host: UserType =
-      "trill" in composerData.post
-        ? { urbit: composerData.post.trill.authorFull.author }
-        : "nostr" in composerData.post
-          ? { nostr: composerData.post.nostr.pubkey }
-          : { urbit: patpToFallbackUID(api.airlock.our!) };
-    const id =
-      "trill" in composerData.post
-        ? composerData.post.trill.id
-        : "nostr" in composerData.post
-          ? composerData.post.nostr.eventId
-          : "";
-    const thread =
-      "trill" in composerData.post
-        ? composerData.post.trill.thread || composerData.post.trill.id
-        : "nostr" in composerData.post
-          ? composerData.post.nostr.eventId
-          : "";
 
-    if (composerData.type === "reply")
-      return await api.addReply(content, host, id, thread);
-    if (composerData.type === "quote")
-      return await api.addQuote(content, host, id);
+    if (composerData.type === "reply") {
+      if ("nostr" in composerData.post)
+        return await addNostrReply(
+          content,
+          composerData.post.nostr.post.event!,
+        );
+      else {
+        const p = composerData.post.trill;
+        const host = p.host;
+        // const host = p.authorFull.host;
+        const ted = p.thread || p.id;
+        return await api.addReply(content, host, p.id, ted);
+      }
+    }
+    if (composerData.type === "quote") {
+      if ("nostr" in composerData.post)
+        return await api.addShareExt(
+          content,
+          "nostr",
+          composerData.post.nostr.eventId,
+        );
+      else {
+        const p = composerData.post.trill;
+        return await api.addQuote(content, p.host, p.id);
+      }
+    }
+
     return { error: "unknown composer type" };
+  }
+
+  async function addNostrReply(content: string, ev: Wevent) {
+    // TODO sending wids instead of urls? mmm
+    const wids = Object.values(relays)
+      .map((r) => r.wid)
+      .filter((w): w is number => w != null);
+    return await api!.relayReply(content, ev.id, wids);
   }
 
   const newestOwnPostId = () => {
@@ -194,7 +227,9 @@ function Composer({
       toast.error("Posted, but none of the selected relays are connected");
       return;
     }
-    setRelayStatus(`sending to ${wids.length} relay${wids.length > 1 ? "s" : ""}...`);
+    setRelayStatus(
+      `sending to ${wids.length} relay${wids.length > 1 ? "s" : ""}...`,
+    );
     const res = await api!.relayPost(api!.airlock.our!, id, wids);
     if ("error" in res) {
       toast.error("Posted, but the relay send failed");
@@ -297,7 +332,9 @@ function Composer({
     { key: "following" as const, label: "People you follow", icon: Users },
     { key: "mentioned" as const, label: "Mentioned only", icon: AtSign },
   ];
-  const activeReplyOption = replyOptions.find((option) => option.key === replyMode)!;
+  const activeReplyOption = replyOptions.find(
+    (option) => option.key === replyMode,
+  )!;
   const ReplyIcon = activeReplyOption.icon;
   const charMax = 280;
   const remaining = charMax - input.length;
@@ -379,7 +416,11 @@ function Composer({
             (isLoading ? (
               <img width="40" src={spinner} />
             ) : (
-              <button type="submit" disabled={!input.trim()} className="post-btn">
+              <button
+                type="submit"
+                disabled={!input.trim()}
+                className="post-btn"
+              >
                 Post
               </button>
             ))}
@@ -387,7 +428,10 @@ function Composer({
         {/* reply policy applies to new top-level posts only */}
         {isModal && !composerData && (
           <div className="compose-reply-restriction">
-            <button type="button" onClick={() => setReplyMenuOpen((open) => !open)}>
+            <button
+              type="button"
+              onClick={() => setReplyMenuOpen((open) => !open)}
+            >
               <ReplyIcon size={16} />
               {activeReplyOption.label}
               <ChevronDown size={13} />
@@ -478,7 +522,10 @@ function Composer({
 
           {isModal && (
             <div className="compose-submit-group">
-              <div className="compose-char-ring" aria-label={`${remaining} characters remaining`}>
+              <div
+                className="compose-char-ring"
+                aria-label={`${remaining} characters remaining`}
+              >
                 <svg width="30" height="30" viewBox="0 0 30 30">
                   <circle cx="15" cy="15" r="12" />
                   <circle

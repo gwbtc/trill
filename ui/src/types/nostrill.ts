@@ -147,8 +147,25 @@ export type NostrFact =
   | { eose: string }
   | { drop: string }
   | { relays: Relays }
-  | { "sent-post": { host: any; id: string; relays: string[] } }
-  | { "sent-prof": string[] };
+  | {
+      "sent-event": {
+        event: NostrEvent;
+        relays: string[];
+        type: NostrSendType;
+      };
+    }
+  | {
+      // TODO
+      "sent-res": {
+        relay: string;
+        accepted: boolean;
+        msg: string;
+        id: NostrID;
+      };
+    };
+
+export type NostrSendType =
+  { post: { host: string; id: string } } | { prof: null } | { reply: string };
 
 export type PostFact =
   | { add: { post: Poast } }

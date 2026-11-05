@@ -43,7 +43,16 @@ import {
   type UserTagged,
   updateFollowing,
 } from "@/logic/stateFact";
-import { applyNostrEvent, mergeSourcedFeeds, emptyNostrData, normalizeProfile, parseProfiles, parseNostrData, parseFollowGraph, projectSocial } from "@/logic/socialState";
+import {
+  applyNostrEvent,
+  mergeSourcedFeeds,
+  emptyNostrData,
+  normalizeProfile,
+  parseProfiles,
+  parseNostrData,
+  parseFollowGraph,
+  projectSocial,
+} from "@/logic/socialState";
 import { emptyLists, parseLists, type Lists } from "@/logic/lists";
 import { SYNC_SUB_NAME } from "@/logic/constants";
 import type { S3Config, UrbitContacts } from "@/types/urbit";
@@ -61,6 +70,7 @@ import {
   type Invitation,
   type Presence,
 } from "@/logic/debates";
+import { generateNevent } from "@/logic/nostr";
 // TODO handle airlock connection issues
 // the SSE pipeline has a "status-update" event FWIW
 // type AirlockState = "connecting" | "connected" | "failed";
@@ -149,21 +159,41 @@ export const useStore = creator((set, get) => ({
       const airlock = await start();
       const api = new IO(airlock);
       const patp = api.airlock.our!;
-      const updateSocial = (patch: Partial<Pick<LocalState, "urbitProfiles" | "nativeFollowGraph" | "nostrData">> & { nativeFeeds?: Map<string, FC> }) => {
+      const updateSocial = (
+        patch: Partial<
+          Pick<LocalState, "urbitProfiles" | "nativeFollowGraph" | "nostrData">
+        > & { nativeFeeds?: Map<string, FC> },
+      ) => {
         const current = get();
         const { nativeFeeds, ...values } = patch;
         if (nativeFeeds && Object.keys(values).length === 0) {
-          const followedUsers = new Set([...nativeFeeds.keys(), ...current.nostrData.following]);
+          const followedUsers = new Set([
+            ...nativeFeeds.keys(),
+            ...current.nostrData.following,
+          ]);
           for (const ref of current.nativeFollowGraph[patp] ?? [])
             if ("urbit" in ref) followedUsers.add(ref.urbit);
           followedUsers.delete(patp);
-          set({ following: { ...current.following, urbit: nativeFeeds }, followedUsers });
+          set({
+            following: { ...current.following, urbit: nativeFeeds },
+            followedUsers,
+          });
           return;
         }
         const urbitProfiles = values.urbitProfiles ?? current.urbitProfiles;
-        const nativeFollowGraph = values.nativeFollowGraph ?? current.nativeFollowGraph;
+        const nativeFollowGraph =
+          values.nativeFollowGraph ?? current.nativeFollowGraph;
         const nostrData = values.nostrData ?? current.nostrData;
-        set({ ...values, ...projectSocial(nativeFeeds ?? current.following.urbit, nativeFollowGraph, urbitProfiles, nostrData, patp) });
+        set({
+          ...values,
+          ...projectSocial(
+            nativeFeeds ?? current.following.urbit,
+            nativeFollowGraph,
+            urbitProfiles,
+            nostrData,
+            patp,
+          ),
+        });
       };
 
       api.scryGwid(patp).then((gwid) => {
@@ -307,7 +337,9 @@ export const useStore = creator((set, get) => ({
             if (revision !== nostrDataRevision) return;
             const nostrFeedsRaw = r.ok;
             const nostrFeeds = nostrFeedsToFcMap(nostrFeedsRaw);
-            updateSocial({ nostrData: mergeSourcedFeeds(get().nostrData, nostrFeedsRaw) });
+            updateSocial({
+              nostrData: mergeSourcedFeeds(get().nostrData, nostrFeedsRaw),
+            });
             set({
               nostrFeedsRaw,
               nostrFeeds,
@@ -394,22 +426,31 @@ export const useStore = creator((set, get) => ({
           nostrDataRevision++;
           set({ ...parseStateFact(data.state, patp), stateLoaded: true });
         } else if ("fact" in data) {
+          console.log("fact", data);
           const fact: Fact = normalizeFact(data.fact);
           set({ lastFact: fact });
           // store updates must produce new Map/object references, or
           // useShallow selectors see no change and nothing re-renders
           if ("fols" in fact) {
             if ("graph" in fact.fols) {
-              updateSocial({ nativeFollowGraph: parseFollowGraph(fact.fols.graph) });
+              updateSocial({
+                nativeFollowGraph: parseFollowGraph(fact.fols.graph),
+              });
             }
             if ("new-urbit" in fact.fols) {
               const { user, data } = fact.fols["new-urbit"];
               if (data.data === "maybe") return;
               if (data.data) {
                 const { feed, profile } = data.data;
-                const nativeFeeds = new Map(get().following.urbit).set(user, feed);
+                const nativeFeeds = new Map(get().following.urbit).set(
+                  user,
+                  feed,
+                );
                 const urbitProfiles = profile
-                  ? new Map(get().urbitProfiles).set(user, normalizeProfile(profile))
+                  ? new Map(get().urbitProfiles).set(
+                      user,
+                      normalizeProfile(profile),
+                    )
                   : get().urbitProfiles;
                 updateSocial({ nativeFeeds, urbitProfiles });
               }
@@ -422,7 +463,9 @@ export const useStore = creator((set, get) => ({
                 const nativeFollowGraph = { ...get().nativeFollowGraph };
                 delete nativeFollowGraph[id];
                 if (nativeFollowGraph[patp])
-                  nativeFollowGraph[patp] = nativeFollowGraph[patp].filter(ref => !("urbit" in ref) || ref.urbit !== id);
+                  nativeFollowGraph[patp] = nativeFollowGraph[patp].filter(
+                    (ref) => !("urbit" in ref) || ref.urbit !== id,
+                  );
                 updateSocial({ nativeFeeds, nativeFollowGraph });
               } else {
                 const following = new Set(get().nostrData.following);
@@ -446,7 +489,9 @@ export const useStore = creator((set, get) => ({
                   },
                 });
               } else {
-                updateSocial({ nativeFeeds: updateFollowing(following.urbit, post, "add") });
+                updateSocial({
+                  nativeFeeds: updateFollowing(following.urbit, post, "add"),
+                });
               }
             }
             if ("del" in fact.post) {
@@ -460,7 +505,9 @@ export const useStore = creator((set, get) => ({
                   set({ myFeed: { ...myFeed, feed } });
                 }
               } else {
-                updateSocial({ nativeFeeds: updateFollowing(following.urbit, post, "del") });
+                updateSocial({
+                  nativeFeeds: updateFollowing(following.urbit, post, "del"),
+                });
               }
             }
           }
@@ -471,7 +518,11 @@ export const useStore = creator((set, get) => ({
               const nostrData = parseNostrData(fact.nostr.data);
               const nostrFeeds = nostrFeedsToFcMap(nostrData.feeds);
               updateSocial({ nostrData });
-              set({ nostrFeedsRaw: nostrData.feeds, nostrFeeds, nostrFeed: nostrFeeds[SYNC_SUB_NAME] ?? emptyFC() });
+              set({
+                nostrFeedsRaw: nostrData.feeds,
+                nostrFeeds,
+                nostrFeed: nostrFeeds[SYNC_SUB_NAME] ?? emptyFC(),
+              });
               fetchMentionedProfiles(nostrFeeds);
             }
             if ("feed" in fact.nostr || "user" in fact.nostr) {
@@ -495,11 +546,26 @@ export const useStore = creator((set, get) => ({
               refreshNostrFeeds();
             }
             if ("drop" in fact.nostr) set({ lastDroppedWs: fact.nostr.drop });
+            if ("sent-event" in fact.nostr) {
+            }
+            if ("sent-res" in fact.nostr) {
+              // "a2a5b56e50d4779052bd391216e8de9f91e8bf5bd91e6d8215b3b7928f7a7df2"
+              // nevent1qvzqqqqqqypzqfunmmncz0r0w6cu4sn9m6maxum3vgh4ynhhmfuw4vtf0r0tux59qqsqwcrwhuf4eh3c75qqcwd72kkyculv05rhspusg9w8uhjp8a8hucc7yecj8
+              const d = {
+                id: fact.nostr["sent-res"].id.pubkey,
+                pubkey: get().pubkey,
+                kind: 1,
+              };
+              const nevent = generateNevent(d.id, d.pubkey, d.kind);
+              console.log("nevent", nevent);
+            }
             if ("event" in fact.nostr) {
               // console.log("san event", fact.nostr.event);
               const event: Wevent = fact.nostr.event;
               nostrDataRevision++;
-              updateSocial({ nostrData: applyNostrEvent(get().nostrData, event) });
+              updateSocial({
+                nostrData: applyNostrEvent(get().nostrData, event),
+              });
               if (event.kind === 1) {
                 // %event facts carry no sub name; only ongoing subs stream
                 // past eose, and the sync sub is the only one we keep ongoing
@@ -510,13 +576,13 @@ export const useStore = creator((set, get) => ({
                   nostrFeeds: { ...nostrFeeds, [SYNC_SUB_NAME]: nf },
                 });
               }
-
             }
             // if ("thread" in data.fact.nostr)
           }
           if ("prof" in fact) {
             const urbitProfiles = new Map(get().urbitProfiles);
-            for (const [id, profile] of parseProfiles(fact.prof)) urbitProfiles.set(id, profile);
+            for (const [id, profile] of parseProfiles(fact.prof))
+              urbitProfiles.set(id, profile);
             updateSocial({ urbitProfiles });
           }
           if ("keys" in fact) set({ pubkey: fact.keys });
@@ -570,7 +636,10 @@ export const useStore = creator((set, get) => ({
   addProfile: (key, profile) => {
     const normalized = normalizeProfile(profile);
     const urbitProfiles = new Map(get().urbitProfiles).set(key, normalized);
-    set({ urbitProfiles, profiles: new Map(get().profiles).set(key, normalized) });
+    set({
+      urbitProfiles,
+      profiles: new Map(get().profiles).set(key, normalized),
+    });
   },
   lastFact: null,
   relays: {},

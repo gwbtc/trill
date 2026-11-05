@@ -31,16 +31,23 @@
 +$  reply-policy  ?(%everyone %following %mentioned)
 +$  post-poke
   $%  [%add content=@t global=? anon=? reply=reply-policy]
-      [%reply content=@t host=user:sur id=@da thread=@da]
-      [%quote content=@t host=user:sur id=@da]
+      [%reply content=@t host=@p id=@da thread=@da]
+      [%quote content=@t host=@p id=@da]
       ::  a post sharing a UI card (e.g. trending topics): the card is
       ::  the JSON the UI renders, kept as a %json block with origin %card
       [%card content=@t card=@t]
-      [%rp host=user:sur id=@da]  :: NIP-18
-      [%reaction host=user:sur id=@da reaction=@t]
-      [%del-reaction host=user:sur id=@da]
+      [%rp host=@p id=@da]  :: NIP-18
+      [%reaction host=@p id=@da reaction=@t]
+      [%del-reaction host=@p id=@da]
       :: [%rt id=@ux pubkey=@ux relay=@t]  :: NIP-18
-      [%del host=user:sur id=@da]
+      [%del host=@p id=@da]
+      ::
+      :: RT if content=~, quote otherwise
+      [%share-ext content=(unit @t) src=ext-src]
+  ==
++$  ext-src
+  $%  [%nostr ev-id=@ux]
+      [%tw status=@ud]
   ==
 +$  fols-poke
   $%  [%add =user:sur]
@@ -67,8 +74,15 @@
   ==
 +$  relay-order
     $%  [%get name=@t p=relay-get]
+        :: sending a post from our urbit feed
         [%send-post host=@p id=@da]
+        ::  sending profile
         [%send-prof ~]
+        [%send-reply ev-id=@ux content=@t]
+        ::
+        :: [%send-rp ev-id=@ux]
+        :: [%send-quote ev-id=@ux content=@t]
+        :: [%send-reaction ev-id=@ux reaction=@t]
     ==
 +$  relay-get  relay-get:nsur
 :: facts
@@ -90,6 +104,11 @@
       ::  UI feedback that the backend handled the click
       [%quit =user:sur]
   ==
++$  nostr-send-type
+  $%  [%post host=@p id=@da]
+      [%prof ~]
+      [%reply ev-id=@ux]
+  ==
 +$  nostr-fact
   $%  [%feed name=@t feed=wfeed:nsur]
       [%user npub=@t feed=wfeed:nsur]    ::  a user feed we requested
@@ -98,8 +117,8 @@
       [%eose sub-id=@t]              ::  end of data or backlog
       [%relays (map url=@t relay-stats:nsur)]
       [%drop url=@t]                 ::  connected with a relay was closed
-      [%sent-post host=@p id=@ relays=(list @t) event:nsur]  ::  confirmation that a post of ours was sent to a relay
-      [%sent-prof relays=(list @t)]
+      [%sent-event relays=(list @t) ev=event:nsur type=nostr-send-type]
+      [%sent-res relay=@t accepted=? msg=@t id=@ux]
       [%data nostr-data:sur]
   ==
 ::  same as relay-handling but does it async with a thread instead of a card 

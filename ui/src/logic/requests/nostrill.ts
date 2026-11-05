@@ -350,12 +350,20 @@ export default class IO {
     const json = { add: { content, global, anon, reply } };
     return this.poke({ post: json });
   }
-  async addReply(content: string, host: UserType, id: string, thread: string) {
-    const json = { reply: { content, host: toWireUser(host), id, thread } };
+  async addReply(content: string, host: string, id: string, thread: string) {
+    const json = { reply: { content, host, id, thread } };
+    console.log({ json });
     return this.poke({ post: json });
   }
-  async addQuote(content: string, host: UserType, id: string) {
-    const json = { quote: { content, host: toWireUser(host), id } };
+  async addQuote(content: string, host: string, id: string) {
+    // const json = { quote: { content, host: toWireUser(host), id } };
+    const json = { quote: { content, host, id } };
+    return this.poke({ post: json });
+  }
+  async addShareExt(content: string, sauce: "nostr" | "tw", id: string) {
+    // const json = { quote: { content, host: toWireUser(host), id } };
+    const src = { [sauce]: id };
+    const json = { "share-ext": { content, src } };
     return this.poke({ post: json });
   }
   // a post sharing a UI card, see logic/cards.ts
@@ -408,35 +416,35 @@ export default class IO {
   async markTopic(key: string, spam: boolean | null) {
     return this.poke({ topics: { mark: { key, spam } } });
   }
-  async addRP(host: UserType, id: string) {
-    const json = { rp: { host: toWireUser(host), id } };
+  async addRP(host: string, id: string) {
+    const json = { rp: { host, id } };
     return this.poke({ post: json });
   }
 
-  async deletePost(host: UserType, id: string) {
+  async deletePost(host: string, id: string) {
     const json = {
       del: {
-        host: toWireUser(host),
+        host,
         id,
       },
     };
     return this.poke({ post: json });
   }
 
-  async addReact(host: UserType, id: PostID, reaction: string) {
+  async addReact(host: string, id: PostID, reaction: string) {
     const json = {
       reaction: {
         reaction: reaction,
         id,
-        host: toWireUser(host),
+        host,
       },
     };
 
     return this.poke({ post: json });
   }
 
-  async removeReact(host: UserType, id: PostID) {
-    const json = { "del-reaction": { host: toWireUser(host), id } };
+  async removeReact(host: string, id: PostID) {
+    const json = { "del-reaction": { host, id } };
     return this.poke({ post: json });
   }
 
@@ -522,6 +530,12 @@ export default class IO {
     return await this.poke({ rela: json });
   }
   // nostr writes
+  async relayReply(content: string, parent: string, relays: number[]) {
+    const json = {
+      do: { relays, action: { "send-reply": { "ev-id": parent, content } } },
+    };
+    return await this.poke({ rela: json });
+  }
   async relayPost(host: string, id: string, relays: number[]) {
     const json = { do: { relays, action: { "send-post": { host, id } } } };
     return await this.poke({ rela: json });

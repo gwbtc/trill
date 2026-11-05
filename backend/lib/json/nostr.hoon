@@ -378,5 +378,10 @@
         =/  crd  (so jn)
         ?~  crd  $(fields t.fields)  $(fields t.fields, um um(picture u.crd))
       ==
+  ++  reply
+    %-  ot
+    :~  ev-id+hex:de:common
+        content+so
+    ==
   --
 --

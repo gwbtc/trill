@@ -103,6 +103,7 @@
     ?~  message.m  `this
     =/  =octs  u.message.m
     =/  urelay-msg  (parse-body:nostr-client q.octs)
+    ~&  handle-relays-ws=urelay-msg
     ?~  urelay-msg  ~&  >>>  ws-msg-parse-error=q.octs  `this
     =^  cards  state  (handle-ws:relay wid u.stats u.urelay-msg)
     [cards this]
@@ -181,6 +182,8 @@
   ++  on-ui
     =/  jon=json  !<(json vase)
     =/  upoke=(unit poke:ui)  (ui:de:jsonlib jon)
+    ~&  >>  on-ui=upoke
+    :: npub1g57lg9dm63vjvcck5z6n5s2cg5q0eu2rwr8vw6ec9lpwzwlpaeqsmgsj5j
     ?~  upoke  ~&  >>>  bad-ui-poke=jon  `this
     ::  %begs pokes arrive through ted/beg, not here
     ?+  -.u.upoke  ~&  >>>  unhandled-ui-poke=-.u.upoke  `this

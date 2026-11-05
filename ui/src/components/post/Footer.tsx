@@ -12,13 +12,7 @@ import ReactionsModal from "@/components/modals/ReactionsModal";
 import ConfirmationDialog from "@/components/modals/ConfirmationDialog";
 import RelayPost from "../modals/RelayPost";
 import PostDetails from "../modals/PostDetails";
-import {
-  Heart,
-  MessageCircle,
-  Quote,
-  Repeat2,
-  Zap,
-} from "lucide-react";
+import { Heart, MessageCircle, Quote, Repeat2, Zap } from "lucide-react";
 import PostActionButton from "./PostActionButton";
 import PostActionMenu from "./PostActionMenu";
 import RepostConfirmPopover from "./RepostConfirmPopover";
@@ -37,13 +31,15 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [location] = useLocation();
   const [reposting, setReposting] = useState(false);
-  const { api, setComposerData, setModal, relays, lists } = useLocalState((s) => ({
-    api: s.api,
-    setComposerData: s.setComposerData,
-    setModal: s.setModal,
-    relays: s.relays,
-    lists: s.lists,
-  }));
+  const { api, setComposerData, setModal, relays, lists } = useLocalState(
+    (s) => ({
+      api: s.api,
+      setComposerData: s.setComposerData,
+      setModal: s.setModal,
+      relays: s.relays,
+      lists: s.lists,
+    }),
+  );
   const our = api!.airlock.our!;
   function getComposerData(): SPID {
     return "urbit" in user
@@ -77,7 +73,10 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
     : 0;
   const myRP = poast.engagement.shared.find((r) => r.pid.ship === our);
   const reposted = repostOverride ?? Boolean(myRP);
-  const repostCount = Math.max(0, poast.engagement.shared.length + repostCountDelta);
+  const repostCount = Math.max(
+    0,
+    poast.engagement.shared.length + repostCountDelta,
+  );
 
   useEffect(() => {
     setRepostConfirmOpen(false);
@@ -92,7 +91,8 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
   function openZap(e: React.MouseEvent) {
     e.stopPropagation();
     e.preventDefault();
-    const fallbackName = poast.authorFull.author.gwid.english.abridged || poast.author;
+    const fallbackName =
+      poast.authorFull.author.gwid.english.abridged || poast.author;
     setModal(
       <ZapSheet
         targetName={profile?.name || fallbackName}
@@ -259,8 +259,7 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
 
   const isMine = poast.author === api?.airlock.our;
   // cross-posting is for the user's own urbit posts only
-  const canRelay =
-    isMine && "urbit" in user && Object.keys(relays).length > 0;
+  const canRelay = isMine && "urbit" in user && Object.keys(relays).length > 0;
   const hasDetails = !!poast.event;
 
   useEffect(() => {
@@ -339,7 +338,8 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
     setShowMenu(false);
     const name = getHandleLabel(user);
     const res = await api!.mute(user, !muted);
-    if ("error" in res) toast.error(`Could not ${muted ? "unmute" : "mute"} ${name}`);
+    if ("error" in res)
+      toast.error(`Could not ${muted ? "unmute" : "mute"} ${name}`);
     else toast.success(muted ? `${name} unmuted` : `${name} muted`);
   }
   function reportPost(e: React.MouseEvent) {
@@ -347,7 +347,8 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
     e.preventDefault();
     setShowMenu(false);
     // nostr posts have no ship to tell
-    const host = "urbit" in ref && ref.urbit.host !== our ? ref.urbit.host : null;
+    const host =
+      "urbit" in ref && ref.urbit.host !== our ? ref.urbit.host : null;
     setModal(<ReportDialog postRef={ref} host={host} />);
   }
 
@@ -408,7 +409,11 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
             <Heart
               size={18.5}
               strokeWidth={1.8}
-              fill={Object.keys(poast.engagement.reacts).length > 0 ? "currentColor" : "none"}
+              fill={
+                Object.keys(poast.engagement.reacts).length > 0
+                  ? "currentColor"
+                  : "none"
+              }
             />
           }
           count={displayCount(Object.keys(poast.engagement.reacts).length)}

@@ -3,11 +3,16 @@ import { NRelay1 } from "@nostrify/nostrify";
 import * as nip19 from "nostr-tools/nip19";
 import type { Event } from "@/types/nostr";
 
-export function generateNevent(event: Event) {
+export function generateNevent(id: string, author: string, kind: number) {
+  // const evp: nip19.EventPointer = {
+  //   id: event.id,
+  //   author: event.pubkey,
+  //   kind: event.kind,
+  // };
   const evp: nip19.EventPointer = {
-    id: event.id,
-    author: event.pubkey,
-    kind: event.kind,
+    id,
+    author,
+    kind,
   };
   const nev = nip19.neventEncode(evp);
   return nev;

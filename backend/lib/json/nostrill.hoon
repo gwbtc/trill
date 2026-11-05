@@ -204,8 +204,8 @@
       %drop    (cord:en:common +.nf)
       %relays  (en-relays +.nf)
       ::
-      %sent-post  (en-nostr-sent-post +.nf)
-      %sent-prof  [%a (turn relays.nf cord:en:common)]
+      %sent-event  (en-nostr-sent-event +.nf)
+      %sent-res    (nsr +.nf)
       ::
       %data       (nostr-data:en:nostr +.nf)
     ==
@@ -215,12 +215,30 @@
       :-  %profile  ?~  profile  ~  (en-profile u.profile)
       relays+a+(turn relays cord:en:common)
     ==
-  ++  en-nostr-sent-post  |=  [host=@p id=@ urls=(list @t) ev=event:nsur]  ^-  json
+  ++  en-nostr-sent-event
+    |=  [urls=(list @t) ev=event:nsur type=nostr-send-type:ui]  ^-  json
     %-  pairs  :~
-      host+s+(scot %p host)
-      id+(ud:en:common id)
       relays+a+(turn urls cord:en:common)
       event+(event:en:nostr ev)
+      type+(en-nostr-send-type type)
+    ==
+  ++  en-nostr-send-type
+    |=  type=nostr-send-type:ui  ^-  json
+    %+  frond  -.type
+    ?-  -.type
+      %post  %-  pairs  :~
+        host+(patp:en:common host.type)
+        id+(ud:en:common id.type)
+      ==
+      %prof  ~
+      %reply  (hex:en:common ev-id.type)
+    ==
+  ++  nsr  |=  [relay=@t accepted=? msg=@t id=@ux]  ^-  json
+    %-  pairs  :~
+      relay+s+relay
+      accepted+b+accepted
+      msg+s+msg
+      id+(full-id:en:nostr id)
     ==
   ++  user-data
     |=  ud=[=fc:tf profile=(unit user-meta:nsur)]
@@ -370,6 +388,7 @@
     reaction+reaction
     del-reaction+upid
     del+upid
+    share-ext+share-ext
   ==
 ++  postadd
   %-  ot  :~
@@ -381,24 +400,24 @@
 ++  reply
   %-  ot  :~
     content+so
-    host+user
+    host+patp:de:common
     id+de-post-id
     thread+de-post-id
   ==
 ++  quote
   %-  ot  :~
     content+so
-    host+user
+    host+patp:de:common
     id+de-post-id
   ==
 ++  upid
   %-  ot  :~
-    host+user
+    host+patp:de:common
     id+string-ud:de:common
   ==
 ++  reaction
   %-  ot  :~
-    host+user
+    host+patp:de:common
     id+de-post-id
     reaction+so
   ==
@@ -408,6 +427,18 @@
     pubkey+hex:de:common
     relay+so
   ==
+++  share-ext
+  %-  ot  :~
+    :: TODO mmm?
+    content+(mu so)
+    src+ext-src
+  ==
+++  ext-src
+  %-  of  :~
+    nostr+hex:de:common
+    tw+string-ud:de:common
+  ==
+
 ++  ui-relay
   %-  of  :~
     add+so
@@ -426,7 +457,8 @@
       get+de-relay-get
       send-post+pid:de:trill
       send-prof+ul
-      ==
+      send-reply+reply:de:nostr
+    ==
   ++  de-relay-get
     %-  ot
     :~  name+so

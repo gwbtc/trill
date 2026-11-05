@@ -5,6 +5,7 @@
 /+  lib=nostrill,
     nreq=nostr-req,
     evlib=nostr-events,
+    sr=sortug,
     nostr-client,
     njs=json-nostr,
     scri,
@@ -364,8 +365,9 @@
   ++  handle-ok
     |=  [relay=@t event-id=@ux accepted=? msg=@t]
     ^-  (quip card _state)
-    ::  TODO pass to UI
-    `state
+    :_  state
+    :~  (update-ui:cards:lib [%nostr %sent-res relay accepted msg event-id])
+    ==
   ::
   ++  handle-event
     |=  [sub-id=@t =event:nsur]
@@ -719,6 +721,7 @@
   |^
   ?:  ?=(%send-prof -.action.rh)  :_  state  (send-prof relays.rh)
   ?:  ?=(%send-post -.action.rh)  :_  state  (send-post relays.rh +.action.rh)
+  ?:  ?=(%send-reply -.action.rh)  :_  state  (send-reply relays.rh +.action.rh)
   ::  %get
   =^  cards  state  (do-get relays.rh name.action.rh p.action.rh)
   =/  relays-card  (update-ui:cardslib [%nostr %relays relays.state])
@@ -755,7 +758,22 @@
     =/  tags=(list (list @t))  ~
     =/  event  (post-to-event:evlib i.keys.state eny.bowl u.upoast 1 tags)
     =/  [cards=(list card) urls=(list @t)]  (send-event-to-relays wids event)
-    :-  (update-ui:cardslib [%nostr %sent-post host id urls event])
+    :-  (update-ui:cardslib [%nostr %sent-event urls event [%post host id]])
+    cards
+  ::
+  ++  send-reply
+    |=  [wids=(list @ud) ev-id=@ux content=@t]
+    ^-  (list card)
+    ::  Tags must be included in the signed preimage, not added afterwards.
+    =/  scoww  scow:parsing:sr
+    =/  parent-id  (crip (scoww(min-chars 64) %ux ev-id))
+    =/  tags=(list tag:nsur)  ~[['e' parent-id '' 'reply' ~]]
+    =/  ts  (to-unix-secs:jikan:sr now.bowl)
+    =/  event
+      (finalize-event:evlib i.keys.state eny.bowl [pub.i.keys.state ts 1 tags content])
+    ~&  >  reply-event=event
+    =/  [cards=(list card) urls=(list @t)]  (send-event-to-relays wids event)
+    :-  (update-ui:cardslib [%nostr %sent-event urls event [%reply ev-id]])
     cards
   ::
   ++  send-prof
@@ -765,7 +783,7 @@
     ?~  prof  ~&  "send-prof failed"  ~
     =/  event  (profile-to-event:evlib i.keys.state u.prof eny.bowl now.bowl)
     =/  [cards=(list card) urls=(list @t)]  (send-event-to-relays wids event)
-    :-  (update-ui:cardslib [%nostr %sent-prof urls])
+    :-  (update-ui:cardslib [%nostr %sent-event urls event [%prof ~]])
     :-  (send-card:global:nclient [%event event])
     cards
   --

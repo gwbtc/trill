@@ -40,6 +40,7 @@
 ++  de
 =,  dejs-soft:format
   |%
+  ++  patp  (se %p)
   ++  user
     %-  of  :~
       urbit+(se %p)
