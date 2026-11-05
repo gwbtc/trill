@@ -29,53 +29,67 @@
   |=  =user:sur
   ^-  (quip card:agent:gall _state)
   :: TODO we have an empty set as a market for pending follow request of sorts
-  =.  follow-graph.state  (save-follow-graph user ~ .n)
-  =/  =fact:ui  [%fols %graph follow-graph.state]  
-  :_  state
     ?-  -.user
       %urbit  
+        =.  follow-graph.state  (save-follow-graph ~ .n)
+        =/  =fact:ui  [%fols %graph follow-graph.state]  
+        :_  state
         :~
             (update-ui:cards:lib fact)
             (urbit-watch +.user)
         ==
-      %nostr 
+      %nostr
+        =/  nf  (~(add in following.nostr-data.state) +.user)
+        =.  following.nostr-data.state  nf
+        =/  =fact:ui  [%nostr %data nostr-data.state]  
+        :_  state
         :~
-          (update-ui:cards:lib fact)
+            (update-ui:cards:lib fact)
         ==
     ==
 ::
 ++  handle-del
   |=  =user:sur
   ^-  (quip card:agent:gall _state)
-  =.  following.state  (~(del by following.state) user)
-  =/  graph  (~(get by follow-graph.state) [%urbit our.bowl])
-  ?~  graph  `state
-  =/  nset  (~(del in u.graph) user)
-  =.  follow-graph.state  (~(put by follow-graph.state) [%urbit our.bowl] nset)
-  =/  =fact:ui  [%fols %quit user]
-  =/  f2=fact:ui  [%fols %graph follow-graph.state]
-  =/  c1  (update-ui:cards:lib fact)
-  =/  c2  (update-ui:cards:lib f2)
-  =^  pcs  state  push-profile
-  ?:  ?=(%urbit -.user)
-    :_  state
-    :*  c1
-        c2
-        (urbit-leave +.user)
-        pcs
+    =/  =fact:ui  [%fols %quit user]
+    =/  c1  (update-ui:cards:lib fact)
+    ?-  -.user
+      %urbit  
+        =.  following.state  (~(del by following.state) +.user)
+        =/  graph  (~(get by follow-graph.state) our.bowl)
+        ?~  graph  `state
+        =.  follow-graph.state
+          ?~  graph  follow-graph.state
+            =/  nset  (~(del in u.graph) user)
+            (~(put by follow-graph.state) our.bowl nset)
+        =/  f2=fact:ui  [%fols %graph follow-graph.state]
+        =/  c2  (update-ui:cards:lib f2)
+        =^  pcs  state  push-profile
+        :_  state
+        :*  c1
+            c2
+            (urbit-leave +.user)
+            pcs
+        ==
+      %nostr
+        =/  nf  (~(del in following.nostr-data.state) +.user)
+        =.  following.nostr-data.state  nf
+        =/  f2=fact:ui  [%nostr %data nostr-data.state]
+        =/  c2  (update-ui:cards:lib f2)
+        :_  state
+        [c1 c2 pcs]
     ==
+  
   ::  TODO close the user's relay subscription
-  :_  state
-  [c1 c2 pcs]
 ::  +handle-res: response to our follow request
 ::
 ++  save-follow-graph
-  |=  [=user:sur s=(set user:sur) overwrite=?]
-    =/  curr  (~(get by follow-graph.state) user)
+  |=  [p=@p s=(set user:sur) overwrite=?]
+    =/  curr  (~(get by follow-graph.state) p)
     ?~  curr
-      (~(put by follow-graph.state) user s)
+      (~(put by follow-graph.state) p s)
     ?:  overwrite
-      (~(put by follow-graph.state) user s)
+      (~(put by follow-graph.state) p s)
       follow-graph.state
 
 ++  handle-res
@@ -112,11 +126,11 @@
 ++  handle-kick-nack
   |=  p=@p
   ^-  (quip card:agent:gall _state)
-  =.  following.state  (~(del by following.state) [%urbit p])
-  =/  graph  (~(get by follow-graph.state) [%urbit our.bowl])
+  =.  following.state  (~(del by following.state) p)
+  =/  graph  (~(get by follow-graph.state) our.bow])
   ?~  graph  `state
   =/  ngraph  (~(del in u.graph) [%urbit p])
-  =.  follow-graph.state  (~(put by follow-graph.state) [%urbit our.bowl] ngraph)
+  =.  follow-graph.state  (~(put by follow-graph.state) our.bowl ngraph)
   =^  pcs  state  push-profile
   :_  state
   [(update-ui:cards:lib [%fols %quit %urbit src.bowl]) pcs]

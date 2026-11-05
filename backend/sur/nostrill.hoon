@@ -1,24 +1,24 @@
 /-  *wrap, nostr, comms=nostrill-comms,
     trill=trill-feed, tp=trill-post, gate=trill-gate
 |%
-+$  state  state-1
-+$  state-1
-  $:  %1
++$  state  state-2
++$  state-2
+  $:  %2
       ::  identity
       keys=(lest keys:nostr)  ::  cycled, i.keys is current
-      profiles=(map user user-profile:comms)
+      profiles=(map @p user-profile:comms)
       ::  own feed
       feed=feed:trill
       feed-perms=gate:gate
-      ::  social graph
-      following=(map user feed:trill)
       timeline=global-feed  ::  merged mop of followed users' posts
-      follow-graph=(map user (set user))
+      ::  social graph
+      following=(map @p feed:trill)
+      follow-graph=(map @p (set user))
       ::  nostr relays, keyed by url: one connection per server,
       ::  and the entry survives socket (wid) churn
       relays=(map url=@t relay-stats:nostr)
       ::  per-request-name, per-relay-url feeds from subscriptions
-      =nostr-feeds:nostr
+      =nostr-data
       ::  incoming requests, saved to handle async
       =requests
       ::  our responses to requests
@@ -30,6 +30,12 @@
   ==
 ::  +post-ref: a post pointed at from our lists. urbit posts by host and
 ::  id, nostr posts by event id
+:: 
++$  nostr-data
+  $:  =feeds:nostr
+      following=(set @ux)
+      user-map=(map @ux user-data:nostr)
+==
 +$  post-ref
   $%  [%urbit host=@p id=@da]
       [%nostr id=@ux]

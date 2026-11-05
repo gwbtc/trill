@@ -7,9 +7,16 @@
 +$  url  @t
 ::  +nostr-feeds: per-request-name, per-relay-url feeds
 ::
-+$  nostr-feeds    (map @t sourced-feeds)
++$  feeds    (map @t sourced-feeds)
 +$  sourced-feeds  (map url sourced-feed)
-+$  sourced-feed   [feed=nostr-feed sub=req-state]
++$  sourced-feed   [=feed sub=req-state]
++$  user-data
+  $:  pubkey=@ux
+      =feed
+      following=(unit (set @ux))
+      profile=(unit user-meta)
+      other=(list event)
+  ==
 ::  +wevent: an event annotated with the relays it was seen on
 ::
 +$  wevent
@@ -34,10 +41,18 @@
       content=@t
   ==
 +$  tag  (list @t)
-+$  wfeed       ((mop @ud wevent) gth)
-++  worm        ((on @ud wevent) gth)
-+$  nostr-feed  ((mop @ud event) gth)
-++  norm        ((on @ud event) gth)
+::  feeds
++$  event-key   [timestamp=@ud event-id=@ux]
++$  ek  event-key
+++  event-comparator  ::  to make sure we don't wipe out conflicting events
+  |=  [a=event-key b=event-key]  ^-  ?
+  ?:  .=(-.a -.b)  .y  
+  (gth -.a -.b)
+::
++$  wfeed       ((mop ek wevent) event-comparator)
+++  worm        ((on ek wevent) event-comparator)
++$  feed        ((mop event-key event) event-comparator)
+++  norm        ((on event-key event) event-comparator)
 ::  +user-meta: kind-0 profile metadata (NIP-01)
 ::
 +$  user-meta

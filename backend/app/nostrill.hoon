@@ -57,8 +57,10 @@
   =/  old-state  !<(versioned-state old-state)
   =.  state
   ?-  -.old-state
-    %0  (state-0-to-1:oldsur old-state)
-    %1  old-state
+    :: %0  (state-0-to-1:oldsur old-state)
+    %0  *state:sur
+    %1  *state:sur
+    %2  old-state
   ==
   ::  heal ships that went through that fallback: schnorr rejects a
   ::  zero secret key, so every signed (global/relay) post crashed

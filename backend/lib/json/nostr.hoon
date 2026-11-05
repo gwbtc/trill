@@ -113,6 +113,70 @@
     %notice  ~[[%s msg.msg]]
     %auth    ~[[%s challenge.msg]]
   ==
+  ++  feeds
+  |=  fs=feeds:sur  ^-  json
+    %-  pairs  %+  turn  ~(tap by feeds)
+    |=  [name=@t sf=sourced-feeds:sur]
+      :-  name  (sourced-feeds sf)
+  
+  
+  ++  sourced-feeds
+  |=  sfs=sourced-feeds:sur  ^-  json
+    %-  pairs  %+  turn  ~(tap by sfs)
+    |=  [url=@t sf=sourced-feed:sur]
+      :-  url  (sourced-feed sf)
+
+  ++  sourced-feed
+  |=  sf=sourced-feed:sur  ^-  json
+    %-  pairs
+    :~  feed+(feed feed.sf)
+        sub+(req-state sub.sf)
+    ==
+  ++  feed
+  |=  f=feed:sur  ^-  json
+    :-  %a  %+  turn  (tap:norm:sur f)  |=  [=ek:sur ev=event:sur]
+      (event ev)
+
+  ++  named-wfeed
+  |=  [s=@t feed=wfeed:sur]  ^-  json
+    %-  pairs
+    :~  name+s+s
+        feed+(en-wfeed feed)
+    ==
+
+  ++  en-wfeed
+  |=  feed=wfeed:sur  ^-  json
+    :-  %a  %+  turn  (tap:worm:sur feed)  |=  [id=@ud ev=wevent:sur]
+      (wevent ev)
+
+  ++  following  |=  s=(set @ux)  ^-  json
+    :-  %a  %+  turn  ~(tap in s)  hex:en:common
+  ++  nostr-data
+  |=  [fs=feeds:sur fls=(set @ux) um=(map @ux user-data:sur)]  ^-  json
+    %-  pairs
+    :~  feeds+(feeds fs)
+        following+(following fls)
+        user-map+(user-map um)
+    ==
+  ++  user-map
+  |=  um=(map @ux user-data:sur)  ^-  json
+  %-  pairs  %+  turn  ~(tap by um)
+    |=  [pubkey=@ux ud=user-data:sur]
+    :-  (hex:en:common pubkey)
+        (user-data ud)
+  ++  user-data
+  |=  ud=user-data:sur  ^-  json
+    =/  prof  ?~  profile.ud  ~  (user-meta u.profile.ud)
+    =/  foli  ?~  following.ud  ~  (following u.following.ud)
+    %-  pairs
+    :~  id+(full-id pubkey.ud)
+        feed+(feed feed.ud)
+        following+foli
+        profile+prof
+        other+a+(turn events.ud event)
+    ==
+    
+  
   --
 ++  de
 =,  dejs-soft:format

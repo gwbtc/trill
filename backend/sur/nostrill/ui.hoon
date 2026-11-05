@@ -83,7 +83,8 @@
       [%lists bookmarks=(map post-ref:sur @da) muted=(set user:sur) reported=(set post-ref:sur)]
   ==
 +$  fols-fact
-  $%  [%graph (map user:sur (set user:sur))]
+  $%  [%graph (map @p (set user:sur))]
+      ::  TODO deprecate
       [%new-urbit (enbowl fols-res:comms)]
       [%new-nostr pubkey=@ux profile=(unit user-profile:comms) relays=(list @t)]
       ::  UI feedback that the backend handled the click
@@ -92,13 +93,14 @@
 +$  nostr-fact
   $%  [%feed name=@t feed=wfeed:nsur]
       [%user npub=@t feed=wfeed:nsur]    ::  a user feed we requested
-      [%thread feed=nostr-feed:nsur]  ::  a specific thread we requested
+      [%thread feed=feed:nsur]  ::  a specific thread we requested
       [%event event:nsur]            ::  some specific event
       [%eose sub-id=@t]              ::  end of data or backlog
       [%relays (map url=@t relay-stats:nsur)]
       [%drop url=@t]                 ::  connected with a relay was closed
       [%sent-post host=@p id=@ relays=(list @t) event:nsur]  ::  confirmation that a post of ours was sent to a relay
       [%sent-prof relays=(list @t)]
+      [%data nostr-data:sur]
   ==
 ::  same as relay-handling but does it async with a thread instead of a card 
 +$  ted

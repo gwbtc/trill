@@ -16,10 +16,12 @@
     profiles+(en-profiles profiles)
     :: TODO proper cursors
     feed+(feed-with-cursor:en:trill feed ~ ~)
-    nostr+(en-nostr-feeds nostr-feeds)
-    following+(enfollowing following)
     timeline+(global-with-cursor timeline ~ ~)
+    ::
+    following+(enfollowing following)
     ['followGraph' (engraph follow-graph)]
+    ::
+    nostr+(nostr-data:en:nostr nostr-data)
     lists+(en-lists bookmarks muted reported)
   ~
   ==
@@ -41,42 +43,6 @@
     ~
     ==
 
-  ++  en-nostr-feeds
-  |=  feeds=nostr-feeds:nsur  ^-  json
-    %-  pairs  %+  turn  ~(tap by feeds)
-    |=  [name=@t sf=sourced-feeds:nsur]
-      :-  name  (sourced-feeds sf)
-  
-  
-  ++  sourced-feeds
-  |=  sfs=sourced-feeds:nsur  ^-  json
-    %-  pairs  %+  turn  ~(tap by sfs)
-    |=  [url=@t sf=sourced-feed:nsur]
-      :-  url  (sourced-feed sf)
-
-  ++  sourced-feed
-  |=  sf=sourced-feed:nsur  ^-  json
-    %-  pairs
-    :~  feed+(en-nostr-feed feed.sf)
-        sub+(req-state sub.sf)
-    ==
-
-  ++  en-nostr-feed
-  |=  feed=nostr-feed:nsur  ^-  json
-    :-  %a  %+  turn  (tap:norm:nsur feed)  |=  [id=@ud ev=event:nsur]
-      (event:en:nostr ev)
-
-  ++  named-wfeed
-  |=  [s=@t feed=wfeed:nsur]  ^-  json
-    %-  pairs
-    :~  name+s+s
-        feed+(en-wfeed feed)
-    ==
-
-  ++  en-wfeed
-  |=  feed=wfeed:nsur  ^-  json
-    :-  %a  %+  turn  (tap:worm:nsur feed)  |=  [id=@ud ev=wevent:nsur]
-      (wevent:en:nostr ev)
 
   +$  socket  [wid=@ud url=@t status=$?(%accepted %pending)]
   ++  all-relays
@@ -162,40 +128,42 @@
   (user-meta-pairs:en:nostr +>+>+<:prof)
 
   ++  enfollowing
-  |=  m=(map user:sur feed:tf)
+  |=  m=(map @p feed:tf)
   ^-  json
-    %-  pairs  %+  turn  ~(tap by m)  |=  [key=user:sur f=feed:tf]
-      =/  jkey  (user-string key)
-      ?>  ?=(%s -.jkey)
-      :: TODO proper cursor stuff
-      :-  +.jkey  (feed-with-cursor:en:trill f ~ ~)
+    %-  pairs  %+  turn  ~(tap by m)  |=  [key=@p f=feed:tf]
+      :-  (scot %p key)  (feed-with-cursor:en:trill f ~ ~)
+
 
   ++  engraph
-  |=  m=(map user:sur (set user:sur))
+  |=  m=(map @p (set user:sur))
     ^-  json
-    :: %-  pairs  %+  turn  ~(tap by m)  |=  [key=user:sur s=(set user:sur)]
-    ::   =/  jkey  (user-string key)
-    ::   ?>  ?=(%s -.jkey)
-    ::   :-  +.jkey
-    ::   :-  %a   %+  turn  ~(tap in s)  user
+    %-  pairs  %+  turn  ~(tap by m)  |=  [key=@p s=(set user:sur)]
+      :-  (scot @p key)
+      :-  %a   %+  turn  ~(tap in s)  user
+      
+  ++  follow-list
+  |=  m=(map @p (set user:sur))
+    ^-  json
     :-  %a
-      %+  turn  ~(tap by m)  |=  [key=user:sur val=(set user:sur)]
+      %+  turn  ~(tap by m)  |=  [key=@p val=(set user:sur)]
         %+  frond  -.key
-        =/  juser  (user-full key)
+        =/  uid  (urbit-id)
         =/  jval  :-  %a
           %+  turn  ~(tap in val)
           ?-  -.key
             %nostr  user-full
             %urbit  user-full-tagged
           ==
-        :-  %a  ~[juser jval]
+        :-  %a  ~[uid jval]
 
+
+  ++  uid  |=  p=@p  ^-  json
+      =/  u  (make-urbit-id +.u)
+      (urbit-id:en:gwidj y)
 
   ++  user-full  |=  u=user:sur  ^-  json
     ?-  -.u
-      %urbit
-        =/  uid  (make-urbit-id +.u)
-        (urbit-id:en:gwidj uid)
+      %urbit  (uid +.u)
       %nostr  (full-id:en:nostr +.u)
     ==
   ++  user-full-tagged  |=  u=user:sur  ^-  json
