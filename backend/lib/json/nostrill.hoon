@@ -145,7 +145,7 @@
     %-  pairs
       %+  turn  ~(tap by m)  |=  [key=user:sur p=user-profile:comms]
         =/  jkey  (user-string key)
-      ?>  ?=(%s -.jkey)
+        ?>  ?=(%s -.jkey)
         :-  +.jkey  (en-profile p)
 
   ++  en-profile  |=  prof=user-profile:comms
@@ -173,11 +173,37 @@
   ++  engraph
   |=  m=(map user:sur (set user:sur))
     ^-  json
-    %-  pairs  %+  turn  ~(tap by m)  |=  [key=user:sur s=(set user:sur)]
-      =/  jkey  (user-string key)
-      ?>  ?=(%s -.jkey)
-      :-  +.jkey
-      :-  %a   %+  turn  ~(tap in s)  user
+    :: %-  pairs  %+  turn  ~(tap by m)  |=  [key=user:sur s=(set user:sur)]
+    ::   =/  jkey  (user-string key)
+    ::   ?>  ?=(%s -.jkey)
+    ::   :-  +.jkey
+    ::   :-  %a   %+  turn  ~(tap in s)  user
+    :-  %a
+      %+  turn  ~(tap by m)  |=  [key=user:sur val=(set user:sur)]
+        %+  frond  -.key
+        =/  juser  (user-full key)
+        =/  jval  :-  %a
+          %+  turn  ~(tap in val)
+          ?-  -.key
+            %nostr  user-full
+            %urbit  user-full-tagged
+          ==
+        :-  %a  ~[juser jval]
+
+
+  ++  user-full  |=  u=user:sur  ^-  json
+    ?-  -.u
+      %urbit
+        =/  uid  (make-urbit-id +.u)
+        (urbit-id:en:gwidj uid)
+      %nostr  (full-id:en:nostr +.u)
+    ==
+  ++  user-full-tagged  |=  u=user:sur  ^-  json
+    %+  frond  -.u  (user-full u)
+
+  ++  make-urbit-id  |=  sip=@p  ^-  urbit-id:comms
+    =/  gwd  (make:b:gwid sip)
+    [`@p`sip `@`sip gwd]
 
   ++  user         user-tagged:en:common
   ++  user-string  user:en:common
@@ -215,10 +241,12 @@
   ++  folsfact  |=  f=fols-fact:ui  ^-  json
     %+  frond  -.f
     ?-  -.f
+      %graph      (engraph +.f)
       %new-urbit  (fols +.f)
       %new-nostr  (en-followed +.f)
       %quit  (user-string +.f)
     ==
+      
   ++  en-nostr  |=  nf=nostr-fact:ui  ^-  json
     %+  frond  -.nf
     ?-  -.nf

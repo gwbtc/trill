@@ -1,5 +1,5 @@
 import type { Wevent } from "./nostr";
-import type { UrbitID } from "./nostrill";
+import type { UrbitID, UserType } from "./nostrill";
 import type { Ship } from "./urbit";
 
 export type SortugRef = {
@@ -37,7 +37,7 @@ export interface SentPoast {
 export type Poast = {
   host: Ship;
   author: Ship;
-  authorFull: {host: UrbitID; author: UrbitID};
+  authorFull: { host: UrbitID; author: UrbitID };
   thread: ID | null;
   parent: ID | null;
   perms: PostPerms;
@@ -111,7 +111,8 @@ export type ExternalContent = {
     content: string;
   };
 };
-export type ExternalApp = "twatter" | "insta" | "anon" | "rumors" | "nostr" | "card";
+export type ExternalApp =
+  "twatter" | "insta" | "anon" | "rumors" | "nostr" | "card";
 export interface TwatterReference {
   json: {
     origin: "twatter";
@@ -130,9 +131,7 @@ export interface Notifications {
   unread: Record<Ship, PID[]>;
 }
 export type Notification =
-  | EngagementNotification
-  | FollowNotification
-  | UnfollowNotification;
+  EngagementNotification | FollowNotification | UnfollowNotification;
 export type EngagementNotification =
   | ReactNotification
   | ReplyNotification
@@ -188,6 +187,8 @@ export type FC = {
   start: Cursor;
   end: Cursor;
 };
+export type TaggedFC = FC & { user: UserType };
+
 export type MixFeed = {
   mix: {
     name: string;
@@ -207,8 +208,7 @@ export interface UserScry {
 }
 
 export type FullNodeScry =
-  | { fpost: FullNode }
-  | { "no-node": { ship: Ship; id: ID } };
+  { fpost: FullNode } | { "no-node": { ship: Ship; id: ID } };
 
 //  Facts
 export type PostFact = {
@@ -226,11 +226,7 @@ export type ListsFact = any;
 export type TrillProfile = {};
 
 export type TrillPostPermisssion =
-  | "everyone"
-  | "planets"
-  | "followers"
-  | "pals"
-  | "tag";
+  "everyone" | "planets" | "followers" | "pals" | "tag";
 
 // Lists
 
@@ -348,12 +344,7 @@ export type OpenIncVotes = {
 export type VoteComment = { option: number; comment: string };
 
 export type PollPoke =
-  | CreatePoll
-  | CancelPoll
-  | ChangeExpiry
-  | VotePoke
-  | CancelVote
-  | PeekPoll;
+  CreatePoll | CancelPoll | ChangeExpiry | VotePoke | CancelVote | PeekPoll;
 export type PeekPoll = { peek: PID };
 export type SentPoll = {
   text: string;
@@ -396,10 +387,7 @@ export type TombPoll = { tomb: null };
 export type PollUpdate = NewPollU | DedPollU | OldPollU | PollPeekRes;
 export type DedPollU = { "ded-poll": PID };
 export type OldPollU = { pid: PID } & (
-  | NewVoteU
-  | PollExpiryChanged
-  | VoteCanceled
-  | PollPeekRes
+  NewVoteU | PollExpiryChanged | VoteCanceled | PollPeekRes
 );
 export type PollPeekRes = {
   "peek-res": PollPeekOK | PollPeekNG | PollPeekNF;

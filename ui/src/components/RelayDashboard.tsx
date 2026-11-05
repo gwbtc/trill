@@ -4,6 +4,7 @@ import { buildRelayModels, formatRelayUptime } from "@/logic/relayDisplay";
 import { Plus, Radio, RefreshCw, Trash2, X } from "lucide-react";
 import "./RelayDashboard.css";
 import { useRelayActions } from "@/hooks/useRelayActions";
+import { RECOMMENDED_RELAYS } from "@/logic/constants";
 
 export default function RelayDashboard() {
   const { relays, relayLatency, setModal } = useLocalState((s) => ({
@@ -38,6 +39,13 @@ export default function RelayDashboard() {
       )
     : null;
 
+  async function addRecommendedRelay(r: string) {
+    const added = await addRelay(r);
+    if (added) {
+      setNewRelayUrl("");
+      setShowAddForm(false);
+    }
+  }
   const handleAddRelay = async (e: React.FormEvent) => {
     e.preventDefault();
     const added = await addRelay(newRelayUrl);
@@ -135,11 +143,23 @@ export default function RelayDashboard() {
       )}
 
       <div className="relay-dashboard-list">
-        {relayCount === 0 ? (
+        {showAddForm ? (
+          <div id="recommended-relays" style={{ display: "grid" }}>
+            {RECOMMENDED_RELAYS.map((r) => (
+              <button
+                key={r}
+                className="relay-action-btn"
+                onClick={() => addRecommendedRelay(r)}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+        ) : relayCount === 0 ? (
           <div className="relay-empty">
             <Radio size={36} strokeWidth={1.5} />
             <div>No relays configured</div>
-            <span>Add a relay to connect to the network.</span>
+            <p>Add a relay to connect to the network.</p>
           </div>
         ) : (
           relayModels.map((relay) => {
@@ -154,8 +174,13 @@ export default function RelayDashboard() {
                       } as CSSProperties
                     }
                   />
-                  <span className="relay-dashboard-url mono">{relay.short}</span>
-                  <span className="relay-dashboard-status mono" style={{ color: relay.color }}>
+                  <span className="relay-dashboard-url mono">
+                    {relay.short}
+                  </span>
+                  <span
+                    className="relay-dashboard-status mono"
+                    style={{ color: relay.color }}
+                  >
                     {relay.status}
                   </span>
                   <button
@@ -169,7 +194,10 @@ export default function RelayDashboard() {
                 </div>
                 <div className="relay-dashboard-latency-bar">
                   <span
-                    style={{ width: `${relay.barWidth}%`, background: relay.color }}
+                    style={{
+                      width: `${relay.barWidth}%`,
+                      background: relay.color,
+                    }}
                   />
                 </div>
                 <div className="relay-dashboard-meta">

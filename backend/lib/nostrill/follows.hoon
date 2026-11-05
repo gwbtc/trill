@@ -28,13 +28,21 @@
 ++  handle-add
   |=  =user:sur
   ^-  (quip card:agent:gall _state)
-  ?-  -.user
-    %urbit  :_  state
-            :~  (urbit-watch +.user)
-            ==
-    ::  TODO subscribe to the user's posts through a relay
-    %nostr  `state
-  ==
+  :: TODO we have an empty set as a market for pending follow request of sorts
+  =.  follow-graph.state  (save-follow-graph user ~ .n)
+  =/  =fact:ui  [%fols %graph follow-graph.state]  
+  :_  state
+    ?-  -.user
+      %urbit  
+        :~
+            (update-ui:cards:lib fact)
+            (urbit-watch +.user)
+        ==
+      %nostr 
+        :~
+          (update-ui:cards:lib fact)
+        ==
+    ==
 ::
 ++  handle-del
   |=  =user:sur
@@ -45,19 +53,31 @@
   =/  nset  (~(del in u.graph) user)
   =.  follow-graph.state  (~(put by follow-graph.state) [%urbit our.bowl] nset)
   =/  =fact:ui  [%fols %quit user]
+  =/  f2=fact:ui  [%fols %graph follow-graph.state]
   =/  c1  (update-ui:cards:lib fact)
+  =/  c2  (update-ui:cards:lib f2)
   =^  pcs  state  push-profile
   ?:  ?=(%urbit -.user)
     :_  state
     :*  c1
+        c2
         (urbit-leave +.user)
         pcs
     ==
   ::  TODO close the user's relay subscription
   :_  state
-  [c1 pcs]
+  [c1 c2 pcs]
 ::  +handle-res: response to our follow request
 ::
+++  save-follow-graph
+  |=  [=user:sur s=(set user:sur) overwrite=?]
+    =/  curr  (~(get by follow-graph.state) user)
+    ?~  curr
+      (~(put by follow-graph.state) user s)
+    ?:  overwrite
+      (~(put by follow-graph.state) user s)
+      follow-graph.state
+
 ++  handle-res
   |=  fr=fols-res:comms
   ^-  (quip card:agent:gall _state)
@@ -106,4 +126,5 @@
 ::
 ++  urbit-watch  |=  sip=@p  ^-  card:agent:gall
   [%pass /follow %agent [sip dap.bowl] %watch /follow]
+
 --

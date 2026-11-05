@@ -7,7 +7,7 @@ import Icon from "@/components/Icon";
 import useLocalState from "@/state/state";
 import { useLocation } from "wouter";
 import toast from "react-hot-toast";
-import { generateNprofile } from "@/logic/nostr";
+import { generateNprofile, generateNpub } from "@/logic/nostr";
 import { useEffect, useState } from "react";
 import type {
   Deferred,
@@ -27,6 +27,8 @@ import {
   getUserKind,
 } from "@/logic/userDisplay";
 import { Home, MessageSquare, X } from "lucide-react";
+import { copyToClipboard } from "@/utils";
+import IDFormats from "./IDFormats";
 
 export default function UserModal({ user }: { user: UserType }) {
   const {
@@ -37,6 +39,7 @@ export default function UserModal({ user }: { user: UserType }) {
     profiles,
     following,
     followers,
+    followGraph,
     relays,
   } = useLocalState((s) => ({
     setModal: s.setModal,
@@ -45,6 +48,7 @@ export default function UserModal({ user }: { user: UserType }) {
     profiles: s.profiles,
     following: s.following,
     followers: s.followers,
+    followGraph: s.followGraph,
     lastFact: s.lastFact,
     relays: s.relays,
   }));
@@ -61,7 +65,10 @@ export default function UserModal({ user }: { user: UserType }) {
   const userString = getUserId(user);
   const userKind = getUserKind(user);
   const profile = profiles.get(userString);
-  const isFollowing = following.has(userString);
+  const isInFollowing = following.has(userString);
+  const isInGraph = Object.hasOwn(followGraph, userString);
+  const isFollowing = isInFollowing || isInGrap;
+  const isPending = followGraph?.[userString]?.length == 0;
   const isFollower = followers.includes(userString);
   const userFeed = following.get(userString);
   const postCount = userFeed ? Object.keys(userFeed.feed).length : 0;
@@ -71,6 +78,8 @@ export default function UserModal({ user }: { user: UserType }) {
   const idLabel = getHandleLabel(user, userString);
   const bannerImage = getProfileBanner(profile);
   const otherFields = getCustomProfileFields(profile);
+
+  console.log({ following });
 
   useEffect(() => {
     if (!lastFact || !("fols" in lastFact)) return;
@@ -95,7 +104,9 @@ export default function UserModal({ user }: { user: UserType }) {
     setLoading(false);
     const msg = fact.data.msg ? `\nThey added: ${fact.data.msg}.` : "";
     if (fact.data.data === "maybe")
-      toast.success(`${userString} will review your follow request manually.${msg}`);
+      toast.success(
+        `${userString} will review your follow request manually.${msg}`,
+      );
     else if (fact.data.data === null)
       toast.error(`${userString} denied your follow request.${msg}`);
     else toast.success(`Now following ${profile?.name || userString}`);
@@ -108,30 +119,30 @@ export default function UserModal({ user }: { user: UserType }) {
     }
   }
 
-  async function copy(e: React.MouseEvent, text: string) {
-    e.stopPropagation();
-    await navigator.clipboard.writeText(text);
-    toast.success("Copied to clipboard");
-  }
-
   async function handleFollow(e: React.MouseEvent) {
     if ("error" in user) return;
     e.stopPropagation();
     if (!api) return;
 
     setLoading(true);
+    console.log("following", user);
     try {
       if (isFollowing) {
         unwrap(await api.unfollow(user));
       } else {
         unwrap(await api.follow(user));
       }
+      setLoading(false);
     } catch (_err) {
       toast.error("Action failed");
       setLoading(false);
     }
   }
 
+  function openFormats(e: React.MouseEvent) {
+    // TODO show this as a modal dialog *on top* of the current modal
+    // <IDFormats user={user} />
+  }
   async function handleAvatarClick(e: React.MouseEvent) {
     e.stopPropagation();
     if ("nostr" in user) {
@@ -150,7 +161,9 @@ export default function UserModal({ user }: { user: UserType }) {
       <div className="user-modal-scroll">
         <div
           className={`user-modal-banner${bannerImage ? " image" : " generated"}`}
-          style={bannerImage ? { backgroundImage: `url(${bannerImage})` } : undefined}
+          style={
+            bannerImage ? { backgroundImage: `url(${bannerImage})` } : undefined
+          }
         >
           <button
             className="user-modal-close"
@@ -194,8 +207,8 @@ export default function UserModal({ user }: { user: UserType }) {
             <div className="user-modal-id-line">
               <button
                 className="user-modal-id mono"
-                onClick={(e) => copy(e, userString)}
-                title="Copy to clipboard"
+                onClick={openFormats}
+                title="See id formats"
               >
                 {idLabel}
               </button>
@@ -209,7 +222,9 @@ export default function UserModal({ user }: { user: UserType }) {
             </div>
           </section>
 
-          {profile?.about && <p className="user-modal-about">{profile.about}</p>}
+          {profile?.about && (
+            <p className="user-modal-about">{profile.about}</p>
+          )}
 
           <div className="user-modal-stats">
             <span>
@@ -236,10 +251,7 @@ export default function UserModal({ user }: { user: UserType }) {
 
           <div className="user-modal-actions">
             {!itsMe && (
-              <button
-                className="action-btn primary"
-                onClick={handleMessage}
-              >
+              <button className="action-btn primary" onClick={handleMessage}>
                 <MessageSquare size={17} />
                 Message
               </button>
@@ -280,7 +292,8 @@ export function ProfValue({ value }: { value: any }) {
     ) : (
       <span className="field-value">{value}</span>
     );
-  if (typeof value === "number") return <span className="field-value">{value}</span>;
+  if (typeof value === "number")
+    return <span className="field-value">{value}</span>;
   if (typeof value === "object")
     return <span className="field-value">{JSON.stringify(value)}</span>;
   return <span className="field-value">{JSON.stringify(value)}</span>;

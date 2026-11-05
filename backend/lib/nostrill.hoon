@@ -2,7 +2,8 @@
     post=trill-post, gate=trill-gate
 /+  nostr-keys, sr=sortug,
     jsonlib=json-nostrill,
-    ws=websockets
+    ws=websockets,
+    gwid
 |%
 ::
 ++  default-state  |=  =bowl:gall  ^-  state:sur

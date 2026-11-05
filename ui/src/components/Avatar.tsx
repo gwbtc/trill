@@ -2,12 +2,12 @@ import useLocalState from "@/state/state";
 import { seededColorPair } from "@/logic/utils";
 import GwIcon from "./GwIcon";
 import Sigil from "./Sigil";
-import { isValidPatp } from "urbit-ob";
+import { clan, isValidPatp } from "urbit-ob";
 import type { UrbitID, UserProfile, UserType } from "@/types/nostrill";
 import Icon from "@/components/Icon";
 import UserModal from "./modals/UserModal";
 
-export default function({
+export default function ({
   user,
   size,
   color,
@@ -28,7 +28,7 @@ export default function({
   // TODO revisit this when %whom updates
   const avatar = (
     <div className="avatar-pic cp" onClick={openModal}>
-      <AvatarPic user={user} profile={profile} size={size} color={color}/>
+      <AvatarPic user={user} profile={profile} size={size} color={color} />
     </div>
   );
   if (picOnly) return avatar;
@@ -44,7 +44,9 @@ export default function({
       {profile ? (
         <p>{profile.name}</p>
       ) : "urbit" in user ? (
-        <p className={"p-only" + tooLong(user.urbit.gwid.english.foreshortened)}>
+        <p
+          className={"p-only" + tooLong(user.urbit.gwid.english.foreshortened)}
+        >
           {user.urbit.gwid.english.foreshortened}
         </p>
       ) : (
@@ -60,32 +62,39 @@ export default function({
   );
 }
 
-
-export function UrbitAvatar({ uid, size, color }: { uid: UrbitID, size: number, color?: string }) {
-  return <PatpAvatar patp={uid.patp} size={size} color={color} />
-}
-
-
-
-export function AvatarPic({ user, profile, size, color }: { profile?: UserProfile; user: UserType, size: number, color?: string }) {
-    return (profile && profile.picture ? (
-      <img src={profile.picture} width={size} height={size} />
-    ) : "urbit" in user && isValidPatp(user.urbit.patp) ? (
-      <UrbitAvatar uid={user.urbit} size={size} color={color} />
-    ) : (
-      <Icon name="comet" size={size} />
-    )
-  )
-}
-export function PatpAvatar({ patp , size, color }: { patp: string, size: number, color?: string }) {
+export function UrbitAvatar({
+  uid,
+  size,
+  color,
+}: {
+  uid: UrbitID;
+  size: number;
+  color?: string;
+}) {
+  const rank = clan(uid.patp);
   // TODO need to check for gw comets specifically not just any comet
-  if (patp.length > 28) {
-    const colors = seededColorPair(patp);
-    return (
-      <GwIcon size={size} fg={colors.foreground} bg={colors.background} />
-    );
-  }
-  else return (
-    <Sigil patp={patp} size={size} bg={color} />
-  )
+  if (rank === "comet") {
+    const colors = seededColorPair(uid.patp);
+    return <GwIcon size={size} fg={colors.foreground} bg={colors.background} />;
+  } else return <Sigil patp={uid.patp} size={size} bg={color} />;
+}
+
+export function AvatarPic({
+  user,
+  profile,
+  size,
+  color,
+}: {
+  profile?: UserProfile;
+  user: UserType;
+  size: number;
+  color?: string;
+}) {
+  return profile && profile.picture ? (
+    <img src={profile.picture} width={size} height={size} />
+  ) : "urbit" in user && isValidPatp(user.urbit.patp) ? (
+    <UrbitAvatar uid={user.urbit} size={size} color={color} />
+  ) : (
+    <Icon name="comet" size={size} />
+  );
 }

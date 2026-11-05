@@ -83,7 +83,8 @@
       [%lists bookmarks=(map post-ref:sur @da) muted=(set user:sur) reported=(set post-ref:sur)]
   ==
 +$  fols-fact
-  $%  [%new-urbit (enbowl fols-res:comms)]
+  $%  [%graph (map user:sur (set user:sur))]
+      [%new-urbit (enbowl fols-res:comms)]
       [%new-nostr pubkey=@ux profile=(unit user-profile:comms) relays=(list @t)]
       ::  UI feedback that the backend handled the click
       [%quit =user:sur]

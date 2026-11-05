@@ -50,7 +50,10 @@ function withAuthorFull(node: FullNode): FullNode {
   const children = Array.isArray(node.children)
     ? node.children
     : Object.fromEntries(
-        Object.entries(node.children ?? {}).map(([k, c]) => [k, withAuthorFull(c)]),
+        Object.entries(node.children ?? {}).map(([k, c]) => [
+          k,
+          withAuthorFull(c),
+        ]),
       );
   return {
     ...node,
@@ -64,7 +67,10 @@ function withAuthorFull(node: FullNode): FullNode {
 function normalizeThread(res: PeekThreadRes): PeekThreadRes {
   const d = res.data.data;
   if (!d || d === "maybe") return res;
-  const data = { node: withAuthorFull(d.node), thread: d.thread.map(withAuthorFull) };
+  const data = {
+    node: withAuthorFull(d.node),
+    thread: d.thread.map(withAuthorFull),
+  };
   return { ...res, data: { ...res.data, data } };
 }
 
@@ -84,7 +90,11 @@ export default class IO {
       threadName,
     });
   }
-  private async poke(json: any, agent?: string, marc?: string): AsyncRes<number> {
+  private async poke(
+    json: any,
+    agent?: string,
+    marc?: string,
+  ): AsyncRes<number> {
     const app = agent ? agent : "nostrill";
     const mark = marc ? marc : "json";
     // airlock.poke resolves once the message is PUT to the channel, not
@@ -252,14 +262,14 @@ export default class IO {
     if (!("thread" in r)) return { error: "wrong result" };
     return { ok: normalizeThread(r.thread) };
   }
-  async scryGwid(patp: string): AsyncRes<GroundwireID>{
+  async scryGwid(patp: string): AsyncRes<GroundwireID> {
     const path = `/j/gwid/${patp}`;
     return await this.scry(path);
-      }
-  async scryPatp(gwid: string): AsyncRes<string>{
+  }
+  async scryPatp(gwid: string): AsyncRes<string> {
     const path = `/j/patp/${gwid}`;
     return await this.scry(path);
-      }
+  }
   async scryRelays() {
     const path = `/j/relays`;
     return await this.scry(path);
@@ -371,8 +381,16 @@ export default class IO {
   }
   // apiKey null keeps the key the provider has; "" removes it
   // evalUrl null: evaluations go to <baseUrl>/systemone
-  async setAiProvider(name: string, baseUrl: string, evalUrl: string | null, apiKey: string | null) {
-    return this.poke({ "set-provider": { name, baseUrl, evalUrl, apiKey } }, "trill-ai-client");
+  async setAiProvider(
+    name: string,
+    baseUrl: string,
+    evalUrl: string | null,
+    apiKey: string | null,
+  ) {
+    return this.poke(
+      { "set-provider": { name, baseUrl, evalUrl, apiKey } },
+      "trill-ai-client",
+    );
   }
   async deleteAiProvider(name: string) {
     return this.poke({ "del-provider": { name } }, "trill-ai-client");
@@ -394,7 +412,6 @@ export default class IO {
     const json = { rp: { host: toWireUser(host), id } };
     return this.poke({ post: json });
   }
-
 
   async deletePost(host: UserType, id: string) {
     const json = {
@@ -460,7 +477,7 @@ export default class IO {
   //  follows
   async follow(user: UserType) {
     const json = { add: toWireUser(user) };
-    return this.poke({ fols: json });
+    return await this.poke({ fols: json });
   }
 
   async unfollow(user: UserType) {
@@ -595,66 +612,65 @@ export default class IO {
   // }
   // %noschat
   // scries
-  async scryDMs(): AsyncRes<PeekDMInboxRes>{
-    const path = `/j/dms`
+  async scryDMs(): AsyncRes<PeekDMInboxRes> {
+    const path = `/j/dms`;
     const res = await this.scry(path, "noschat");
-    return res
+    return res;
   }
-  async scryDM(ship: string): AsyncRes<PeekDMRes>{
-    const path = `/j/dm/${ship}`
+  async scryDM(ship: string): AsyncRes<PeekDMRes> {
+    const path = `/j/dm/${ship}`;
     const res = await this.scry(path, "noschat");
-    return res
+    return res;
   }
   //  subs
-  async subscribeDMs(handler: any){
+  async subscribeDMs(handler: any) {
     const path = "/ui";
     const res = await this.sub(path, handler, "noschat");
-    return res
+    return res;
   }
-  async subscribeDM(ship: string, handler: any){
+  async subscribeDM(ship: string, handler: any) {
     const path = `/dm/${ship}`;
     const res = await this.sub(path, handler, "noschat");
-    return res
+    return res;
   }
   // pokes
-  async addChat(peer: string, content: string){
-    const json = { send: { content, peer} };
-    return this.poke(  json , "noschat");
+  async addChat(peer: string, content: string) {
+    const json = { send: { content, peer } };
+    return this.poke(json, "noschat");
   }
   async muteChat(peer: string) {
-    const json = { mute:  peer  };
+    const json = { mute: peer };
     return this.poke(json, "noschat");
   }
   async unmuteChat(peer: string) {
-    const json = { unmute:  peer  };
+    const json = { unmute: peer };
     return this.poke(json, "noschat");
   }
   async blockChat(peer: string) {
-    const json = { block:  peer  };
+    const json = { block: peer };
     return this.poke(json, "noschat");
   }
   async unblockChat(peer: string) {
-    const json = { unblock: peer  };
+    const json = { unblock: peer };
     return this.poke(json, "noschat");
   }
   async blockChatStrong(peer: string, msg: string) {
-    const json = { gtfo :  {peer, msg}};
+    const json = { gtfo: { peer, msg } };
     return this.poke(json, "noschat");
   }
-  async markChatRead(dm: DM){
+  async markChatRead(dm: DM) {
     const id = dm.lastId!.toString();
     const peer = dm.peer.patp;
-    const json = { read: { id, peer} };
-    return this.poke( json , "noschat");
+    const json = { read: { id, peer } };
+    return this.poke(json, "noschat");
   }
   // requests
   async acceptReq(peer: string) {
-    const json = { accept:  peer  };
+    const json = { accept: peer };
     return this.poke(json, "noschat");
   }
   async rejectReq(peer: string) {
-    const json = { reject:  peer  };
+    const json = { reject: peer };
     return this.poke(json, "noschat");
   }
-
 }

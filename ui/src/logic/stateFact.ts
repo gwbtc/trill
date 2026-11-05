@@ -1,7 +1,15 @@
-import type { Fact, NostrFeeds, Relays, UserProfile } from "@/types/nostrill";
-import type { FC } from "@/types/trill";
+import type {
+  DFollowGraph,
+  Disaggregated,
+  Fact,
+  FollowGraph,
+  NostrFeeds,
+  Relays,
+  UserProfile,
+} from "@/types/nostrill";
+import type { FC, Poast } from "@/types/trill";
 import { SYNC_SUB_NAME } from "./constants";
-import { nostrFeedsToFcMap } from "./nostrill";
+import { nostrFeedsToFcMap, stringToUser } from "./nostrill";
 import { parseLists, type Lists } from "./lists";
 
 export type UserTagged = { urbit: string } | { nostr: string };
@@ -13,9 +21,9 @@ export type StateFactSlices = {
   nostrFeeds: Record<string, FC>;
   nostrFeed: FC;
   profiles: Map<string, UserProfile>;
-  following: Map<string, FC>;
   timeline: FC;
-  followGraph: Record<string, UserTagged[]>;
+  following: Disaggregated<Map<string, FC>>;
+  followGraph: DFollowGraph;
   pubkey: string;
   lists: Lists;
 };
@@ -39,6 +47,9 @@ export function parseStateFact(s: unknown): StateFactSlices {
         end: st.timeline.end ?? null,
       }
     : emptyFC();
+  const following = disaggregateFollowing(st.following1);
+  const followGraph = disaggregateFollowGraph(st.followGraph);
+
   return {
     relays: isObject(st.relays) ? st.relays : {},
     myFeed: isObject(st.feed) ? (st.feed as FC) : emptyFC(),
@@ -46,11 +57,9 @@ export function parseStateFact(s: unknown): StateFactSlices {
     nostrFeeds,
     nostrFeed: nostrFeeds[SYNC_SUB_NAME] ?? emptyFC(),
     profiles: new Map(Object.entries(isObject(st.profiles) ? st.profiles : {})),
-    following: new Map(
-      Object.entries(isObject(st.following) ? st.following : {}),
-    ),
+    following,
     timeline,
-    followGraph: isObject(st.followGraph) ? st.followGraph : {},
+    followGraph,
     pubkey: typeof st.key === "string" ? st.key : "",
     lists: parseLists(st.lists),
   };
@@ -66,9 +75,52 @@ export function normalizeFact(fact: Fact): Fact {
     if (typeof user === "object" && user)
       return {
         fols: {
-          "new-urbit": { ...nu, user: "urbit" in user ? user.urbit : user.nostr },
+          "new-urbit": {
+            ...nu,
+            user: "urbit" in user ? user.urbit : user.nostr,
+          },
         },
       };
   }
   return fact;
+}
+export function disaggregateFollowing(
+  f: Record<string, FC>,
+): Disaggregated<Map<string, FC>> {
+  const r = { urbit: new Map(), nostr: new Map() };
+  for (const e of Object.entries(f)) {
+    const u = stringToUser(e[0]);
+    if ("error" in u) continue;
+    if ("urbit" in u.ok) r.urbit.set(e[0], e[1]);
+    if ("nostr" in u.ok) r.nostr.set(e[0], e[1]);
+  }
+  return r;
+}
+export function disaggregateFollowGraph(f: FollowGraph): DFollowGraph {
+  const r: DFollowGraph = { urbit: [], nostr: [] };
+  for (const e of f) {
+    if ("urbit" in e) r.urbit.push(e.urbit);
+    if ("nostr" in e) r.nostr.push(e.nostr);
+  }
+  return r;
+}
+export function updateFollowing(
+  f: Map<string, FC>,
+  post: Poast,
+  action: "add" | "del",
+): Map<string, FC> {
+  const curr = f.get(post.author);
+  if (action === "del") {
+    if (curr && curr.feed[post.id]) {
+      const feed = { ...curr.feed };
+      delete feed[post.id];
+      const nfc = { ...curr, feed };
+      const nmap = new Map(f).set(post.author, nfc);
+      return nmap;
+    } else return f;
+  }
+  const fc = curr ? curr : { feed: {}, start: null, end: null };
+  const nf = { ...fc, feed: { ...fc.feed, [post.id]: post } };
+  const nmap = new Map(f).set(post.author, nf);
+  return nmap;
 }

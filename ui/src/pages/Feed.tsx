@@ -20,9 +20,9 @@ import { FollowsDebating } from "@/components/debates/Presence";
 type FeedType = "global" | "following" | "nostr";
 
 const FEED_TABS: TabItem<FeedType>[] = [
-  { key: "nostr", label: "Nostr" },
+  { key: "global", label: "Groundwire" },
   { key: "following", label: "Following" },
-  { key: "global", label: "Global" },
+  { key: "nostr", label: "Nostr" },
 ];
 
 function Loader() {
@@ -61,16 +61,22 @@ function FeedPage({ t }: { t: FeedType }) {
       post.classList.toggle("keyboard-selected", index === cursorIndex);
     });
     if (cursorIndex >= 0) {
-      posts[cursorIndex]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      posts[cursorIndex]?.scrollIntoView({
+        block: "nearest",
+        behavior: "smooth",
+      });
     }
-    return () => posts.forEach((post) => post.classList.remove("keyboard-selected"));
+    return () =>
+      posts.forEach((post) => post.classList.remove("keyboard-selected"));
   }, [cursorIndex, feedLoading, active]);
 
   useEffect(() => {
     function isTypingTarget(target: EventTarget | null) {
       if (!(target instanceof HTMLElement)) return false;
       return Boolean(
-        target.closest("input, textarea, select, [contenteditable='true'], #modal-background"),
+        target.closest(
+          "input, textarea, select, [contenteditable='true'], #modal-background",
+        ),
       );
     }
 
@@ -84,7 +90,9 @@ function FeedPage({ t }: { t: FeedType }) {
 
       if (e.key === "j") {
         e.preventDefault();
-        setCursorIndex((index) => Math.min(posts.length - 1, index < 0 ? 0 : index + 1));
+        setCursorIndex((index) =>
+          Math.min(posts.length - 1, index < 0 ? 0 : index + 1),
+        );
       } else if (e.key === "k") {
         e.preventDefault();
         setCursorIndex((index) => Math.max(0, index < 0 ? 0 : index - 1));

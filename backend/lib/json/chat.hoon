@@ -1,5 +1,6 @@
 /-  sur=chat, tf=trill-feed, comms=nostrill-comms
-/+  trill=json-trill, json-nostrill, sr=sortug,
+/+  lib=nostrill,
+    trill=json-trill, jlib=json-nostrill, sr=sortug,
     gwid, gwidj=json-gwid, common=json-common
 |%
 ++  en
@@ -27,7 +28,7 @@
 ++  uid-set  |=  s=(set @p)  ^-  json
   :-  %a  %+  turn  ~(tap in s)
     |=  p=@p
-      =/  uid  (make-urbit-id p)
+      =/  uid  (make-urbit-id:en:jlib p)
       (urbit-id:en:gwidj uid)
 ::
 ++  dm-map
@@ -43,7 +44,7 @@
 ++  dm
   |=  [peer=@p =fc:tf last-read=(unit @da) unread=@ud muted=? blocked=? delivery=(map @da delivery:sur)]
   ^-  json
-  =/  uid  (make-urbit-id peer)
+  =/  uid  (make-urbit-id:en:jlib peer)
   =/  last-id  (pry:orm:tf feed.fc)
   =/  last-idj  ?~  last-id  ~  (ud:en:common -.u.last-id)
   =/  last-ts   ?~  last-id  ~  (time:en:trill -.u.last-id)
@@ -92,7 +93,7 @@
 ++  request
   |=  [peer=@p req=request:sur]
   ^-  json
-  =/  uid  (make-urbit-id peer)
+  =/  uid  (make-urbit-id:en:jlib peer)
   %:  pairs
     ['peer' (urbit-id:en:gwidj uid)]
     post+(poast:en:trill req)
@@ -110,10 +111,6 @@
   ==
 --
 ::  helpers
-::  TODO move this somewhere else
-++  make-urbit-id  |=  =ship  ^-  urbit-id:comms
-  =/  gwid  (make:b:gwid ship)
-  [`@p`ship `@`ship gwid]
 ::
 ++  de
 =,  dejs-soft:format

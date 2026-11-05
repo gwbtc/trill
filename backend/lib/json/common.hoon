@@ -14,6 +14,7 @@
     ==
   ++  user-tagged  |=  u=user:tp  ^-  json
     (frond -.u (user u))
+
   ++  hex   |=  h=@ux  ^-  json
     =/  scoww  scow:sr
     [%s (crip (scoww(min-chars 64) %ux h))]

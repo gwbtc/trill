@@ -3,7 +3,21 @@ import { start } from "@/logic/api";
 import IO from "@/logic/requests/nostrill";
 import type { ComposerData } from "@/types/ui";
 import { create } from "zustand";
-import type { DM, DMFact, DMJail, DMRequests, DMs, Fact, NostrFeeds, Relays, UrbitID, UserProfile } from "@/types/nostrill";
+import type {
+  DFollowGraph,
+  Disaggregated,
+  DM,
+  DMFact,
+  DMJail,
+  DMRequests,
+  DMs,
+  Fact,
+  FollowGraph,
+  NostrFeeds,
+  Relays,
+  UrbitID,
+  UserProfile,
+} from "@/types/nostrill";
 import type { Wevent } from "@/types/nostr";
 import type { FC, Gate, Poast } from "@/types/trill";
 import type { Notification } from "@/types/notifications";
@@ -15,8 +29,20 @@ import {
   skeinToNote,
 } from "@/logic/notifications";
 import { defaultGate } from "@/logic/bunts";
-import { eventsToFc, addEventToFc, eventToProfile, nostrFeedsToFcMap } from "@/logic/nostrill";
-import { parseStateFact, emptyFC, normalizeFact, type UserTagged } from "@/logic/stateFact";
+import {
+  eventsToFc,
+  addEventToFc,
+  eventToProfile,
+  nostrFeedsToFcMap,
+} from "@/logic/nostrill";
+import {
+  parseStateFact,
+  emptyFC,
+  normalizeFact,
+  type UserTagged,
+  disaggregateFollowGraph,
+  updateFollowing,
+} from "@/logic/stateFact";
 import { emptyLists, parseLists, type Lists } from "@/logic/lists";
 import { SYNC_SUB_NAME } from "@/logic/constants";
 import type { S3Config, UrbitContacts } from "@/types/urbit";
@@ -62,9 +88,9 @@ export type LocalState = {
   profiles: Map<string, UserProfile>; // pubkey key
   setProfiles: (m: Map<string, UserProfile>) => void; // pubkey key
   addProfile: (key: string, u: UserProfile) => void;
-  following: Map<string, FC>;
   timeline: FC;
-  followGraph: Record<string, UserTagged[]>;
+  following: Disaggregated<Map<string, FC>>;
+  followGraph: DFollowGraph;
   // bookmarks, muted users, reported posts (kept by the agent)
   lists: Lists;
   followers: string[];
@@ -87,7 +113,7 @@ export type LocalState = {
   //chat
   dms: DMs;
   dmRequests: DMRequests;
-  dmJail:DMJail;
+  dmJail: DMJail;
   // debates (%debates), keyed by debateKey
   debates: Map<string, Debate>;
   debateInvites: Map<string, Invitation>;
@@ -100,7 +126,7 @@ export type LocalState = {
   // the ecash wallet (%trill-wallet); null until it answers, or if it
   // isn't running
   wallet: WalletState | null;
-  // 
+  //
   our: UrbitID | null;
 };
 
@@ -113,359 +139,405 @@ export const useStore = creator((set, get) => ({
   api: null,
   // memoized: the subscriptions and timers below must only be set up once,
   // and a second caller (StrictMode, HMR) should wait for the same setup
-  init: () => (initPromise ??= (async () => {
-    const airlock = await start();
-    const api = new IO(airlock);
-    const patp = api.airlock.our!;
+  init: () =>
+    (initPromise ??= (async () => {
+      const airlock = await start();
+      const api = new IO(airlock);
+      const patp = api.airlock.our!;
 
-
-    api.scryGwid(patp).then(gwid => {
-      if ("error" in gwid) {
-        console.error(gwid, "error in gwid")
-        return;
-      }
-      const point = getPoint(patp);
-      const our: UrbitID = { gwid: gwid.ok, patp, point }
-      set({ our: our })
-    });
-    // api.addRelay(GLOBAL_RELAY_URL);
-    api.scryContacts().then((r) => {
-      // set({ contacts: contactsSample });
-      // if ("ok" in r) {
-      //   set({ contacts: r.ok });
-      // }
-    });
-    api.scrySettings().then((r) => {
-      if ("error" in r) {
-        console.error("error scrying settings", r);
-        return;
-      }
-      const uiSettings = r.ok.desk;
-      set({ uiSettings });
-    });
-    api.scryStorage().then((r) => {
-      if ("ok" in r) {
-        set({ s3: r.ok });
-      }
-    });
-
-    api.scryHark().then((r) => {
-      const clearedAt = getNotificationsClearedAt();
-      if ("ok" in r) {
-        const notifications = r.ok.reduce((acc: Notification[], sk) => {
-          const note = skeinToNote(sk, api.airlock.our ?? undefined);
-          if ("ok" in note && note.ok.timestamp > clearedAt) return [...acc, note.ok];
-          else return acc;
-        }, []).sort((a, b) => b.timestamp - a.timestamp);
-        set((state) => ({
-          notifications: [
-            ...state.notifications,
-            ...notifications.filter(
-              (note) => !state.notifications.some((current) => current.id === note.id),
-            ),
-          ].sort((a, b) => b.timestamp - a.timestamp),
-          notificationsLoaded: true,
-        }));
-      } else {
-        set({ notificationsLoaded: true });
-      }
-    });
-    api.subscribeHark((data: HarkAction) => {
-      if ("add-yarn" in data) {
-        if (data["add-yarn"].yarn.rope.desk !== "nostrill") return;
-        const nots = get().notifications;
-        const yarn = data["add-yarn"].yarn;
-        const skein: Skein = {
-          top: yarn,
-          time: yarn.time,
-          "ship-count": 0,
-          unread: true,
-          count: 0,
-        };
-        const note = skeinToNote(skein, api.airlock.our ?? undefined);
-        if ("error" in note) return;
-        const notifications = [note.ok, ...nots.filter((item) => item.id !== note.ok.id)];
-        set({ notifications, notificationsLoaded: true });
-      } else if ("saw-seam" in data) {
-        if (!("desk" in data["saw-seam"]) || data["saw-seam"].desk !== "nostrill") {
+      api.scryGwid(patp).then((gwid) => {
+        if ("error" in gwid) {
+          console.error(gwid, "error in gwid");
           return;
         }
-        set({ notifications: get().notifications.map((note) => ({ ...note, unread: false })) });
-      } else if ("saw-rope" in data) {
-        set({
-          notifications: get().notifications.map((note) =>
-            isSameNotificationRope(note.rope, data["saw-rope"])
-              ? { ...note, unread: false }
-              : note,
-          ),
-        });
-      }
-    });
-    // eose fires once per relay per sub, and each one used to start its own
-    // /j/nostr scry whose responses could land out of order. run one at a
-    // time, and once more afterwards if any eose came in meanwhile
-    let nostrScrying = false;
-    let nostrRescry = false;
-    // people mentioned in notes (nostr:npub…) aren't their authors, so no
-    // sub fetched their profiles. ask the relays for those we lack, each
-    // at most once a session: one missing from every relay stays missing
-    const askedProfiles = new Set<string>();
-    const fetchMentionedProfiles = (feeds: Record<string, FC>) => {
-      const { profiles, relays } = get();
-      const texts = Object.values(feeds).flatMap((fc) =>
-        Object.values(fc.feed).map((p) => p.event?.content ?? ""),
-      );
-      const missing = mentionedPubkeys(texts)
-        .filter((pk) => !profiles.has(pk) && !askedProfiles.has(pk))
-        .slice(0, 100);
-      const wids = Object.values(relays)
-        .map((r) => r.wid)
-        .filter((w): w is number => w != null);
-      if (missing.length === 0 || wids.length === 0) return;
-      missing.forEach((pk) => askedProfiles.add(pk));
-      api.nostrProfiles(wids, missing);
-    };
-    const refreshNostrFeeds = () => {
-      if (nostrScrying) {
-        nostrRescry = true;
-        return;
-      }
-      nostrScrying = true;
-      api.scryNostr()
-        .then((r) => {
-          if ("error" in r) {
-            console.error("error scrying nostr feeds", r);
+        const point = getPoint(patp);
+        const our: UrbitID = { gwid: gwid.ok, patp, point };
+        set({ our: our });
+      });
+      // api.addRelay(GLOBAL_RELAY_URL);
+      api.scryContacts().then((r) => {
+        // set({ contacts: contactsSample });
+        // if ("ok" in r) {
+        //   set({ contacts: r.ok });
+        // }
+      });
+      api.scrySettings().then((r) => {
+        if ("error" in r) {
+          console.error("error scrying settings", r);
+          return;
+        }
+        const uiSettings = r.ok.desk;
+        set({ uiSettings });
+      });
+      api.scryStorage().then((r) => {
+        if ("ok" in r) {
+          set({ s3: r.ok });
+        }
+      });
+
+      api.scryHark().then((r) => {
+        const clearedAt = getNotificationsClearedAt();
+        if ("ok" in r) {
+          const notifications = r.ok
+            .reduce((acc: Notification[], sk) => {
+              const note = skeinToNote(sk, api.airlock.our ?? undefined);
+              if ("ok" in note && note.ok.timestamp > clearedAt)
+                return [...acc, note.ok];
+              else return acc;
+            }, [])
+            .sort((a, b) => b.timestamp - a.timestamp);
+          set((state) => ({
+            notifications: [
+              ...state.notifications,
+              ...notifications.filter(
+                (note) =>
+                  !state.notifications.some(
+                    (current) => current.id === note.id,
+                  ),
+              ),
+            ].sort((a, b) => b.timestamp - a.timestamp),
+            notificationsLoaded: true,
+          }));
+        } else {
+          set({ notificationsLoaded: true });
+        }
+      });
+      api.subscribeHark((data: HarkAction) => {
+        if ("add-yarn" in data) {
+          if (data["add-yarn"].yarn.rope.desk !== "nostrill") return;
+          const nots = get().notifications;
+          const yarn = data["add-yarn"].yarn;
+          const skein: Skein = {
+            top: yarn,
+            time: yarn.time,
+            "ship-count": 0,
+            unread: true,
+            count: 0,
+          };
+          const note = skeinToNote(skein, api.airlock.our ?? undefined);
+          if ("error" in note) return;
+          const notifications = [
+            note.ok,
+            ...nots.filter((item) => item.id !== note.ok.id),
+          ];
+          set({ notifications, notificationsLoaded: true });
+        } else if ("saw-seam" in data) {
+          if (
+            !("desk" in data["saw-seam"]) ||
+            data["saw-seam"].desk !== "nostrill"
+          ) {
             return;
           }
-          const nostrFeedsRaw = r.ok;
-          const nostrFeeds = nostrFeedsToFcMap(nostrFeedsRaw);
           set({
-            nostrFeedsRaw,
-            nostrFeeds,
-            nostrFeed: nostrFeeds[SYNC_SUB_NAME] ?? emptyFC(),
+            notifications: get().notifications.map((note) => ({
+              ...note,
+              unread: false,
+            })),
           });
-          fetchMentionedProfiles(nostrFeeds);
-        })
-        .finally(() => {
-          nostrScrying = false;
-          if (nostrRescry) {
-            nostrRescry = false;
-            refreshNostrFeeds();
-          }
-        });
-    };
-    // the wallet: all of it, whenever it changes
-    api.subscribeWallet((data: unknown) => {
-      const wallet = parseWallet(data);
-      if (!wallet) return;
-      // what finished since (deposits, nutzaps: they take a while), told
-      // wherever we are. not on the first load
-      const before = get().wallet;
-      if (before) {
-        const seen = new Set(before.log.map((l) => `${l.at}|${l.what}`));
-        for (const l of wallet.log.filter((l) => !seen.has(`${l.at}|${l.what}`)).reverse()) {
-          const text = l.what.charAt(0).toUpperCase() + l.what.slice(1);
-          if (isFailure(l.what)) toast.error(text);
-          else toast.success(text);
+        } else if ("saw-rope" in data) {
+          set({
+            notifications: get().notifications.map((note) =>
+              isSameNotificationRope(note.rope, data["saw-rope"])
+                ? { ...note, unread: false }
+                : note,
+            ),
+          });
         }
-      }
-      set({ wallet });
-    });
-    // debates: everything we host or follow, kept current by the agent
-    const ourPatp = (() => {
-      const o = api.airlock.our ?? "";
-      return o.startsWith("~") ? o : `~${o}`;
-    })();
-    api.subscribeDebates((data: DebatesFact) => {
-      if ("all" in data) {
-        set({
-          debates: new Map(data.all.debates.map((d) => [debateKey(d.key), d])),
-          debateInvites: new Map(data.all.invites.map((i) => [debateKey(i.key), i])),
-          currentDebate: data.all.current,
-          debatePresences: new Map(Object.entries(data.all.presences)),
-          debatesLoaded: true,
-        });
-      } else if ("current" in data) {
-        set({ currentDebate: data.current });
-      } else if ("presence" in data) {
-        const next = new Map(get().debatePresences);
-        const { ship, presence } = data.presence;
-        if (presence) next.set(ship, presence);
-        else next.delete(ship);
-        set({ debatePresences: next });
-      } else if ("update" in data) {
-        const { key, update } = data.update;
-        set({ debates: applyDebateUpdate(get().debates, key, update, ourPatp) });
-      } else if ("invited" in data) {
-        const i = data.invited;
-        set({ debateInvites: new Map(get().debateInvites).set(debateKey(i.key), i) });
-      } else if ("dismissed" in data) {
-        const next = new Map(get().debateInvites);
-        next.delete(debateKey(data.dismissed));
-        set({ debateInvites: next });
-      } else if ("error" in data) {
-        toast.error(data.error.msg);
-      }
-    });
-    api.subscribeNostrill((data) => {
-      if ("state" in data) {
-        set({ ...parseStateFact(data.state), stateLoaded: true });
-      } else if ("fact" in data) {
-        const fact: Fact = normalizeFact(data.fact);
-        set({ lastFact: fact });
-        // store updates must produce new Map/object references, or
-        // useShallow selectors see no change and nothing re-renders
-        if ("fols" in fact) {
-          if ("new-urbit" in fact.fols) {
-            const { user, data } = fact.fols["new-urbit"];
-            if (data.data === "maybe") return;
-            if (data.data) {
-              const { feed, profile } = data.data;
-              const following = new Map(get().following).set(user, feed);
-              if (profile) {
-                const profiles = new Map(get().profiles).set(user, profile);
-                set({ following, profiles });
-              } else set({ following });
+      });
+      // eose fires once per relay per sub, and each one used to start its own
+      // /j/nostr scry whose responses could land out of order. run one at a
+      // time, and once more afterwards if any eose came in meanwhile
+      let nostrScrying = false;
+      let nostrRescry = false;
+      // people mentioned in notes (nostr:npub…) aren't their authors, so no
+      // sub fetched their profiles. ask the relays for those we lack, each
+      // at most once a session: one missing from every relay stays missing
+      const askedProfiles = new Set<string>();
+      const fetchMentionedProfiles = (feeds: Record<string, FC>) => {
+        const { profiles, relays } = get();
+        const texts = Object.values(feeds).flatMap((fc) =>
+          Object.values(fc.feed).map((p) => p.event?.content ?? ""),
+        );
+        const missing = mentionedPubkeys(texts)
+          .filter((pk) => !profiles.has(pk) && !askedProfiles.has(pk))
+          .slice(0, 100);
+        const wids = Object.values(relays)
+          .map((r) => r.wid)
+          .filter((w): w is number => w != null);
+        if (missing.length === 0 || wids.length === 0) return;
+        missing.forEach((pk) => askedProfiles.add(pk));
+        api.nostrProfiles(wids, missing);
+      };
+      const refreshNostrFeeds = () => {
+        if (nostrScrying) {
+          nostrRescry = true;
+          return;
+        }
+        nostrScrying = true;
+        api
+          .scryNostr()
+          .then((r) => {
+            if ("error" in r) {
+              console.error("error scrying nostr feeds", r);
+              return;
             }
-          }
-          if ("quit" in fact.fols) {
-            const following = new Map(get().following);
-            following.delete(fact.fols.quit);
-            set({ following });
+            const nostrFeedsRaw = r.ok;
+            const nostrFeeds = nostrFeedsToFcMap(nostrFeedsRaw);
+            set({
+              nostrFeedsRaw,
+              nostrFeeds,
+              nostrFeed: nostrFeeds[SYNC_SUB_NAME] ?? emptyFC(),
+            });
+            fetchMentionedProfiles(nostrFeeds);
+          })
+          .finally(() => {
+            nostrScrying = false;
+            if (nostrRescry) {
+              nostrRescry = false;
+              refreshNostrFeeds();
+            }
+          });
+      };
+      // the wallet: all of it, whenever it changes
+      api.subscribeWallet((data: unknown) => {
+        const wallet = parseWallet(data);
+        if (!wallet) return;
+        // what finished since (deposits, nutzaps: they take a while), told
+        // wherever we are. not on the first load
+        const before = get().wallet;
+        if (before) {
+          const seen = new Set(before.log.map((l) => `${l.at}|${l.what}`));
+          for (const l of wallet.log
+            .filter((l) => !seen.has(`${l.at}|${l.what}`))
+            .reverse()) {
+            const text = l.what.charAt(0).toUpperCase() + l.what.slice(1);
+            if (isFailure(l.what)) toast.error(text);
+            else toast.success(text);
           }
         }
-        if ("post" in fact) {
-          // upd (e.g. a parent whose children changed) replaces the post like add
-          if ("add" in fact.post || "upd" in fact.post) {
-            const post: Poast =
-              "add" in fact.post ? fact.post.add.post : fact.post.upd.post;
-            const { api, following, myFeed } = get();
-            const our = api?.airlock?.our;
-            if (post.author === our) {
-              set({ myFeed: { ...myFeed, feed: { ...myFeed.feed, [post.id]: post } } });
-            } else {
-              const curr = following.get(post.author);
-              const fc = curr ? curr : { feed: {}, start: null, end: null };
-              const nf = { ...fc, feed: { ...fc.feed, [post.id]: post } };
-              set({ following: new Map(following).set(post.author, nf) });
+        set({ wallet });
+      });
+      // debates: everything we host or follow, kept current by the agent
+      const ourPatp = (() => {
+        const o = api.airlock.our ?? "";
+        return o.startsWith("~") ? o : `~${o}`;
+      })();
+      api.subscribeDebates((data: DebatesFact) => {
+        if ("all" in data) {
+          set({
+            debates: new Map(
+              data.all.debates.map((d) => [debateKey(d.key), d]),
+            ),
+            debateInvites: new Map(
+              data.all.invites.map((i) => [debateKey(i.key), i]),
+            ),
+            currentDebate: data.all.current,
+            debatePresences: new Map(Object.entries(data.all.presences)),
+            debatesLoaded: true,
+          });
+        } else if ("current" in data) {
+          set({ currentDebate: data.current });
+        } else if ("presence" in data) {
+          const next = new Map(get().debatePresences);
+          const { ship, presence } = data.presence;
+          if (presence) next.set(ship, presence);
+          else next.delete(ship);
+          set({ debatePresences: next });
+        } else if ("update" in data) {
+          const { key, update } = data.update;
+          set({
+            debates: applyDebateUpdate(get().debates, key, update, ourPatp),
+          });
+        } else if ("invited" in data) {
+          const i = data.invited;
+          set({
+            debateInvites: new Map(get().debateInvites).set(
+              debateKey(i.key),
+              i,
+            ),
+          });
+        } else if ("dismissed" in data) {
+          const next = new Map(get().debateInvites);
+          next.delete(debateKey(data.dismissed));
+          set({ debateInvites: next });
+        } else if ("error" in data) {
+          toast.error(data.error.msg);
+        }
+      });
+      api.subscribeNostrill((data) => {
+        console.log("data", data);
+        if ("state" in data) {
+          set({ ...parseStateFact(data.state), stateLoaded: true });
+        } else if ("fact" in data) {
+          const fact: Fact = normalizeFact(data.fact);
+          set({ lastFact: fact });
+          // store updates must produce new Map/object references, or
+          // useShallow selectors see no change and nothing re-renders
+          if ("fols" in fact) {
+            if ("graph" in fact.fols) {
+              set({ followGraph: disaggregateFollowGraph(fact.fols.graph) });
             }
-          }
-          if ("del" in fact.post) {
-            const post: Poast = fact.post.del.post;
-            const { api, following, myFeed } = get();
-            // our own posts live in myFeed, mirroring the "add" branch
-            if (post.author === api?.airlock?.our) {
-              if (myFeed.feed[post.id]) {
-                const feed = { ...myFeed.feed };
-                delete feed[post.id];
-                set({ myFeed: { ...myFeed, feed } });
+            if ("new-urbit" in fact.fols) {
+              const { user, data } = fact.fols["new-urbit"];
+              if (data.data === "maybe") return;
+              if (data.data) {
+                const { feed, profile } = data.data;
+                const of = get().following;
+                const uf = new Map(of.urbit).set(user, feed);
+                const following = { ...of, urbit: uf };
+                if (profile) {
+                  const profiles = new Map(get().profiles).set(user, profile);
+                  set({ following, profiles });
+                } else set({ following });
               }
-            } else {
-              const curr = following.get(post.author);
-              if (curr && curr.feed[post.id]) {
-                const feed = { ...curr.feed };
-                delete feed[post.id];
+            }
+            if ("quit" in fact.fols) {
+              const of = get().following;
+              const uf = new Map(of.urbit);
+              uf.delete(fact.fols.quit);
+              const following = { ...of, urbit: uf };
+              set({ following });
+            }
+          }
+          if ("post" in fact) {
+            // upd (e.g. a parent whose children changed) replaces the post like add
+            if ("add" in fact.post || "upd" in fact.post) {
+              const post: Poast =
+                "add" in fact.post ? fact.post.add.post : fact.post.upd.post;
+              const { api, following, myFeed } = get();
+              const our = api?.airlock?.our;
+              if (post.author === our) {
                 set({
-                  following: new Map(following).set(post.author, { ...curr, feed }),
+                  myFeed: {
+                    ...myFeed,
+                    feed: { ...myFeed.feed, [post.id]: post },
+                  },
+                });
+              } else {
+                const nfollowing = {
+                  ...following,
+                  urbit: updateFollowing(following.urbit, post, "add"),
+                };
+                set({ following: nfollowing });
+              }
+            }
+            if ("del" in fact.post) {
+              const post: Poast = fact.post.del.post;
+              const { api, following, myFeed } = get();
+              // our own posts live in myFeed, mirroring the "add" branch
+              if (post.author === api?.airlock?.our) {
+                if (myFeed.feed[post.id]) {
+                  const feed = { ...myFeed.feed };
+                  delete feed[post.id];
+                  set({ myFeed: { ...myFeed, feed } });
+                }
+              } else {
+                const nfollowing = {
+                  ...following,
+                  urbit: updateFollowing(following.urbit, post, "del"),
+                };
+                set({ following: nfollowing });
+              }
+            }
+          }
+          if ("nostr" in fact) {
+            set({ lastNostrEventTime: Date.now() });
+            if ("feed" in fact.nostr || "user" in fact.nostr) {
+              const { name, feed } =
+                "feed" in fact.nostr ? fact.nostr.feed : fact.nostr.user;
+              const nostrFeeds = {
+                ...get().nostrFeeds,
+                [name]: eventsToFc(feed),
+              };
+              set(
+                name === SYNC_SUB_NAME
+                  ? { nostrFeeds, nostrFeed: nostrFeeds[name] }
+                  : { nostrFeeds },
+              );
+            }
+            if ("relays" in fact.nostr) set({ relays: fact.nostr.relays });
+            if ("eose" in fact.nostr) {
+              set({ lastEose: fact.nostr.eose });
+              // author-filtered subs (incl. %sync) emit no %feed fact at eose;
+              // the backlog is only readable through the /x/j/nostr scry
+              refreshNostrFeeds();
+            }
+            if ("drop" in fact.nostr) set({ lastDroppedWs: fact.nostr.drop });
+            if ("event" in fact.nostr) {
+              // console.log("san event", fact.nostr.event);
+              const event: Wevent = fact.nostr.event;
+              if (event.kind === 1) {
+                // %event facts carry no sub name; only ongoing subs stream
+                // past eose, and the sync sub is the only one we keep ongoing
+                const { nostrFeed, nostrFeeds } = get();
+                const nf = addEventToFc(event, nostrFeed);
+                set({
+                  nostrFeed: nf,
+                  nostrFeeds: { ...nostrFeeds, [SYNC_SUB_NAME]: nf },
+                });
+              }
+              if (event.kind === 0) {
+                const prof = eventToProfile(event);
+                if (!prof) return;
+                set({
+                  profiles: new Map(get().profiles).set(event.pubkey, prof),
                 });
               }
             }
+            // if ("thread" in data.fact.nostr)
           }
+          if ("prof" in fact) {
+            const profiles = new Map(get().profiles);
+            for (const [user, prof] of Object.entries(fact.prof))
+              profiles.set(user, prof);
+            set({ profiles });
+          }
+          if ("keys" in fact) set({ pubkey: fact.keys });
+          if ("lists" in fact) set({ lists: parseLists(fact.lists) });
         }
-        if ("nostr" in fact) {
-          set({ lastNostrEventTime: Date.now() });
-          if ("feed" in fact.nostr || "user" in fact.nostr) {
-            const { name, feed } =
-              "feed" in fact.nostr ? fact.nostr.feed : fact.nostr.user;
-            const nostrFeeds = { ...get().nostrFeeds, [name]: eventsToFc(feed) };
-            set(
-              name === SYNC_SUB_NAME
-                ? { nostrFeeds, nostrFeed: nostrFeeds[name] }
-                : { nostrFeeds },
-            );
-          }
-          if ("relays" in fact.nostr) set({ relays: fact.nostr.relays });
-          if ("eose" in fact.nostr) {
-            set({ lastEose: fact.nostr.eose });
-            // author-filtered subs (incl. %sync) emit no %feed fact at eose;
-            // the backlog is only readable through the /x/j/nostr scry
-            refreshNostrFeeds();
-          }
-          if ("drop" in fact.nostr) set({ lastDroppedWs: fact.nostr.drop });
-          if ("event" in fact.nostr) {
-            // console.log("san event", fact.nostr.event);
-            const event: Wevent = fact.nostr.event;
-            if (event.kind === 1) {
-              // %event facts carry no sub name; only ongoing subs stream
-              // past eose, and the sync sub is the only one we keep ongoing
-              const { nostrFeed, nostrFeeds } = get();
-              const nf = addEventToFc(event, nostrFeed);
-              set({
-                nostrFeed: nf,
-                nostrFeeds: { ...nostrFeeds, [SYNC_SUB_NAME]: nf },
-              });
-            }
-            if (event.kind === 0) {
-              const prof = eventToProfile(event);
-              if (!prof) return;
-              set({ profiles: new Map(get().profiles).set(event.pubkey, prof) });
-            }
-          }
-          // if ("thread" in data.fact.nostr)
-        }
-        if ("prof" in fact) {
-          const profiles = new Map(get().profiles);
-          for (const [user, prof] of Object.entries(fact.prof))
-            profiles.set(user, prof);
-          set({ profiles });
-        }
-        if ("keys" in fact) set({ pubkey: fact.keys });
-        if ("lists" in fact) set({ lists: parseLists(fact.lists) });
-      }
-    });
-    api.scryDMs().then((r) => {
-      if ("error" in r) {
-        console.error("error scrying dms", r);
-        return;
-      }
-      set({
-        dms: fixDMs(r.ok.dms),
-        dmRequests: fixDMRequests(r.ok.requests),
-        dmJail: r.ok.jail,
       });
-    });
-    api.subscribeDMs((data: DMFact) => {
-      if ("init" in data) {
-        const dms = fixDMs(data.init.dms)
-        const dmRequests = fixDMRequests(data.init.requests)
-        const dmJail = data.init.jail;
-        set({ dms, dmRequests, dmJail })
+      api.scryDMs().then((r) => {
+        if ("error" in r) {
+          console.error("error scrying dms", r);
+          return;
+        }
+        set({
+          dms: fixDMs(r.ok.dms),
+          dmRequests: fixDMRequests(r.ok.requests),
+          dmJail: r.ok.jail,
+        });
+      });
+      api.subscribeDMs((data: DMFact) => {
+        if ("init" in data) {
+          const dms = fixDMs(data.init.dms);
+          const dmRequests = fixDMRequests(data.init.requests);
+          const dmJail = data.init.jail;
+          set({ dms, dmRequests, dmJail });
+        }
+        if ("peer" in data) {
+          const cooked = parseBigint(data.peer);
+          const dms = { ...get().dms, [data.peer.peer.patp]: cooked };
+          const dmRequests = { ...get().dmRequests };
+          delete dmRequests[data.peer.peer.patp];
+          set({ dms, dmRequests, lastChatFact: cooked });
+        }
+        if ("requests" in data) {
+          set({ dmRequests: fixDMRequests(data.requests) });
+        }
+        if ("error" in data) {
+          console.error(data.error, "error in chat fact");
+        }
+      });
+      // measure real relay latency now and periodically
+      const measureLatency = async () => {
+        const urls = Object.keys(get().relays);
+        if (urls.length === 0) return;
+        set({ relayLatency: await pingRelays(urls) });
       };
-      if ("peer" in data) {
-        const cooked = parseBigint(data.peer);
-        const dms = { ...get().dms, [data.peer.peer.patp]: cooked }
-        const dmRequests = { ...get().dmRequests };
-        delete dmRequests[data.peer.peer.patp];
-        set({ dms, dmRequests, lastChatFact: cooked });
-      }
-      if ("requests" in data) {
-        set({ dmRequests: fixDMRequests(data.requests) })
-      }
-      if ("error" in data) {
-        console.error(data.error, "error in chat fact")
-      }
-
-    });
-    // measure real relay latency now and periodically
-    const measureLatency = async () => {
-      const urls = Object.keys(get().relays);
-      if (urls.length === 0) return;
-      set({ relayLatency: await pingRelays(urls) });
-    };
-    setTimeout(measureLatency, 3000);
-    setInterval(measureLatency, 60_000);
-    set({ api });
-  })()),
+      setTimeout(measureLatency, 3000);
+      setInterval(measureLatency, 60_000);
+      set({ api });
+    })()),
   pubkey: "",
   profiles: new Map(),
   addProfile: (key, profile) => {
@@ -482,10 +554,10 @@ export const useStore = creator((set, get) => ({
   nostrFeed: { feed: {}, start: null, end: null },
   nostrFeeds: {},
   nostrFeedsRaw: {},
-  following: new Map(),
+  following: { urbit: new Map(), nostr: new Map() },
   followers: [],
   timeline: { feed: {}, start: null, end: null },
-  followGraph: {},
+  followGraph: { urbit: [], nostr: [] },
   lists: emptyLists(),
   uiSettings: {},
   modal: null,
@@ -509,7 +581,7 @@ export const useStore = creator((set, get) => ({
   // dms
   dms: {},
   dmRequests: {},
-  dmJail: {muted: [], blocked: []},
+  dmJail: { muted: [], blocked: [] },
   // debates
   debates: new Map(),
   debateInvites: new Map(),

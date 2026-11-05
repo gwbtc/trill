@@ -1,10 +1,21 @@
 import type { ListsFact } from "@/logic/lists";
-import type { Wevent as NostrEvent } from "./nostr";
+import type { Wevent as NostrEvent, NostrID } from "./nostr";
 import type { NostrFilter } from "@nostrify/nostrify";
 import type { Cursor, FC, FlatFeed, FullNode, Poast } from "./trill";
+import type { UserTagged } from "@/logic/stateFact";
 
 // export type UserType = { urbit: string } | { nostr: string };
+export type KeysOfUnion<T> = T extends any ? keyof T : never;
+export type UserKey = KeysOfUnion<UserType>;
 export type UserType = { urbit: UrbitID } | { nostr: string };
+
+export type UserTypeFull = { urbit: UrbitID } | { nostr: NostrID };
+
+export type FollowType =
+  { urbit: UrbitFollowGraph } | { nostr: NostrFollowGraph };
+export type UrbitFollowGraph = [UrbitID, UserTypeFull[]];
+export type NostrFollowGraph = [NostrID, NostrID[]];
+
 export interface UserProfile extends BasicProfile {
   pubkey: string;
   following: UserType[];
@@ -45,8 +56,7 @@ export type DateObj = { month: number; day: number; year?: number };
 export type ReplyPolicy = "everyone" | "following" | "mentioned";
 
 export type PostWrapper =
-  | { nostr: NostrPost }
-  | { urbit: { post: Poast; nostr?: NostrMetadata } };
+  { nostr: NostrPost } | { urbit: { post: Poast; nostr?: NostrMetadata } };
 export type NostrPost = {
   relay: string;
   event: NostrEvent;
@@ -126,7 +136,13 @@ export type PostFact =
 
 export type EngaFact = { add: NostrEvent[] } | { del: NostrEvent[] };
 
+export type FollowGraph = Array<FollowType>;
+export type DFollowGraph = {
+  urbit: UrbitFollowGraph[];
+  nostr: NostrFollowGraph[];
+};
 export type FolsFact =
+  | { graph: FollowGraph }
   | { "new-urbit": Enbowled<Deferred<FeedData>> }
   | { "new-nostr": NostrFollow }
   | { quit: string };
@@ -155,12 +171,19 @@ export type Deferred<T> = {
   msg: string;
 };
 export type Approved<T> = T | null;
+
+export type Disaggregated<T> = { urbit: T; nostr: T };
+
 // chat
 export type PeekDMsRes = Record<string, DMRaw>;
-export type DMJail = { muted: UrbitID[]; blocked: UrbitID[] }
-export type PeekDMInboxRes = { dms: PeekDMsRes, requests: DMRequests, jail: DMJail };
+export type DMJail = { muted: UrbitID[]; blocked: UrbitID[] };
+export type PeekDMInboxRes = {
+  dms: PeekDMsRes;
+  requests: DMRequests;
+  jail: DMJail;
+};
 export type DMRaw = {
-  fc: FC,
+  fc: FC;
   lastId: string | null;
   lastTs: number | null;
   lastRead: string | null;
@@ -170,8 +193,8 @@ export type DMRaw = {
   blocked: boolean;
   delivery: DeliveryStatusMap;
 };
-export type DeliveryStatusMap =  Record<string, DeliveryStatus>;
-export type DeliveryStatus =   "sending" | "pending" | "failed"
+export type DeliveryStatusMap = Record<string, DeliveryStatus>;
+export type DeliveryStatus = "sending" | "pending" | "failed";
 export type DM = {
   fc: FC;
   lastId: bigint | null;
@@ -183,12 +206,12 @@ export type DM = {
   blocked: boolean;
   delivery: DeliveryStatusMap;
 };
-export type DMs = Record<string, DM>
+export type DMs = Record<string, DM>;
 export type PeekDMRes = DMRaw;
 export type DMRequests = Record<string, DMRequest>;
-export type DMRequest = { peer: UrbitID, post: Poast };
+export type DMRequest = { peer: UrbitID; post: Poast };
 export type DMFact =
   | { init: PeekDMInboxRes }
   | { peer: DMRaw }
   | { requests: DMRequests }
-  | { error: string }
+  | { error: string };

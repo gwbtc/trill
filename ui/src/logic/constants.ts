@@ -1,4 +1,3 @@
-
 export const FeedPostCount = 50;
 
 export const MOBILE_BROWSER_REGEX =
@@ -30,3 +29,13 @@ export const PROFILES_SUB_NAME = "profiles";
 export const NOSTR_PAGE_SIZE = 200;
 export const GLOBAL_RELAY_URL = "wss://nostr.sortug.com";
 // export const GLOBAL_RELAY_URL = "ws://192.168.1.110:8080";
+export const RECOMMENDED_RELAYS = [
+  "wss://nos.lol/",
+  "wss://relay.damus.io/",
+  "wss://nostr.wine/",
+  "wss://nostr.bitcoiner.social/",
+  "wss://eden.nostr.land/",
+  "wss://relay.primal.net/",
+  "wss://relay.snort.social/",
+  "wss://yabu.me/",
+];

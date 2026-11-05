@@ -1,6 +1,7 @@
 // relays = provenance: which relay(s) delivered this event.
 // Optional because plain events (scries, %event/%thread facts) don't carry it.
 export type Wevent = Event & { relays?: string[] };
+export type NostrID = { pubkey: string; npub: string };
 export type Event = {
   id: string; // hex, no 0x, 32bytes
   pubkey: string; // ""

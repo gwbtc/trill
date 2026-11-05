@@ -1,20 +1,30 @@
 import "@/styles/Messages.css";
-import { PatpAvatar } from "@/components/Avatar";
+import { UrbitAvatar } from "@/components/Avatar";
 import useLocalState from "@/state/state";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, LoaderCircle } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { abbreviatePatp, parseBigint } from "@/logic/utils";
 import type { FC } from "@/types/trill";
 import spinner from "@/assets/triangles.svg";
-import { fcToMessages, getDmDeliveryMap, type DmMessageView } from "@/logic/dms";
-import { patpToFallbackUID } from "@/logic/gw";
-import { ProfiledRender, useDmProfileToggle, useRenderCount } from "@/logic/renderProfile";
+import {
+  fcToMessages,
+  getDmDeliveryMap,
+  type DmMessageView,
+} from "@/logic/dms";
+import { patpToFallbackUID, patpToUID } from "@/logic/gw";
+import {
+  ProfiledRender,
+  useDmProfileToggle,
+  useRenderCount,
+} from "@/logic/renderProfile";
 import DmComposer from "./Composer";
 import DmConversationHeader, { openUserModal } from "./Header";
 import DmInlinePanel, { buildRichDmMessages } from "./InlinePanel";
 import DmThread from "./Thread";
 import type { ChatData, DmPanel } from "./types";
+import type { UrbitID } from "@/types/nostrill";
+import toast from "react-hot-toast";
 
 const EMPTY_DM_FEED: FC = {
   start: null,
@@ -66,13 +76,10 @@ function Loader({ activePeer }: { activePeer: string }) {
   }));
   const [data, setData] = useState<ChatData>();
 
-  function closeConversation() {
-    navigate("/dms");
-  }
-
   useEffect(() => {
     if (!api || !activePeer) return;
-    api.scryDM(activePeer)
+    api
+      .scryDM(activePeer)
       .then((res) => {
         if ("ok" in res) {
           const cooked = parseBigint(res.ok);
@@ -97,7 +104,34 @@ function Loader({ activePeer }: { activePeer: string }) {
     );
   }, [lastChatFact]);
 
-  if (!data) {
+  if (!data)
+    return <FallBackUser api={api} patp={activePeer} navigate={navigate} />;
+
+  return <ChatUser data={data} navigate={navigate} />;
+}
+function FallBackUser({
+  patp,
+  api,
+  navigate,
+}: {
+  api: any;
+  patp: string;
+  navigate: (s: string) => void;
+}) {
+  const [gwid, setGwid] = useState<UrbitID>();
+  function closeConversation() {
+    navigate("/dms");
+  }
+  async function fetchGwid() {
+    const mgwid = await patpToUID(api, patp);
+    if ("error" in mgwid) toast.error(mgwid.error);
+    else setGwid(mgwid.ok);
+  }
+  useEffect(() => {
+    fetchGwid();
+  }, [patp]);
+  if (!gwid) return <LoaderCircle className="connections-spinner" size={24} />;
+  else
     return (
       <div id="screen-messages" className="trill-screen messages-screen">
         <div className="dm-conversation-shell">
@@ -111,9 +145,11 @@ function Loader({ activePeer }: { activePeer: string }) {
               <ArrowLeft size={20} strokeWidth={2} />
             </button>
             <button type="button" className="dm-peer-button">
-              <PatpAvatar patp={activePeer} size={38} />
+              <UrbitAvatar uid={gwid} size={38} />
               <span className="dm-peer-copy">
-                <span className="dm-peer-name">{activePeer}</span>
+                <span className="dm-peer-name">
+                  {gwid.gwid.english.abridged}
+                </span>
                 <span className="dm-peer-id mono" />
               </span>
             </button>
@@ -128,12 +164,15 @@ function Loader({ activePeer }: { activePeer: string }) {
         </div>
       </div>
     );
-  }
-
-  return <ChatUser data={data} navigate={navigate} />;
 }
 
-function ChatUser({ data, navigate }: { data: ChatData; navigate: (s: string) => void }) {
+function ChatUser({
+  data,
+  navigate,
+}: {
+  data: ChatData;
+  navigate: (s: string) => void;
+}) {
   useDmProfileToggle();
   const { api, our, setModal } = useLocalState((s) => ({
     api: s.api,
@@ -145,7 +184,9 @@ function ChatUser({ data, navigate }: { data: ChatData; navigate: (s: string) =>
   const [searchQuery, setSearchQuery] = useState("");
   const [muted, setMuted] = useState(data.muted);
   const [blocked, setBlocked] = useState(data.blocked);
-  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<
+    string | null
+  >(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const threadBottomRef = useRef<HTMLDivElement>(null);
@@ -157,10 +198,17 @@ function ChatUser({ data, navigate }: { data: ChatData; navigate: (s: string) =>
   const name = data.peer.gwid.english.abridged || data.peer.patp;
   const id2 = abbreviatePatp(data.peer.patp);
   const messages = useMemo(
-    () => fcToMessages(data.fc, our?.patp || "", data.lastRead, getDmDeliveryMap(data)),
+    () =>
+      fcToMessages(
+        data.fc,
+        our?.patp || "",
+        data.lastRead,
+        getDmDeliveryMap(data),
+      ),
     [data.fc, data.delivery, our?.patp, data.lastRead],
   );
-  const pendingApproval = messages.length === 1 && messages[0]?.delivery === "pending";
+  const pendingApproval =
+    messages.length === 1 && messages[0]?.delivery === "pending";
   const richMessages = useMemo(
     () => buildRichDmMessages(data.fc, our?.patp || ""),
     [data.fc, our?.patp],
@@ -272,7 +320,9 @@ function ChatUser({ data, navigate }: { data: ChatData; navigate: (s: string) =>
   useEffect(() => {
     if (!highlightedMessageId) return;
     const timeout = window.setTimeout(() => {
-      setHighlightedMessageId((current) => current === highlightedMessageId ? null : current);
+      setHighlightedMessageId((current) =>
+        current === highlightedMessageId ? null : current,
+      );
     }, 4800);
     return () => window.clearTimeout(timeout);
   }, [highlightedMessageId]);

@@ -1,5 +1,5 @@
 /-  sur=nostr
-/+  common=json-common, sr=sortug
+/+  common=json-common, sr=sortug, bip=bip-bip
 |%
 ++  en
 =,  enjs:format  
@@ -24,6 +24,13 @@
   ::  bytes) and every hex field must be zero-padded to its full
   ::  width, or the serialization (and so the id) is wrong
   ::
+  ++  full-id  |=  pubkey=@ux  ^-  json
+  %-  pairs
+  :~
+      pubkey+(hex:en:common pubkey)
+      npub+s+(crip (ux-to-npub:bip pubkey))
+  ==
+
   ++  raw-event  |=  raw-event:sur
     :-  %a  :~
       [%n '0']
@@ -47,6 +54,7 @@
     %:  pairs
       id+(hex:en:common id.e)
       pubkey+(hex:en:common pubkey.e)
+      npub+s+(crip (ux-to-npub:bip pubkey.e))
       sig+(hexn:en:common 128 sig.e)
       ['created_at' (numb created-at.e)]
       kind+(numb kind.e)

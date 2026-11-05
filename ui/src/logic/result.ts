@@ -4,6 +4,7 @@ import type { Result } from "@/types/ui";
 // are truthy, so `if (res)` can't detect a failure. Use this inside a
 // try/catch to turn an { error } into a thrown Error.
 export function unwrap<T>(res: Result<T>): T {
+  console.log(res, "unwrap");
   if ("error" in res) throw new Error(res.error);
   return res.ok;
 }

@@ -6,6 +6,7 @@ import Icon from "@/components/Icon";
 import toast from "react-hot-toast";
 import type { FC } from "@/types/trill";
 import { useRelayActions } from "@/hooks/useRelayActions";
+import { RECOMMENDED_RELAYS } from "@/logic/constants";
 
 // loading toasts never time out; the completion toast reuses the id to replace it
 const SYNC_TOAST = "nostr-sync";
@@ -63,8 +64,9 @@ export default function Nostr() {
             If you don't know of any, we recommend the following public relays:
           </p>
           <ul>
-            <li>wss://nos.lol</li>
-            <li>wss://relay.damus.io</li>
+            {RECOMMENDED_RELAYS.map((r) => (
+              <li key={r}>{r}</li>
+            ))}
           </ul>
         </div>
       </div>
@@ -101,14 +103,23 @@ export default function Nostr() {
       </div>
     );
   }
-  return <NostrFeed resync={handleResync} data={nostrFeed} fetching={fetchingPosts !== ""}/>
+  return (
+    <NostrFeed
+      resync={handleResync}
+      data={nostrFeed}
+      fetching={fetchingPosts !== ""}
+    />
+  );
 }
 
-
-
-export function NostrFeed({ resync,fetching, data }: { fetching: boolean; data: FC;
-  resync: () => Promise<void>
-
+export function NostrFeed({
+  resync,
+  fetching,
+  data,
+}: {
+  fetching: boolean;
+  data: FC;
+  resync: () => Promise<void>;
 }) {
   // TODO remove the "refetch" stuff
   // Show feed with resync button in header
