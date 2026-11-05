@@ -30,7 +30,7 @@ import type {
   UserProfile,
   UserType,
 } from "@/types/nostrill";
-import type { AsyncRes } from "@/types/ui";
+import type { AsyncRes, NostrPID } from "@/types/ui";
 import type { Rope, Skein } from "@/types/hark";
 import type { TopicPrefs } from "@/logic/topics";
 import type { DebateKey, NewDebate } from "@/logic/debates";
@@ -530,9 +530,18 @@ export default class IO {
     return await this.poke({ rela: json });
   }
   // nostr writes
-  async relayReply(content: string, parent: string, relays: number[]) {
+  async relayReply(
+    content: string,
+    root: NostrPID,
+    parent: NostrPID | null,
+    pChain: string[],
+    relays: number[],
+  ) {
     const json = {
-      do: { relays, action: { "send-reply": { "ev-id": parent, content } } },
+      do: {
+        relays,
+        action: { "send-reply": { content, root, parent, "p-chain": pChain } },
+      },
     };
     return await this.poke({ rela: json });
   }

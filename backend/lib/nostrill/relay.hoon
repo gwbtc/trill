@@ -719,8 +719,8 @@
   ^-  (quip card _state)
   =/  nclient  ~(. nostr-client [state bowl])
   |^
-  ?:  ?=(%send-prof -.action.rh)  :_  state  (send-prof relays.rh)
-  ?:  ?=(%send-post -.action.rh)  :_  state  (send-post relays.rh +.action.rh)
+  ?:  ?=(%send-prof -.action.rh)  :_  state   (send-prof relays.rh)
+  ?:  ?=(%send-post -.action.rh)  :_  state   (send-post relays.rh +.action.rh)
   ?:  ?=(%send-reply -.action.rh)  :_  state  (send-reply relays.rh +.action.rh)
   ::  %get
   =^  cards  state  (do-get relays.rh name.action.rh p.action.rh)
@@ -730,6 +730,11 @@
   ::  +send-event-to-relays: send one event to every connected wid,
   ::    returning the cards and the urls actually reached
   ::
+  ++  url-from-wid  |=  wid=@  ^-  (unit @t)
+    =/  urelay  (relay-by-wid wid)
+    ?~  urelay  ~
+    `url.u.urelay
+
   ++  send-event-to-relays
     |=  [wids=(list @ud) =event:nsur]
     ^-  [(list card) urls=(list @t)]
@@ -762,19 +767,39 @@
     cards
   ::
   ++  send-reply
-    |=  [wids=(list @ud) ev-id=@ux content=@t]
+    |=  [wids=(list @ud) content=@t nostr-reply:ui]
     ^-  (list card)
-    ::  Tags must be included in the signed preimage, not added afterwards.
-    =/  scoww  scow:parsing:sr
-    =/  parent-id  (crip (scoww(min-chars 64) %ux ev-id))
-    =/  tags=(list tag:nsur)  ~[['e' parent-id '' 'reply' ~]]
-    =/  ts  (to-unix-secs:jikan:sr now.bowl)
-    =/  event
-      (finalize-event:evlib i.keys.state eny.bowl [pub.i.keys.state ts 1 tags content])
-    ~&  >  reply-event=event
-    =/  [cards=(list card) urls=(list @t)]  (send-event-to-relays wids event)
+    =/  ev-id  ?~  parent  ev.root  ev.u.parent
+    ::  Sign once: destination-specific hints would create different event IDs.
+    ::  Leave the reference hints empty until we have the referenced events' relays.
+    =/  event  (build-reply '' content root parent p-chain)
+    =/  [cs=(list card) urls=(list @t)]  (send-event-to-relays wids event)
+    ?~  urls  ~|  %no-connected-reply-relays  !!
     :-  (update-ui:cardslib [%nostr %sent-event urls event [%reply ev-id]])
-    cards
+    cs
+  ::
+  ++  build-reply
+    |=  [relay-url=@t content=@t nostr-reply:ui]
+    ^-  event:nsur
+    =/  scoww  scow:parsing:sr
+    =/  root-id  (crip (scoww(min-chars 64) %ux ev.root))
+    =/  root-pubkey  (crip (scoww(min-chars 64) %ux pubkey.root))
+    =/  root-tag=tag:nsur
+      ['e' root-id relay-url 'root' root-pubkey ~]
+    =/  participants  (~(put in (silt p-chain)) pubkey.root)
+    =?  participants  ?=(^ parent)
+      (~(put in participants) pubkey.u.parent)
+    =/  p-tags  %+  turn  ~(tap in participants)  |=  pk=@ux  ^-  tag:nsur
+      =/  hexs  (crip (scoww(min-chars 64) %ux pk))
+      ['p' hexs ~]
+    =/  tags=(list tag:nsur)
+      ?~  parent  [root-tag p-tags]
+      =/  parent-pk  (crip (scoww(min-chars 64) %ux pubkey.u.parent))
+      =/  parent-id  (crip (scoww(min-chars 64) %ux ev.u.parent))
+      =/  etag=tag:nsur  ['e' parent-id relay-url 'reply' parent-pk ~]
+      [root-tag etag p-tags]
+    =/  ts  (to-unix-secs:jikan:sr now.bowl)
+    (finalize-event:evlib i.keys.state eny.bowl [pub.i.keys.state ts 1 tags content])
   ::
   ++  send-prof
     |=  wids=(list @ud)

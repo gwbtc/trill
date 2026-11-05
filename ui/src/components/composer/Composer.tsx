@@ -42,6 +42,7 @@ import {
   serializeComposerContent,
 } from "./composerDom";
 import type { Wevent } from "@/types/nostr";
+import type { NostrPID } from "@/types/ui";
 
 function Composer({
   isAnon,
@@ -145,13 +146,13 @@ function Composer({
       }
     }
     if (composerData.type === "quote") {
-      if ("nostr" in composerData.post)
+      if ("nostr" in composerData.post) {
         return await api.addShareExt(
           content,
           "nostr",
           composerData.post.nostr.eventId,
         );
-      else {
+      } else {
         const p = composerData.post.trill;
         return await api.addQuote(content, p.host, p.id);
       }
@@ -165,7 +166,22 @@ function Composer({
     const wids = Object.values(relays)
       .map((r) => r.wid)
       .filter((w): w is number => w != null);
-    return await api!.relayReply(content, ev.id, wids);
+    console.log("ev we're replying to", ev);
+    const pChain: string[] = [];
+    let parent: NostrPID | null = null;
+    let root: NostrPID | null = null;
+    for (const t of ev.tags) {
+      console.log("thread tag", t);
+      if (t[0] === "p") pChain.push(t[1]);
+      if (t[0] === "e") {
+        if (t[3] === "root") {
+          parent = { pubkey: ev.pubkey, ev: ev.id };
+          root = { pubkey: t[4], ev: t[1] };
+        }
+      }
+    }
+    root = root ? root : { pubkey: ev.pubkey, ev: ev.id };
+    return await api!.relayReply(content, root, parent, pChain, wids);
   }
 
   const newestOwnPostId = () => {

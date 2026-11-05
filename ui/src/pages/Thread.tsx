@@ -11,6 +11,8 @@ import { decodeNostrEventId } from "@/logic/nostr";
 import { nostrEventInFeed } from "@/logic/nostrill";
 import PageHeader from "@/components/layout/PageHeader";
 import { useEffect } from "react";
+import { skipToken, useQuery } from "@tanstack/react-query";
+import type { Wevent } from "@/types/nostr";
 
 //TODO every post needs to know which relay it came from
 export default function ThreadLoader() {
@@ -44,7 +46,8 @@ export function NostrThreadLoader() {
   const eventId = id ? decodeNostrEventId(id) : null;
   // Subscribe to this event, so another note arriving in a feed does not
   // re-render the thread. Event objects are replaced when their data changes.
-  const event = useLocalState((s) => {
+  const cached = useQuery<Wevent>({ queryKey: ["nostr-event", eventId], queryFn: skipToken });
+  const storedEvent = useLocalState((s) => {
     if (!eventId) return undefined;
     for (const fc of [s.globalFeed, s.nostrFeed]) {
       const event = nostrEventInFeed(fc, eventId);
@@ -52,6 +55,7 @@ export function NostrThreadLoader() {
     }
     return undefined;
   });
+  const event = storedEvent ?? cached.data;
   if (!id) return <div id="screen-thread" className="trill-screen"><ThreadState title="Unable to load thread">No thread ID was provided.</ThreadState></div>;
   // the route carries the event id (hex, note or nevent); nostr feeds are
   // keyed by timestamp ids, so look the event up by hash

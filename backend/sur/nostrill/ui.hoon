@@ -72,13 +72,15 @@
   $:  relays=(list @ud)  ::  list of wids
       action=relay-order
   ==
++$  nostr-pid    [pubkey=@ux ev=@ux]
++$  nostr-reply  [root=nostr-pid parent=(unit nostr-pid) p-chain=(list @ux)]
 +$  relay-order
     $%  [%get name=@t p=relay-get]
         :: sending a post from our urbit feed
         [%send-post host=@p id=@da]
         ::  sending profile
         [%send-prof ~]
-        [%send-reply ev-id=@ux content=@t]
+        [%send-reply content=@t nostr-reply]
         ::
         :: [%send-rp ev-id=@ux]
         :: [%send-quote ev-id=@ux content=@t]

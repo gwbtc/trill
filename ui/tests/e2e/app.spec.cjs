@@ -1005,6 +1005,24 @@ test("post images open full-size without navigating and support dismissal", asyn
 });
 
 
+test("rejected relay events show the relay reason without generating a link", async ({ page }, testInfo) => {
+  feedFixtureKind = "state2";
+  state2Snapshot = state2Fixture();
+  const links = [];
+  page.on("console", message => {
+    if (message.type() === "log" && message.text().startsWith("nevent ")) links.push(message.text());
+  });
+  await page.goto("fols");
+  await expect(page.locator(".follow-card")).toHaveCount(3);
+  const response = { relay: "wss://nos.lol/", accepted: false, msg: "invalid: signature verification failed", id: { pubkey: "6baea8bc90fab545f78f8af69d74fc36be9b592688ffb9ff6de0733da0d0efb5", npub: "" } };
+  state2Facts.push({ nostr: { "sent-res": response } });
+  await expect(page.getByText("wss://nos.lol/: invalid: signature verification failed", { exact: true })).toBeVisible();
+  expect(links).toHaveLength(0);
+  await page.screenshot({ path: testInfo.outputPath("relay-rejection.png") });
+  state2Facts.push({ nostr: { "sent-res": { ...response, accepted: true, msg: "" } } });
+  await expect.poll(() => links.length).toBe(1);
+});
+
 test("a Nostr thread does not reparse its post for unrelated profile updates", async ({ page }, testInfo) => {
   feedFixtureKind = "state2";
   state2Snapshot = state2Fixture();
@@ -1154,4 +1172,120 @@ test("legacy Nostr ancestry keeps an available root when the immediate parent is
   await expect(page.getByRole("button", { name: "Retry earlier posts" })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: testInfo.outputPath("nostr-missing-parent-mobile.png") });
+});
+
+function replyFixture() {
+  const { finalizeEvent } = require("nostr-tools");
+  const { root } = ancestorFixture();
+  const key = new Uint8Array(32); key[31] = 1;
+  const note = (content, tags, time = 1700000001) => finalizeEvent({ kind: 1, content, tags, created_at: time }, key);
+  const direct = note("Direct reply from source relay", [["e", root.id, "", "root", root.pubkey]]);
+  const legacy = note("Legacy direct reply", [["e", root.id]]);
+  const nested = note("Not a direct reply", [["e", root.id, "", "root"], ["e", direct.id, "", "reply"]]);
+  const mention = note("Mention, not a reply", [["e", root.id, "", "mention"]]);
+  const live = note("Live reply after EOSE", [["e", root.id, "", "root"]], 1700000002);
+  return { root, direct, legacy, nested, mention, live };
+}
+
+test("Nostr replies stream directly from the source relay and exclude mentions and descendants", async ({ page }, testInfo) => {
+  feedFixtureKind = "state2";
+  state2Snapshot = state2Fixture();
+  const { root, direct, legacy, nested, mention, live } = replyFixture();
+  state2Snapshot.nostr.feeds.timeline["wss://one.example"].feed = [];
+  state2Snapshot.nostr.feeds.timeline["wss://two.example"].feed = [root];
+  const requests = [];
+  let stream;
+  let closes = 0;
+  await page.routeWebSocket(/wss:\/\/(one|two)\.example/, ws => {
+    ws.onClose(() => { closes++; });
+    ws.onMessage(raw => {
+      const msg = JSON.parse(String(raw));
+      if (msg[0] !== "REQ") return;
+      requests.push({ url: ws.url(), filters: msg.slice(2) });
+      if (msg[2]["#e"]?.includes(root.id)) {
+        stream = { ws, id: msg[1] };
+        for (const event of [direct, legacy, nested, mention, direct]) ws.send(JSON.stringify(["EVENT", msg[1], event]));
+      }
+      ws.send(JSON.stringify(["EOSE", msg[1]]));
+    });
+  });
+  await page.goto(`t/n/${root.id}`);
+  const replies = page.getByRole("region", { name: "Replies", exact: true });
+  await expect(replies.getByText(direct.content, { exact: true })).toBeVisible();
+  await expect(replies.getByText(legacy.content, { exact: true })).toBeVisible();
+  await expect(replies.locator("article.trill-post")).toHaveCount(2);
+  await expect(replies.getByText(nested.content, { exact: true })).toHaveCount(0);
+  await expect(replies.getByText(mention.content, { exact: true })).toHaveCount(0);
+  expect(requests).toEqual([{ url: "wss://two.example/", filters: [{ kinds: [1], "#e": [root.id], limit: 100 }] }]);
+  stream.ws.send(JSON.stringify(["EVENT", stream.id, live]));
+  await expect(replies.getByText(live.content, { exact: true })).toBeVisible();
+  await expect(replies.locator("article.trill-post")).toHaveCount(3);
+  await page.screenshot({ path: testInfo.outputPath("nostr-live-replies.png") });
+  // Following a reply uses its cached raw event, retaining the source relay.
+  await replies.getByText(direct.content, { exact: true }).click();
+  await expect(page.getByRole("region", { name: "Selected post", exact: true })).toContainText(direct.content);
+  await expect.poll(() => closes).toBeGreaterThanOrEqual(1);
+  expect(requests.every(request => request.url === "wss://two.example/")).toBe(true);
+  expect(requests.some(request => request.filters.some(filter => filter.ids?.includes(direct.id)))).toBe(false);
+});
+
+test("Nostr reply subscription failures preserve the selected post and can be retried", async ({ page }, testInfo) => {
+  feedFixtureKind = "state2";
+  state2Snapshot = state2Fixture();
+  const { root } = replyFixture();
+  state2Snapshot.nostr.feeds.timeline["wss://one.example"].feed = [root];
+  state2Snapshot.nostr.feeds.timeline["wss://two.example"].feed = [];
+  let attempts = 0;
+  await page.routeWebSocket(/wss:\/\/one\.example/, ws => ws.onMessage(raw => {
+    const msg = JSON.parse(String(raw));
+    if (msg[0] !== "REQ") return;
+    attempts++;
+    ws.send(JSON.stringify(attempts === 1 ? ["CLOSED", msg[1], "restricted: fixture"] : ["EOSE", msg[1]]));
+  }));
+  await page.goto(`t/n/${root.id}`);
+  await expect(page.getByRole("region", { name: "Selected post", exact: true })).toContainText(root.content);
+  await expect(page.getByRole("button", { name: "Retry replies" })).toBeVisible();
+  await page.getByRole("button", { name: "Retry replies" }).click();
+  await expect(page.getByText("No direct replies returned by this relay.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry replies" })).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath("nostr-empty-replies-mobile.png") });
+});
+
+test("Nostr composer snippets retain profiles and receive metadata updates", async ({ page }, testInfo) => {
+  feedFixtureKind = "state2";
+  state2Snapshot = state2Fixture();
+  const picture = "https://avatars.example/nostr-friend.svg";
+  const updatedPicture = "https://avatars.example/nostr-friend-updated.svg";
+  await page.route("https://avatars.example/**", route => route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect width="48" height="48" fill="purple"/></svg>' }));
+  state2Snapshot.nostr["user-map"][STATE2_KEY].profile.picture = picture;
+  await page.goto("f");
+  const note = page.locator("#home-feed article.trill-post").filter({ hasText: "First same-second note" });
+  await expect(note.locator("header .name")).toHaveText("Nostr friend");
+  await note.locator(".reply-action").click();
+  const reply = page.locator("#composer .reply-snippet");
+  await expect(reply.locator("header .name")).toHaveText("Nostr friend");
+  await expect(reply.locator("img").first()).toHaveAttribute("src", picture);
+  state2Snapshot.nostr["user-map"][STATE2_KEY].profile = { name: "Updated friend", picture: updatedPicture, about: "Updated profile" };
+  state2Facts.push({ nostr: { data: state2Snapshot.nostr } });
+  await expect(reply.locator("header .name")).toHaveText("Updated friend");
+  await expect(reply.locator("img").first()).toHaveAttribute("src", updatedPicture);
+  await page.screenshot({ path: testInfo.outputPath("nostr-reply-profile.png") });
+  await page.locator("#composer .clear-context").click();
+  await note.locator(".quote-action").click();
+  const quote = page.locator("#composer .composer-snippet");
+  await expect(quote.locator("header .name")).toHaveText("Updated friend");
+  await expect(quote.locator("img").first()).toHaveAttribute("src", updatedPicture);
+  await page.locator("#composer .clear-context").click();
+  await page.routeWebSocket(/wss:\/\/one\.example/, ws => ws.onMessage(raw => {
+    const msg = JSON.parse(String(raw));
+    if (msg[0] === "REQ") ws.send(JSON.stringify(["EOSE", msg[1]]));
+  }));
+  await page.goto(`t/n/${"d".repeat(64)}`);
+  await page.locator("#thread-reply-composer").click();
+  const modalReply = page.locator("#compose-modal .reply-snippet");
+  await expect(modalReply.locator("header .name")).toHaveText("Updated friend");
+  await expect(modalReply.locator("img").first()).toHaveAttribute("src", updatedPicture);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath("nostr-reply-profile-mobile.png") });
 });

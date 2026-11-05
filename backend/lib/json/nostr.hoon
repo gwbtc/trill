@@ -380,8 +380,16 @@
       ==
   ++  reply
     %-  ot
-    :~  ev-id+hex:de:common
+    :~
         content+so
+        root+pid
+        parent+(mu pid)
+        p-chain+(ar hex:de:common)
+    ==
+  ++  pid
+    %-  ot  :~
+      pubkey+hex:de:common
+      ev+hex:de:common
     ==
   --
 --

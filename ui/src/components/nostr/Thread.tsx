@@ -14,8 +14,7 @@ import "@/styles/NostrThread.css";
 import { useThreadStyle } from "@/hooks/useThreadStyle";
 import ThreadRootPost from "@/components/thread/ThreadRootPost";
 import ThreadReplyComposer from "@/components/thread/ThreadReplyComposer";
-import { LinearThreadReplies, NestedThreadReplies } from "@/components/thread/ThreadReplies";
-import { flattenThreadChildren } from "@/logic/threadTree";
+import { useNostrReplies } from "@/hooks/useNostrReplies";
 
 type Props = {
   event: NostrEvent;
@@ -34,6 +33,7 @@ export default function Thread({ event, relays }: Props) {
   const fn = useMemo(() => eventToFn({ ...event, relays }), [event, relays]);
   const sources = useMemo(() => [...new Set([...relays, ...configuredRelays.split("\n").filter(Boolean)])], [relays, configuredRelays]);
   const context = useNostrAncestors(event, sources);
+  const replies = useNostrReplies(event.id, relays[0] ?? sources[0], event.kind === 1);
   const selectedRef = useRef<HTMLElement>(null);
   const centered = useRef(false);
   const interacted = useRef(false);
@@ -90,8 +90,20 @@ export default function Thread({ event, relays }: Props) {
         {context.loading && <p className="nostr-thread-context-note" role="status">Loading earlier posts…</p>}
         {context.incomplete && !context.gapAfterRoot && <ContextGap retry={context.retry} />}
         <section ref={selectedRef} className="nostr-thread-focus" role="region" aria-label="Selected post" tabIndex={-1} data-thread-event={event.id}>
-          <Head node={fn} profile={profile} relay={relays[0]} />
+          <Head node={fn} profile={profile} relay={relays[0]} replyIds={replies.events.map(note => note.id)} />
         </section>
+        {event.kind === 1 && <section aria-label="Replies" className="nostr-thread-replies">
+          <h2>Replies</h2>
+          <ReplyList events={replies.events} />
+          {replies.loading && <p className="nostr-thread-context-note" role="status">Loading replies…</p>}
+          {replies.error && <div className="nostr-thread-context-note" role="status">
+            <p>Couldn’t load replies from this relay.</p>
+            <button type="button" aria-label="Retry replies" onClick={replies.retry}>Try again</button>
+          </div>}
+          {!replies.available && <p className="nostr-thread-context-note">No source relay is available to check for replies.</p>}
+          {replies.available && !replies.loading && !replies.error && replies.events.length === 0 && <p className="nostr-thread-context-note">No direct replies returned by this relay.</p>}
+          {replies.limited && <p className="nostr-thread-context-note">Reply history may be incomplete.</p>}
+        </section>}
       </div>
     </>
   );
@@ -110,43 +122,29 @@ function ContextGap({ retry }: { retry: () => void }) {
   </div>;
 }
 
-function Head({
-  node,
-  profile,
-  relay,
-}: {
+function ReplyList({ events }: { events: Wevent[] }) {
+  const threadStyle = useThreadStyle();
+  return <div id="thread-children" className={`thread-replies-${threadStyle}`}>
+    {events.map(event => <Reply key={event.id} event={event} spine={threadStyle !== "linear"} />)}
+  </div>;
+}
+
+const Reply = memo(function Reply({ event, spine }: { event: Wevent; spine: boolean }) {
+  const post = useMemo(() => eventToPoast(event), [event]);
+  const profile = useLocalState(s => s.profiles.get(event.pubkey));
+  return post ? <Post poast={post} user={{ nostr: event.pubkey }} profile={profile} spine={spine} /> : null;
+});
+
+function Head({ node, profile, relay, replyIds }: {
   node: FullNode;
   profile?: UserProfile;
   relay?: string;
+  replyIds: string[];
 }) {
-  const threadStyle = useThreadStyle();
-
-  return (
-    <>
-      <ThreadRootPost
-        poast={toFlat(node)}
-        user={{ nostr: node.author }}
-        profile={profile}
-        provenance={relay}
-      />
-      <NostrThreadReplyComposer node={node} />
-      <div id="thread-children" className={`thread-replies-${threadStyle}`}>
-        {threadStyle === "linear" ? (
-          <LinearThreadReplies
-            nodes={flattenThreadChildren(node)}
-            userForNode={(reply) => ({ nostr: reply.author })}
-          />
-        ) : (
-          <div id="tail">
-            <NestedThreadReplies
-              nodes={Object.values(node.children || {})}
-              userForNode={(reply) => ({ nostr: reply.author })}
-            />
-          </div>
-        )}
-      </div>
-    </>
-  );
+  return <>
+    <ThreadRootPost poast={{ ...toFlat(node), children: replyIds }} user={{ nostr: node.author }} profile={profile} provenance={relay} />
+    <NostrThreadReplyComposer node={node} />
+  </>;
 }
 
 function NostrThreadReplyComposer({ node }: { node: FullNode }) {

@@ -1,24 +1,11 @@
-import type { NostrMetadata, NostrPost } from "@/types/nostrill";
+import type { NostrMetadata } from "@/types/nostrill";
 import Post from "../Post";
 import useLocalState from "@/state/state";
 
-export default NostrPost;
-function NostrPost({ data }: { data: NostrPost }) {
-  const profile = useLocalState((s) => s.profiles.get(data.event.pubkey));
-
-  return (
-    <Post
-      user={{ nostr: data.event.pubkey }}
-      poast={data.post}
-      profile={profile}
-    />
-  );
-}
-
 export function NostrSnippet({ meta }: { meta: NostrMetadata }) {
+  const profile = useLocalState((s) => s.profiles.get(meta.pubkey));
   const user = { nostr: meta.pubkey };
-  // TODO need a PostData sort of loader here
 
-  if (meta.post) return <Post user={user} poast={meta.post} />;
+  if (meta.post) return <Post user={user} poast={meta.post} profile={profile} />;
   else return <div className="nostr snippet">{meta.eventId}</div>;
 }

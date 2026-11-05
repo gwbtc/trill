@@ -548,17 +548,22 @@ export const useStore = creator((set, get) => ({
             }
             if ("drop" in fact.nostr) set({ lastDroppedWs: fact.nostr.drop });
             if ("sent-event" in fact.nostr) {
+              const publication = fact.nostr["sent-event"];
+              if (import.meta.env.DEV && "reply" in publication.type) {
+                // Keep the exact signed event available for hash/signature
+                // checks; an OK acknowledgement alone does not prove read-back.
+                console.info("nostr:reply-event", JSON.stringify(publication.event));
+              }
             }
             if ("sent-res" in fact.nostr) {
-              // "a2a5b56e50d4779052bd391216e8de9f91e8bf5bd91e6d8215b3b7928f7a7df2"
-              // nevent1qvzqqqqqqypzqfunmmncz0r0w6cu4sn9m6maxum3vgh4ynhhmfuw4vtf0r0tux59qqsqwcrwhuf4eh3c75qqcwd72kkyculv05rhspusg9w8uhjp8a8hucc7yecj8
-              const d = {
-                id: fact.nostr["sent-res"].id.pubkey,
-                pubkey: get().pubkey,
-                kind: 1,
-              };
-              const nevent = generateNevent(d.id, d.pubkey, d.kind);
-              console.log("nevent", nevent);
+              const response = fact.nostr["sent-res"];
+              if (!response.accepted) {
+                toast.error(`${response.relay}: ${response.msg || "Relay rejected the event"}`);
+                console.warn("Relay rejected event", response);
+              } else {
+                const nevent = generateNevent(response.id.pubkey, get().pubkey, 1);
+                console.log("nevent", nevent);
+              }
             }
             if ("event" in fact.nostr) {
               // console.log("san event", fact.nostr.event);

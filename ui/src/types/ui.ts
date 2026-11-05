@@ -15,13 +15,14 @@ export type ComposerData =
   | { type: "card"; card: SharedCard }
   // posting about a trending topic: a plain post, the headline quoted
   | { type: "topic"; topic: TopicItem };
-export type SPID = TrillPID | NostrPID;
+export type SPID = TrillPID | { nostr: NostrMetadata };
 
 export interface TrillPID {
   trill: Poast;
 }
 export interface NostrPID {
-  nostr: NostrMetadata;
+  pubkey: string;
+  ev: string;
 }
 export interface Guanxi {
   trill: Relationship;

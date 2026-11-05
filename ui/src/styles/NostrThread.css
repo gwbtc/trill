@@ -2,7 +2,8 @@
   padding-block-end: 50dvh;
 }
 
-.nostr-thread-ancestors > h2 {
+.nostr-thread-ancestors > h2,
+.nostr-thread-replies > h2 {
   margin: 0;
   padding: 20px 20px 8px;
   color: var(--color-text-secondary);
