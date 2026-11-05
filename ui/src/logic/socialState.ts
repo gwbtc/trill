@@ -5,7 +5,7 @@ import type {
 } from "@/types/nostrill";
 import type { FC } from "@/types/trill";
 import { patpToFallbackUID } from "./gw";
-import { eventsToFc } from "./nostrill";
+import { addEventToFc, eventsToFc, mergeEventRelays } from "./nostrill";
 
 export const isRecord = (value: unknown): value is Record<string, any> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
@@ -101,6 +101,7 @@ export function parseNostrData(raw: unknown): NostrData {
 // making author caches available to profiles, including paginated requests.
 export function mergeSourcedFeeds(data: NostrData, feeds: NostrFeeds): NostrData {
   const grouped = new Map<string, Map<string, Wevent>>();
+  const changed = new Set<string>();
   for (const sources of Object.values(feeds)) {
     if (!isRecord(sources)) continue;
     for (const [url, source] of Object.entries(sources)) {
@@ -113,12 +114,17 @@ export function mergeSourcedFeeds(data: NostrData, feeds: NostrFeeds): NostrData
           grouped.set(event.pubkey, notes);
         }
         const old = notes.get(event.id);
-        notes.set(event.id, { ...event, relays: [...new Set([...(old?.relays ?? []), ...(event.relays ?? []), url])] });
+        const next = mergeEventRelays(old, event, url);
+        if (next !== old) {
+          notes.set(event.id, next);
+          changed.add(event.pubkey);
+        }
       }
     }
   }
   const users = new Map(data.users);
   for (const [id, notes] of grouped) {
+    if (!changed.has(id)) continue;
     const prev = users.get(id) ?? { id: { pubkey: id, npub: "" }, following: null, profile: null, other: [] };
     users.set(id, { ...prev, feed: [...notes.values()] });
   }
@@ -126,6 +132,7 @@ export function mergeSourcedFeeds(data: NostrData, feeds: NostrFeeds): NostrData
 }
 
 const userViews = new WeakMap<NostrUserData, { profile?: UserProfile; feed: FC }>();
+const userFeeds = new WeakMap<Wevent[], FC>();
 function projectNostrUser(data: NostrUserData) {
   const cached = userViews.get(data);
   if (cached) return cached;
@@ -136,16 +143,35 @@ function projectNostrUser(data: NostrUserData) {
     followingCount: data.following?.length ?? 0, followingKnown: data.following !== null,
     followers: [], followerCount: 0, followersKnown: false,
   } : undefined;
-  const view = { profile, feed: eventsToFc(data.feed) };
+  let feed = userFeeds.get(data.feed);
+  if (!feed) {
+    feed = eventsToFc(data.feed);
+    userFeeds.set(data.feed, feed);
+  }
+  const view = { profile, feed };
   userViews.set(data, view);
   return view;
 }
+
+const nostrGraphRows = new WeakMap<string[], DFollowGraph["nostr"][number]>();
+const nativeGraphs = new WeakMap<FollowGraph, WeakMap<Map<string, UserProfile>, DFollowGraph["urbit"]>>();
+function reuseMap<K, V>(previous: Map<K, V> | undefined, next: Map<K, V>): Map<K, V> {
+  return previous?.size === next.size && [...next].every(([key, value]) => previous.get(key) === value)
+    ? previous : next;
+}
+function reuseArray<T>(previous: T[] | undefined, next: T[]): T[] {
+  return previous?.length === next.length && next.every((value, i) => previous[i] === value) ? previous : next;
+}
+type SocialViews = {
+  profiles: Map<string, UserProfile>; nostrUserFeeds: Map<string, FC>;
+  followGraph: DFollowGraph; followedUsers: Set<string>; following: Disaggregated<Map<string, FC>>;
+};
 
 // These shared rendering views are derived once per social-state update.
 // The raw Nostr subtree remains separate and preserves unknown values.
 export function projectSocial(
   nativeFeeds: Map<string, FC>, nativeGraph: FollowGraph,
-  nativeProfiles: Map<string, UserProfile>, nostr: NostrData, our = "",
+  nativeProfiles: Map<string, UserProfile>, nostr: NostrData, our = "", previous?: SocialViews,
 ) {
   const profiles = new Map(nativeProfiles);
   const nostrUserFeeds = new Map<string, FC>();
@@ -154,17 +180,30 @@ export function projectSocial(
     const view = projectNostrUser(data);
     if (view.profile) profiles.set(id, view.profile);
     nostrUserFeeds.set(id, view.feed);
-    if (data.following !== null)
-      graph.nostr.push([data.id, data.following.map(pubkey => ({ pubkey, npub: "" }))]);
+    if (data.following !== null) {
+      let row = nostrGraphRows.get(data.following);
+      if (!row) {
+        row = [data.id, data.following.map(pubkey => ({ pubkey, npub: "" }))];
+        nostrGraphRows.set(data.following, row);
+      }
+      graph.nostr.push(row);
+    }
   }
-  for (const [id, targets] of Object.entries(nativeGraph)) {
-    const user = parseUser({ urbit: nativeProfiles.get(id)?.urbitID ?? id });
-    if (!user || !("urbit" in user)) continue;
-    graph.urbit.push([user.urbit, targets.flatMap(target => {
-      const parsed = parseUser(target);
-      if (!parsed) return [];
-      return ["urbit" in parsed ? parsed : { nostr: { pubkey: parsed.nostr, npub: "" } }];
-    })]);
+  let byProfiles = nativeGraphs.get(nativeGraph);
+  if (!byProfiles) { byProfiles = new WeakMap(); nativeGraphs.set(nativeGraph, byProfiles); }
+  const nativeRows = byProfiles.get(nativeProfiles);
+  if (nativeRows) graph.urbit = nativeRows;
+  else {
+    for (const [id, targets] of Object.entries(nativeGraph)) {
+      const user = parseUser({ urbit: nativeProfiles.get(id)?.urbitID ?? id });
+      if (!user || !("urbit" in user)) continue;
+      graph.urbit.push([user.urbit, targets.flatMap(target => {
+        const parsed = parseUser(target);
+        if (!parsed) return [];
+        return ["urbit" in parsed ? parsed : { nostr: { pubkey: parsed.nostr, npub: "" } }];
+      })]);
+    }
+    byProfiles.set(nativeProfiles, graph.urbit);
   }
   const followedUsers = new Set([...nativeFeeds.keys(), ...nostr.following]);
   for (const ref of nativeGraph[our] ?? [])
@@ -174,7 +213,18 @@ export function projectSocial(
     urbit: nativeFeeds,
     nostr: new Map([...nostrUserFeeds].filter(([id]) => nostr.following.has(id))),
   };
-  return { profiles, following, followGraph: graph, followedUsers, nostrUserFeeds };
+  following.nostr = reuseMap(previous?.following.nostr, following.nostr);
+  graph.urbit = reuseArray(previous?.followGraph.urbit, graph.urbit);
+  graph.nostr = reuseArray(previous?.followGraph.nostr, graph.nostr);
+  const sameMembership = previous?.followedUsers.size === followedUsers.size &&
+    [...followedUsers].every(id => previous.followedUsers.has(id));
+  return {
+    profiles: reuseMap(previous?.profiles, profiles),
+    nostrUserFeeds: reuseMap(previous?.nostrUserFeeds, nostrUserFeeds),
+    following: previous?.following.urbit === following.urbit && previous.following.nostr === following.nostr ? previous.following : following,
+    followGraph: previous?.followGraph.urbit === graph.urbit && previous.followGraph.nostr === graph.nostr ? previous.followGraph : graph,
+    followedUsers: sameMembership ? previous.followedUsers : followedUsers,
+  };
 }
 
 export function applyNostrEvent(data: NostrData, event: Wevent): NostrData {
@@ -185,8 +235,14 @@ export function applyNostrEvent(data: NostrData, event: Wevent): NostrData {
   if (event.kind === 1 || event.kind === 667) {
     const feed = new Map(prev.feed.map(note => [note.id, note]));
     const old = feed.get(event.id);
-    feed.set(event.id, { ...event, relays: [...new Set([...(old?.relays ?? []), ...(event.relays ?? [])])] });
+    const note = mergeEventRelays(old, event);
+    if (note === old) return data;
+    feed.set(event.id, note);
     user.feed = [...feed.values()];
+    const previous = projectNostrUser(prev);
+    const nextFeed = addEventToFc(note, previous.feed);
+    userFeeds.set(user.feed, nextFeed);
+    userViews.set(user, { profile: previous.profile, feed: nextFeed });
   } else if (event.kind === 0) {
     try {
       const raw = JSON.parse(event.content);

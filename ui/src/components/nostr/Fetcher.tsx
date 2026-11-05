@@ -6,9 +6,8 @@ import type { Wevent } from "@/types/nostr";
 import NostrThread from "./Thread";
 
 export default function Thread({ id }: { id: string }) {
-  const relays = useLocalState((s) => s.relays);
   // TODO iterate over relays; for now the first one is asked
-  const relayUrl = Object.keys(relays)[0];
+  const relayUrl = useLocalState((s) => Object.keys(s.relays)[0]);
   const [data, setData] = useState<Wevent>();
   const [status, setStatus] = useState<"loading" | "done">("loading");
 

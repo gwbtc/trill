@@ -8,6 +8,7 @@ import TrillThread from "@/components/trill/Thread";
 import NostrThread from "@/components/nostr/Thread";
 import NostrThreadFetcher from "@/components/nostr/Fetcher";
 import { decodeNostrEventId } from "@/logic/nostr";
+import { nostrEventInFeed } from "@/logic/nostrill";
 import PageHeader from "@/components/layout/PageHeader";
 import { useEffect } from "react";
 
@@ -38,24 +39,27 @@ export default function ThreadLoader() {
 }
 
 export function NostrThreadLoader() {
-  const { globalFeed, nostrFeed } = useLocalState((s) => ({
-    globalFeed: s.globalFeed,
-    nostrFeed: s.nostrFeed,
-  }));
   const params = useParams<{ id: string }>();
   const { id } = params;
+  const eventId = id ? decodeNostrEventId(id) : null;
+  // Subscribe to this event, so another note arriving in a feed does not
+  // re-render the thread. Event objects are replaced when their data changes.
+  const event = useLocalState((s) => {
+    if (!eventId) return undefined;
+    for (const fc of [s.globalFeed, s.nostrFeed]) {
+      const event = nostrEventInFeed(fc, eventId);
+      if (event) return event;
+    }
+    return undefined;
+  });
   if (!id) return <ErrorPage msg="No thread id passed" />;
   // the route carries the event id (hex, note or nevent); nostr feeds are
   // keyed by timestamp ids, so look the event up by hash
-  const eventId = decodeNostrEventId(id);
   if (!eventId) return <ErrorPage msg="Unknown thread id format" />;
-  const known = [globalFeed, nostrFeed]
-    .flatMap((fc) => Object.values(fc.feed))
-    .find((p) => p.hash === eventId && p.event);
-  if (known?.event)
+  if (event)
     return (
       <div id="screen-thread" className="trill-screen">
-        <NostrThread event={known.event} relays={known.event.relays ?? []} />
+        <NostrThread key={eventId} event={event} relays={event.relays ?? []} />
       </div>
     );
   return (

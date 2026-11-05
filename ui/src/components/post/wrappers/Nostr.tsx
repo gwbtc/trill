@@ -4,8 +4,7 @@ import useLocalState from "@/state/state";
 
 export default NostrPost;
 function NostrPost({ data }: { data: NostrPost }) {
-  const { profiles } = useLocalState((s) => ({ profiles: s.profiles }));
-  const profile = profiles.get(data.event.pubkey);
+  const profile = useLocalState((s) => s.profiles.get(data.event.pubkey));
 
   return (
     <Post

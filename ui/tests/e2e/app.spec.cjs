@@ -1003,3 +1003,82 @@ test("post images open full-size without navigating and support dismissal", asyn
   await expect(viewer).toHaveCount(0);
   await expect(page).toHaveURL(initialUrl);
 });
+
+
+test("a Nostr thread does not reparse its post for unrelated profile updates", async ({ page }, testInfo) => {
+  feedFixtureKind = "state2";
+  state2Snapshot = state2Fixture();
+  const target = state2Snapshot.nostr["user-map"][STATE2_KEY].feed[0];
+  target.content = "Thread parsing regression target";
+  await page.addInitScript(() => {
+    window.__threadParses = 0;
+    window.__threadFacts = 0;
+    const matchAll = String.prototype.matchAll;
+    String.prototype.matchAll = function (...args) {
+      if (String(this) === "Thread parsing regression target" && new Error().stack.includes("eventToPoast")) window.__threadParses++;
+      return matchAll.apply(this, args);
+    };
+    const parse = JSON.parse;
+    JSON.parse = (...args) => {
+      const result = parse(...args);
+      if (result?.response === "diff" && result?.json?.fact) window.__threadFacts++;
+      return result;
+    };
+  });
+  await page.goto(`t/n/${target.id}`);
+  await expect(page.getByText(target.content, { exact: true })).toBeVisible();
+  const before = await page.evaluate(() => window.__threadParses);
+  for (let i = 0; i < 3; i++) {
+    state2Facts.push({ prof: { "~nec": { name: `Unrelated profile ${i}`, following: [], followers: [] } } });
+    await page.waitForFunction(n => window.__threadFacts >= n, i + 1);
+  }
+  expect(await page.evaluate(() => window.__threadParses)).toBe(before);
+  state2Facts.push({ nostr: { event: { ...target, kind: 0, content: JSON.stringify({ name: "Updated thread author" }) } } });
+  await expect(page.getByText("Updated thread author", { exact: true }).first()).toBeVisible();
+  expect(await page.evaluate(() => window.__threadParses)).toBe(before);
+  const updated = { ...target, content: "Updated thread contents" };
+  state2Facts.push({ nostr: { feed: { name: "timeline", feed: [updated] } } });
+  await expect(page.getByText(updated.content, { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("thread-updates.png") });
+});
+
+test("Nostr parsing scales with new events rather than cached feed size", async ({ page }, testInfo) => {
+  feedFixtureKind = "state2";
+  state2Snapshot = state2Fixture();
+  const notes = Array.from({ length: 200 }, (_, i) => ({ id: (i + 1).toString(16).padStart(64, "0"), pubkey: STATE2_KEY, created_at: 1700000000 + i, kind: 1, content: `PERF ${i}`, tags: [], sig: "0".repeat(128) }));
+  state2Snapshot.nostr.feeds.timeline["wss://one.example"].feed = notes;
+  state2Snapshot.nostr.feeds.timeline["wss://two.example"].feed = notes;
+  state2Snapshot.nostr["user-map"][STATE2_KEY].feed = notes;
+  await page.addInitScript(() => {
+    window.__parses = 0;
+    const matchAll = String.prototype.matchAll;
+    String.prototype.matchAll = function (...args) {
+      if (String(this).startsWith("PERF ") && new Error().stack.includes("eventToPoast")) window.__parses++;
+      return matchAll.apply(this, args);
+    };
+    const parse = JSON.parse;
+    JSON.parse = (...args) => {
+      const result = parse(...args);
+      if (result?.response === "diff" && result?.json?.fact) window.__lastFact = result.json.fact;
+      return result;
+    };
+  });
+  await page.goto(`t/n/${notes[0].id}`);
+  await expect(page.getByText("PERF 0", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.__parses)).toBe(1);
+  for (let i = 0; i < 10; i++) {
+    const event = { ...notes[0], id: (201 + i).toString(16).padStart(64, "0"), content: `PERF live ${i}`, created_at: 1700000200 + i };
+    state2Facts.push({ nostr: { event } });
+    await page.waitForFunction(id => window.__lastFact?.nostr?.event?.id === id, event.id);
+    expect(await page.evaluate(() => window.__parses)).toBe(1);
+  }
+  // Repeated snapshots must reuse parsed bodies, including provenance changes.
+  state2Facts.push({ nostr: { data: state2Snapshot.nostr } });
+  await page.waitForFunction(() => Boolean(window.__lastFact?.nostr?.data));
+  expect(await page.evaluate(() => window.__parses)).toBe(1);
+  await page.locator("#left-nav").getByRole("link", { name: "Home", exact: true }).click();
+  await page.getByRole("button", { name: "Nostr", exact: true }).click();
+  await expect(page.getByText("PERF 199", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.__parses)).toBe(200);
+  await page.screenshot({ path: testInfo.outputPath("linear-nostr-parsing.png") });
+});

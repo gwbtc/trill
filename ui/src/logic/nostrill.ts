@@ -16,6 +16,47 @@ import { IMAGE_SUBREGEX, URL_REGEX, VIDEO_SUBREGEX } from "./constants";
 import { decodeNostrKey } from "./nostr";
 import { patpToFallbackUID } from "./gw";
 
+// Signed event bodies are shared by timeline, author and thread views. Bound
+// retained entries, and compare the body too so replacements cannot go stale.
+const parsedEvents = new Map<string, Poast>();
+const PARSED_EVENT_LIMIT = 4096;
+const sameStrings = (a: readonly string[] = [], b: readonly string[] = []) =>
+  a === b || (a.length === b.length && a.every((value, i) => value === b[i]));
+export function sameEventBody(a: Wevent, b: Wevent) {
+  return (
+    a === b ||
+    (a.id === b.id &&
+      a.pubkey === b.pubkey &&
+      a.created_at === b.created_at &&
+      a.kind === b.kind &&
+      a.content === b.content &&
+      a.sig === b.sig &&
+      (a.tags === b.tags ||
+        (a.tags.length === b.tags.length &&
+          a.tags.every((tag, i) => sameStrings(tag, b.tags[i])))))
+  );
+}
+export function mergeEventRelays(
+  previous: Wevent | undefined,
+  event: Wevent,
+  relay?: string,
+): Wevent {
+  const relays = [
+    ...new Set([
+      ...(previous?.relays ?? []),
+      ...(event.relays ?? []),
+      ...(relay ? [relay] : []),
+    ]),
+  ];
+  if (
+    previous &&
+    sameEventBody(previous, event) &&
+    sameStrings(previous.relays, relays)
+  )
+    return previous;
+  return sameStrings(event.relays, relays) ? event : { ...event, relays };
+}
+
 // nostr post ids are created_at in ms, so two events from the same second
 // collide: give a newcomer the next free id instead of overwriting. an
 // event we already hold (same hash) keeps its slot.
@@ -23,18 +64,77 @@ import { patpToFallbackUID } from "./gw";
 function putPoast(fc: FC, p: Poast) {
   let id = Number(p.id);
   while (fc.feed[`${id}`] && fc.feed[`${id}`].hash !== p.hash) id++;
-  p.id = `${id}`;
-  fc.feed[p.id] = p;
-  if (!fc.start || id < Number(fc.start)) fc.start = p.id;
-  if (!fc.end || id > Number(fc.end)) fc.end = p.id;
+  const key = `${id}`;
+  fc.feed[key] = p.id === key ? p : { ...p, id: key };
+  if (!fc.start || id < Number(fc.start)) fc.start = key;
+  if (!fc.end || id > Number(fc.end)) fc.end = key;
+}
+// Store raw event indexes at ingestion. Converting their bodies is deferred
+// until a feed view actually reads .feed; a thread can look up one raw event.
+const rawFeedEvents = new WeakMap<FC, Map<string, Wevent>>();
+const rawFeedSlots = new WeakMap<FC, Map<string, string>>();
+const materializedFeeds = new WeakMap<FC, FlatFeed>();
+function indexedNostrFeed(events: Map<string, Wevent>, previous?: FC): FC {
+  let reuseFeed = previous ? materializedFeeds.get(previous) : undefined;
+  let reuseEvents = reuseFeed && previous ? rawFeedEvents.get(previous) : undefined;
+  let reuseSlots = reuseFeed && previous ? rawFeedSlots.get(previous) : undefined;
+  const slots = new Map<string, string>();
+  const used = new Set<string>();
+  let start: string | null = null;
+  let end: string | null = null;
+  for (const event of events.values()) {
+    let slot = event.created_at * 1000;
+    while (used.has(`${slot}`)) slot++;
+    const key = `${slot}`;
+    used.add(key);
+    slots.set(event.id, key);
+    if (start === null || slot < Number(start)) start = key;
+    if (end === null || slot > Number(end)) end = key;
+  }
+  let converted: FlatFeed | undefined;
+  const fc: FC = {
+    start, end,
+    get feed() {
+      if (!converted) {
+        converted = {};
+        for (const event of events.values()) {
+          const id = slots.get(event.id)!;
+          const oldSlot = reuseSlots?.get(event.id);
+          if (reuseFeed && oldSlot !== undefined && reuseEvents?.get(event.id) === event) {
+            const post = reuseFeed[oldSlot];
+            converted[id] = post.id === id ? post : { ...post, id };
+          } else {
+            const post = eventToPoast(event);
+            if (post) converted[id] = post.id === id ? post : { ...post, id };
+          }
+        }
+        materializedFeeds.set(fc, converted);
+        // Avoid retaining previous feed snapshots after they have been reused.
+        reuseFeed = undefined;
+        reuseEvents = undefined;
+        reuseSlots = undefined;
+      }
+      return converted;
+    },
+  };
+  rawFeedEvents.set(fc, events);
+  rawFeedSlots.set(fc, slots);
+  return fc;
 }
 export function eventsToFc(postEvents: Wevent[]): FC {
-  const fc: FC = { feed: {}, start: null, end: null };
+  const events = new Map<string, Wevent>();
   for (const event of postEvents) {
-    const p = eventToPoast(event);
-    if (p) putPoast(fc, p);
+    if (event.kind !== 1 && event.kind !== 667) continue;
+    events.set(event.id, mergeEventRelays(events.get(event.id), event));
   }
-  return fc;
+  return indexedNostrFeed(events);
+}
+export function nostrEventsInFeed(fc: FC): Iterable<Wevent> {
+  return rawFeedEvents.get(fc)?.values() ?? Object.values(fc.feed).flatMap(p => p.event ? [p.event] : []);
+}
+export function nostrEventInFeed(fc: FC, id: string): Wevent | undefined {
+  const events = rawFeedEvents.get(fc);
+  return events ? events.get(id) : Object.values(fc.feed).find(p => p.hash === id)?.event;
 }
 // Merge one sub's per-relay feeds into a single FC, deduping by event id
 // while accumulating each event's source relays into Wevent.relays.
@@ -62,8 +162,21 @@ export function nostrFeedsToFcMap(nf: NostrFeeds): Record<string, FC> {
 }
 // returns a new FC (never mutates `fc`) so store/state updates re-render
 export function addEventToFc(event: Wevent, fc: FC): FC {
+  if (event.kind !== 1 && event.kind !== 667) return fc;
+  const events = rawFeedEvents.get(fc);
+  if (events || Object.keys(fc.feed).length === 0) {
+    const previous = events?.get(event.id);
+    const next = mergeEventRelays(previous, event);
+    if (next === previous) return fc;
+    return indexedNostrFeed(new Map(events).set(event.id, next), fc);
+  }
+  // Preserve callers' already-materialized (including native) feed entries.
   const p = eventToPoast(event);
   if (!p) return fc;
+  let slot = Number(p.id);
+  while (fc.feed[`${slot}`] && fc.feed[`${slot}`].hash !== p.hash) slot++;
+  const existing = fc.feed[`${slot}`];
+  if (existing?.event === p.event && existing?.contents === p.contents) return fc;
   const next = { ...fc, feed: { ...fc.feed } };
   putPoast(next, p);
   return next;
@@ -99,6 +212,15 @@ export function extractURLs(text: string): {
 export function eventToPoast(event: Wevent): Poast | null {
   const valid = [1, 667];
   if (!valid.includes(event.kind)) return null;
+  const cached = parsedEvents.get(event.id);
+  if (cached?.event && sameEventBody(cached.event, event)) {
+    const post = sameStrings(cached.event.relays, event.relays)
+      ? cached
+      : { ...cached, event };
+    parsedEvents.delete(event.id);
+    parsedEvents.set(event.id, post);
+    return post;
+  }
   const inl = extractURLs(event.content || "");
   const contents: Content = [
     { paragraph: inl.text },
@@ -177,6 +299,10 @@ export function eventToPoast(event: Wevent): Poast | null {
     // else console.log("odd tag", tag);
   }
   if (!poast.parent && poast.thread) poast.parent = poast.thread;
+  parsedEvents.delete(event.id);
+  parsedEvents.set(event.id, poast);
+  if (parsedEvents.size > PARSED_EVENT_LIMIT)
+    parsedEvents.delete(parsedEvents.keys().next().value!);
   return poast;
 }
 

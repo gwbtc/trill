@@ -32,6 +32,7 @@ import {
 import { defaultGate } from "@/logic/bunts";
 import {
   eventsToFc,
+  nostrEventsInFeed,
   addEventToFc,
   eventToProfile,
   nostrFeedsToFcMap,
@@ -192,6 +193,7 @@ export const useStore = creator((set, get) => ({
             urbitProfiles,
             nostrData,
             patp,
+            current,
           ),
         });
       };
@@ -308,7 +310,7 @@ export const useStore = creator((set, get) => ({
       const fetchMentionedProfiles = (feeds: Record<string, FC>) => {
         const { profiles, relays } = get();
         const texts = Object.values(feeds).flatMap((fc) =>
-          Object.values(fc.feed).map((p) => p.event?.content ?? ""),
+          [...nostrEventsInFeed(fc)].map((event) => event.content),
         );
         const missing = mentionedPubkeys(texts)
           .filter((pk) => !profiles.has(pk) && !askedProfiles.has(pk))
@@ -426,7 +428,6 @@ export const useStore = creator((set, get) => ({
           nostrDataRevision++;
           set({ ...parseStateFact(data.state, patp), stateLoaded: true });
         } else if ("fact" in data) {
-          console.log("fact", data);
           const fact: Fact = normalizeFact(data.fact);
           set({ lastFact: fact });
           // store updates must produce new Map/object references, or

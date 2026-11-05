@@ -152,6 +152,7 @@ The shell combines `Sidebar`, the main column, and `RightRail`. Keep lazy route 
 - Subscription deduplication keys include both agent and path: multiple agents expose `/ui`.
 - `logic/stateFact.ts` normalizes initial state and incremental facts. Update these adapters and matching `types/` when backend JSON changes; cross-check `backend/lib/json/`.
 - The default `useLocalState` export wraps selectors with `useShallow`. Create new Map/object references when updating state. Use `useStore.getState()` when long-lived callbacks need current values.
+- Nostr `FC` values retain a raw event index and lazily materialize `.feed`. Use `nostrEventInFeed` for one-event lookups and `nostrEventsInFeed` for background text/metadata work; enumerating `.feed`, spreading an FC, or serializing it materializes that feed. Preserve event and collection references on unchanged updates so memoized rows and narrow selectors stay effective.
 - Respect `stateLoaded`, `notificationsLoaded`, `debatesLoaded`, and nullable wallet state. An empty collection before initial data arrives is not evidence that the user has no data.
 
 TanStack Query handles selected reads, including post/thread loading (`["trill-thread", host, id]`) and S3 listings. Most live application state comes from Zustand subscriptions. `logic/cache.ts` provides an IndexedDB utility but is not the active store persistence mechanism.

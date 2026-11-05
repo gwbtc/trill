@@ -4,7 +4,7 @@ import "@/styles/FeedPage.css";
 import PostList from "@/components/feed/PostList";
 import useLocalState from "@/state/state";
 import { useLocation, useParams } from "wouter";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import TabStrip, { type TabItem } from "@/components/ui/TabStrip";
 import { ErrorPage } from "@/pages/Error";
 import NostrFeed from "@/components/nostr/Feed";
@@ -188,7 +188,7 @@ function FeedPage({ t }: { t: FeedType }) {
 function Following() {
   const following = useLocalState((s) => s.following);
   const [, navigate] = useLocation();
-  const feed = consolidateFeeds(following);
+  const feed = useMemo(() => consolidateFeeds(following), [following]);
   const hasPosts = Object.values(feed.feed).some((post) => !post.parent);
   if (!hasPosts) {
     return (

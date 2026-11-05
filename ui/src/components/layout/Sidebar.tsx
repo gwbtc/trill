@@ -97,11 +97,11 @@ function saveDismissedNotices(notices: DismissedNotices) {
 
 function SlidingMenu() {
   const [location, navigate] = useLocation();
-  const { our, notifications, profiles, setModal, dms, lists, debates, debateInvites } =
+  const { our, notifications, profile, setModal, dms, lists, debates, debateInvites } =
     useLocalState((s) => ({
     our: s.our,
     notifications: s.notifications,
-    profiles: s.profiles,
+    profile: s.our ? s.profiles.get(s.our.patp) : undefined,
     setModal: s.setModal,
     dms: s.dms,
     lists: s.lists,
@@ -112,7 +112,6 @@ function SlidingMenu() {
     loadDismissedNotices,
   );
 
-  const profile = our ? profiles.get(our.patp) : undefined;
   const hasProfileBasics = Boolean(profile?.name?.trim() && profile?.about?.trim());
   const unread = withoutMuted(notifications, lists).reduce(
     (acc, n) => (n.unread ? acc + 1 : acc),

@@ -16,7 +16,6 @@ export default function RightRail() {
   const {
     relays,
     relayLatency,
-    following,
     profiles,
     modal,
     setModal,
@@ -29,7 +28,6 @@ export default function RightRail() {
   } = useLocalState((s) => ({
     relays: s.relays,
     relayLatency: s.relayLatency,
-    following: s.following,
     profiles: s.profiles,
     modal: s.modal,
     setModal: s.setModal,

@@ -2,7 +2,7 @@ import Profile from "@/components/profile/Profile";
 import TabStrip, { type TabItem } from "@/components/ui/TabStrip";
 import useLocalState, { useStore } from "@/state/state";
 import PageHeader from "@/components/layout/PageHeader";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { UrbitID, UserProfile, UserType } from "@/types/nostrill";
 import type { FC } from "@/types/trill";
 import { isValidPatp } from "urbit-ob";
@@ -81,28 +81,20 @@ function UserFeed({
   user: UserType;
   userString: string;
 }) {
-  const { api, pubkey, profiles } = useLocalState((s) => ({
-    api: s.api,
-    pubkey: s.pubkey,
-    profiles: s.profiles,
-  }));
-  // auto updating on SSE doesn't work if we do shallow
+  const { api, pubkey } = useLocalState((s) => ({ api: s.api, pubkey: s.pubkey }));
   const [isFollowLoading, setIsFollowLoading] = useState(false);
   const [isAccessLoading, setIsAccessLoading] = useState(false);
   const [profileTab, setProfileTab] = useState<ProfileTab>("posts");
-  const { following, myFeed, nostrUserFeeds, nostrFeeds } = useLocalState(s => ({ following: s.following, myFeed: s.myFeed, nostrUserFeeds: s.nostrUserFeeds, nostrFeeds: s.nostrFeeds }));
-
   const isMe = isOur(api!, pubkey, user);
   const userId = "urbit" in user ? user.urbit.patp : user.nostr;
-  const storedFeed = isMe
-    ? myFeed
-    : "urbit" in user
-      ? following.urbit.get(userId)
-      : nostrFeeds[`user/${userId}`] ?? nostrUserFeeds.get(userId);
+  const { storedFeed, profile } = useLocalState(s => ({
+    storedFeed: isMe ? s.myFeed : "urbit" in user ? s.following.urbit.get(userId)
+      : s.nostrFeeds[`user/${userId}`] ?? s.nostrUserFeeds.get(userId),
+    profile: s.profiles.get(userId) || s.profiles.get(userString),
+  }));
   const [resolvedFeed, setResolvedFeed] = useState<FC | undefined>(storedFeed);
-  const profile = profiles.get(userId) || profiles.get(userString);
-  const feedPosts = getProfileFeedPosts(resolvedFeed, userId);
-  const rootPosts = getProfilePosts(resolvedFeed, userId);
+  const feedPosts = useMemo(() => getProfileFeedPosts(resolvedFeed, userId), [resolvedFeed, userId]);
+  const rootPosts = useMemo(() => getProfilePosts(resolvedFeed, userId), [resolvedFeed, userId]);
   const title = getDisplayName(user, profile, getHandleLabel(user, userId));
   const onFeedChange = useCallback(
     (nextFeed: FC) => setResolvedFeed(nextFeed),

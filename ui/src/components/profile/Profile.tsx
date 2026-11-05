@@ -36,10 +36,7 @@ interface Props {
 }
 
 const Loader: React.FC<Props> = (props) => {
-  const { profiles } = useLocalState((s) => ({
-    profiles: s.profiles,
-  }));
-  const profile = profiles.get(props.userString);
+  const profile = useLocalState((s) => s.profiles.get(props.userString));
   return <Profile profile={profile} {...props} />;
 };
 function Profile({

@@ -2,7 +2,7 @@ import useLocalState from "@/state/state";
 import type { FullNode } from "@/types/trill";
 import ComposerModal from "@/components/modals/ComposerModal";
 import type { UserProfile } from "@/types/nostrill";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { eventToFn } from "@/logic/trill/helpers";
 import { toFlat } from "../post/RP";
 import type { NostrEvent } from "@/types/nostr";
@@ -18,15 +18,14 @@ type Props = {
 };
 
 export default function Thread({ event, relays }: Props) {
-  const { profiles, composerData, setModal } =
+  const { profile, composerData, setModal } =
     useLocalState((s) => ({
       composerData: s.composerData,
       setModal: s.setModal,
-      profiles: s.profiles,
+      profile: s.profiles.get(event.pubkey),
     }));
 
-  const fn = eventToFn({ ...event, relays });
-  const profile = profiles.get(event.pubkey);
+  const fn = useMemo(() => eventToFn({ ...event, relays }), [event, relays]);
 
   useEffect(() => {
     if (composerData) setModal(<ComposerModal />);

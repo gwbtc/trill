@@ -118,7 +118,6 @@ function Composer({
     );
   }
 
-  console.log({ composerData });
   async function addComplex(content: string) {
     if (!api) return;
     if (!composerData) return;
