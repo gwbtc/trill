@@ -25,7 +25,7 @@ export function DebatePresenceSync() {
   const sent = useRef("");
   useEffect(() => {
     if (!api || !loaded) return;
-    const who = trackedShips(following.keys(), location);
+    const who = trackedShips(following.urbit.keys(), location);
     const key = who.join(",");
     if (key === sent.current) return;
     sent.current = key;
@@ -43,11 +43,19 @@ export function NowInDebate() {
   // no need on its own page
   if (location === path) return null;
   return (
-    <button type="button" className="now-in-debate" onClick={() => navigate(path)}>
-      <span className={`debate-live-dot${current.stage === "live" ? "" : " idle"}`} aria-hidden="true" />
+    <button
+      type="button"
+      className="now-in-debate"
+      onClick={() => navigate(path)}
+    >
+      <span
+        className={`debate-live-dot${current.stage === "live" ? "" : " idle"}`}
+        aria-hidden="true"
+      />
       <span className="now-in-debate-text">
         <span className="now-in-debate-label">
-          {current.stage === "live" ? "You're" : "You'll be"} {presenceLabel(current)}
+          {current.stage === "live" ? "You're" : "You'll be"}{" "}
+          {presenceLabel(current)}
         </span>
         <span className="now-in-debate-topic">{current.topic}</span>
       </span>
@@ -64,11 +72,15 @@ export function PresenceChip({ ship, isMe }: { ship: string; isMe: boolean }) {
   );
   if (!p) return null;
   return (
-    <button type="button" className="presence-chip" onClick={() => navigate(debatePath(p.key))}>
+    <button
+      type="button"
+      className="presence-chip"
+      onClick={() => navigate(debatePath(p.key))}
+    >
       <Swords size={14} aria-hidden="true" />
       <span>
-        {p.stage === "live" ? "In a debate" : "Debating soon"}, {presenceLabel(p)}:{" "}
-        <strong>{p.topic}</strong>
+        {p.stage === "live" ? "In a debate" : "Debating soon"},{" "}
+        {presenceLabel(p)}: <strong>{p.topic}</strong>
       </span>
     </button>
   );
@@ -82,7 +94,7 @@ export function FollowsDebating() {
     following: s.following,
     current: s.currentDebate,
   }));
-  const live = debatesOfFollows(presences, following, current);
+  const live = debatesOfFollows(presences, following.urbit, current);
   if (live.length === 0) return null;
   return (
     <section className="follows-debating" aria-label="Live debates">
@@ -103,7 +115,9 @@ export function FollowsDebating() {
                 </span>
               ))}
               {ships.length > 2 && ` and ${ships.length - 2} more`}
-              {ships.length === 1 ? ` is ${presenceLabel(presence)}` : " are in a debate"}
+              {ships.length === 1
+                ? ` is ${presenceLabel(presence)}`
+                : " are in a debate"}
             </span>
             <span className="follows-debating-topic">{presence.topic}</span>
           </span>

@@ -40,6 +40,7 @@ export default function RightRail() {
   }));
 
   const relayModels = buildRelayModels(relays, relayLatency);
+  const contactCount = following.urbit.size + following.nostr.size;
   const openRelayDashboard = () => {
     import("@/components/RelayDashboard").then(({ default: RelayDashboard }) => {
       setModal(<RelayDashboard />);
@@ -204,7 +205,7 @@ export default function RightRail() {
           <span>
             {!stateLoaded
               ? "…"
-              : `${following.size} known ${following.size === 1 ? "contact" : "contacts"}`}
+              : `${contactCount} known ${contactCount === 1 ? "contact" : "contacts"}`}
           </span>
         </div>
       </div>

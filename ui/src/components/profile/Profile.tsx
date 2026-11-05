@@ -19,7 +19,13 @@ async function copyNpub(pubkey: string) {
     toast.error("Couldn't copy the npub");
   }
 }
-import { getCustomProfileFields, getDisplayName, getFollowerCount, getFollowingCount, getProfileBanner } from "@/logic/userDisplay";
+import {
+  getCustomProfileFields,
+  getDisplayName,
+  getFollowerCount,
+  getFollowingCount,
+  getProfileBanner,
+} from "@/logic/userDisplay";
 import { PresenceChip } from "@/components/debates/Presence";
 
 interface Props {
@@ -57,12 +63,26 @@ function Profile({
   const bannerImage = getProfileBanner(profile);
   const customFields = getCustomProfileFields(profile);
   const displayName = getDisplayName(user, profile, "");
-  const followingCount = Math.max(getFollowingCount(profile), isMe ? following.size : 0);
-  const followerCount = Math.max(getFollowerCount(profile), isMe ? followers.length : 0);
+  const folSize = "urbit" in user ? following.urbit.size : following.nostr.size;
+  const followingCount = Math.max(
+    getFollowingCount(profile),
+    isMe ? folSize : 0,
+  );
+  const followerCount = Math.max(
+    getFollowerCount(profile),
+    isMe ? followers.length : 0,
+  );
   const galaxy = getProfileGalaxy(user);
 
   function openEditor() {
-    setModal(<ProfileEditor user={user} userString={userString} profile={profile} onSave={onSave} />);
+    setModal(
+      <ProfileEditor
+        user={user}
+        userString={userString}
+        profile={profile}
+        onSave={onSave}
+      />,
+    );
   }
 
   function openConnections(initialTab: ConnectionTab) {
@@ -140,7 +160,9 @@ function Profile({
               )}
             </button>
           </div>
-          {"urbit" in user && <PresenceChip ship={user.urbit.patp} isMe={isMe} />}
+          {"urbit" in user && (
+            <PresenceChip ship={user.urbit.patp} isMe={isMe} />
+          )}
 
           {customFields.length > 0 && (
             <div className="profile-custom-fields">

@@ -144,16 +144,22 @@ export default function RelayDashboard() {
 
       <div className="relay-dashboard-list">
         {showAddForm ? (
-          <div id="recommended-relays" style={{ display: "grid" }}>
-            {RECOMMENDED_RELAYS.map((r) => (
-              <button
-                key={r}
-                className="relay-action-btn"
-                onClick={() => addRecommendedRelay(r)}
-              >
-                {r}
-              </button>
-            ))}
+          <div id="recommended-relays" className="relay-recommendations">
+            <h3>Recommended relays</h3>
+            <div className="relay-recommendations-list">
+              {RECOMMENDED_RELAYS.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  className="relay-action-btn relay-recommendation"
+                  onClick={() => addRecommendedRelay(r)}
+                  disabled={isAddingRelay}
+                >
+                  <Plus size={16} aria-hidden="true" />
+                  <span className="mono">{r}</span>
+                </button>
+              ))}
+            </div>
           </div>
         ) : relayCount === 0 ? (
           <div className="relay-empty">

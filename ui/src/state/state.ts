@@ -89,7 +89,9 @@ export type LocalState = {
   setProfiles: (m: Map<string, UserProfile>) => void; // pubkey key
   addProfile: (key: string, u: UserProfile) => void;
   timeline: FC;
+  ofollowing: Map<string, FC>;
   following: Disaggregated<Map<string, FC>>;
+  ofollowGraph: Map<string, any>;
   followGraph: DFollowGraph;
   // bookmarks, muted users, reported posts (kept by the agent)
   lists: Lists;
@@ -554,9 +556,11 @@ export const useStore = creator((set, get) => ({
   nostrFeed: { feed: {}, start: null, end: null },
   nostrFeeds: {},
   nostrFeedsRaw: {},
+  ofollowing: new Map(),
   following: { urbit: new Map(), nostr: new Map() },
   followers: [],
   timeline: { feed: {}, start: null, end: null },
+  ofollowGraph: new Map(),
   followGraph: { urbit: [], nostr: [] },
   lists: emptyLists(),
   uiSettings: {},

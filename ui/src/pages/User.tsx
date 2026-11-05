@@ -22,10 +22,7 @@ import {
   getReplyTarget,
   type ProfileMediaItem,
 } from "@/logic/profile";
-import {
-  getDisplayName,
-  getHandleLabel,
-} from "@/logic/userDisplay";
+import { getDisplayName, getHandleLabel } from "@/logic/userDisplay";
 import { getThreadPath } from "@/logic/utils";
 
 type ProfileTab = "posts" | "replies" | "media";
@@ -40,40 +37,42 @@ function UserLoader() {
   const params = useParams();
   const userString = params.user;
   if (!userString) return <ErrorPage msg="no such user" />;
-  
+
   // keyed by user so navigating between profiles remounts, instead of
   // showing the previous user until (or if) the new lookup lands
   const nostrKey = decodeNostrKey(userString);
   if (nostrKey)
-    return <UserFeed key={userString} user={{ nostr: nostrKey }} userString={userString} />;
-  else return <UrbitUser key={userString} userString={userString} />
+    return (
+      <UserFeed
+        key={userString}
+        user={{ nostr: nostrKey }}
+        userString={userString}
+      />
+    );
+  else return <UrbitUser key={userString} userString={userString} />;
 }
 
 function UrbitUser({ userString }: { userString: string }) {
   type DataType = { error: string } | { id: UrbitID } | null;
-  const api = useLocalState(s => s.api);
+  const api = useLocalState((s) => s.api);
   const [data, setData] = useState<DataType>(null);
   useEffect(() => {
     if (!api) return;
     if (isValidPatp(userString))
-      patpToUID(api, userString).then(res => {
-        if ("error" in res) setData({ error: "Error parsing @p" })
-        else setData({ id: res.ok })
-      })
+      patpToUID(api, userString).then((res) => {
+        if ("error" in res) setData({ error: "Error parsing @p" });
+        else setData({ id: res.ok });
+      });
     else if (parseGwid(userString))
-      gwidToUID(api, userString).then(res => {
-        if ("error" in res) setData({ error: "Error parsing groundwire ID" })
-        else setData({ id: res.ok })
-      })
-    else setData({error: "no such user"})
-  }, [api, userString])
-  if (!data)
-    return <div className="spinner" />
-  else if ("error" in data) return <ErrorPage msg={data.error} />
-  else
-    return (
-      <UserFeed user={{ urbit: data.id }} userString={userString} />
-    )
+      gwidToUID(api, userString).then((res) => {
+        if ("error" in res) setData({ error: "Error parsing groundwire ID" });
+        else setData({ id: res.ok });
+      });
+    else setData({ error: "no such user" });
+  }, [api, userString]);
+  if (!data) return <div className="spinner" />;
+  else if ("error" in data) return <ErrorPage msg={data.error} />;
+  else return <UserFeed user={{ urbit: data.id }} userString={userString} />;
 }
 function UserFeed({
   user,
@@ -95,13 +94,22 @@ function UserFeed({
 
   const isMe = isOur(api!, pubkey, user);
   const userId = "urbit" in user ? user.urbit.patp : user.nostr;
-  const storedFeed = isMe ? myFeed : following.get(userId);
+  console.log({ following });
+  console.log({ userId });
+  const storedFeed = isMe
+    ? myFeed
+    : "urbit" in user
+      ? following.urbit.get(userId)
+      : following.nostr.get(userId);
   const [resolvedFeed, setResolvedFeed] = useState<FC | undefined>(storedFeed);
   const profile = profiles.get(userId) || profiles.get(userString);
   const feedPosts = getProfileFeedPosts(resolvedFeed, userId);
   const rootPosts = getProfilePosts(resolvedFeed, userId);
   const title = getDisplayName(user, profile, getHandleLabel(user, userId));
-  const onFeedChange = useCallback((nextFeed: FC) => setResolvedFeed(nextFeed), []);
+  const onFeedChange = useCallback(
+    (nextFeed: FC) => setResolvedFeed(nextFeed),
+    [],
+  );
 
   useEffect(() => {
     setResolvedFeed(storedFeed);
@@ -110,60 +118,68 @@ function UserFeed({
   return (
     // a muted author's posts still show on their own profile
     <ShowMutedPosts.Provider value={true}>
-    <div id="screen-profile" className="trill-screen">
-      <PageHeader
-        title={title}
-        subtitle={`${feedPosts.length.toLocaleString()} ${feedPosts.length === 1 ? "post" : "posts"}`}
-        back={!isMe}
-      />
-      <Profile user={user} userString={userId} isMe={isMe} />
-      <TabStrip
-        id="profile-tabs"
-        items={PROFILE_TABS}
-        active={profileTab}
-        onChange={setProfileTab}
-        className="profile-tabs trill-tabs"
-        itemRole="tab"
-      />
-      <section className="profile-tab-panel" hidden={profileTab !== "posts"}>
-        {isMe ? (
-          rootPosts.length > 0 ? (
-            <Inner feed={resolvedFeed!} refetch={() => {}} spine={false} />
-          ) : (
-            <ProfileEmptyState
-              icon={<MessageCircle size={34} />}
-              title="No posts yet"
-              body="Posts you publish will appear here."
+      <div id="screen-profile" className="trill-screen">
+        <PageHeader
+          title={title}
+          subtitle={`${feedPosts.length.toLocaleString()} ${feedPosts.length === 1 ? "post" : "posts"}`}
+          back={!isMe}
+        />
+        <Profile user={user} userString={userId} isMe={isMe} />
+        <TabStrip
+          id="profile-tabs"
+          items={PROFILE_TABS}
+          active={profileTab}
+          onChange={setProfileTab}
+          className="profile-tabs trill-tabs"
+          itemRole="tab"
+        />
+        <section className="profile-tab-panel" hidden={profileTab !== "posts"}>
+          {isMe ? (
+            rootPosts.length > 0 ? (
+              <Inner feed={resolvedFeed!} refetch={() => {}} spine={false} />
+            ) : (
+              <ProfileEmptyState
+                icon={<MessageCircle size={34} />}
+                title="No posts yet"
+                body="Posts you publish will appear here."
+              />
+            )
+          ) : "urbit" in user ? (
+            <TrillFeed
+              patp={user.urbit.patp}
+              feed={storedFeed}
+              isFollowLoading={isFollowLoading}
+              setIsFollowLoading={setIsFollowLoading}
+              onFeedChange={onFeedChange}
             />
-          )
-        ) : "urbit" in user ? (
-          <TrillFeed
-            patp={user.urbit.patp}
-            feed={storedFeed}
-            isFollowLoading={isFollowLoading}
-            setIsFollowLoading={setIsFollowLoading}
-            onFeedChange={onFeedChange}
+          ) : "nostr" in user ? (
+            <NostrFeed
+              pubkey={user.nostr}
+              userString={userString}
+              feed={storedFeed}
+              isFollowLoading={isFollowLoading}
+              setIsFollowLoading={setIsFollowLoading}
+              isAccessLoading={isAccessLoading}
+              setIsAccessLoading={setIsAccessLoading}
+              onFeedChange={onFeedChange}
+            />
+          ) : null}
+        </section>
+        <section
+          className="profile-tab-panel"
+          hidden={profileTab !== "replies"}
+        >
+          <ProfileReplies
+            feed={resolvedFeed}
+            user={user}
+            userId={userId}
+            profile={profile}
           />
-        ) : "nostr" in user ? (
-          <NostrFeed
-            pubkey={user.nostr}
-            userString={userString}
-            feed={storedFeed}
-            isFollowLoading={isFollowLoading}
-            setIsFollowLoading={setIsFollowLoading}
-            isAccessLoading={isAccessLoading}
-            setIsAccessLoading={setIsAccessLoading}
-            onFeedChange={onFeedChange}
-          />
-        ) : null}
-      </section>
-      <section className="profile-tab-panel" hidden={profileTab !== "replies"}>
-        <ProfileReplies feed={resolvedFeed} user={user} userId={userId} profile={profile} />
-      </section>
-      <section className="profile-tab-panel" hidden={profileTab !== "media"}>
-        <ProfileMedia feed={resolvedFeed} userId={userId} />
-      </section>
-    </div>
+        </section>
+        <section className="profile-tab-panel" hidden={profileTab !== "media"}>
+          <ProfileMedia feed={resolvedFeed} userId={userId} />
+        </section>
+      </div>
     </ShowMutedPosts.Provider>
   );
 }
@@ -198,21 +214,25 @@ function ProfileReplies({
         <div className="profile-reply-row" key={`${reply.host}/${reply.id}`}>
           <div className="profile-reply-context">
             <Link2 size={14} aria-hidden="true" />
-            Replying to <span className="mono">{formatReplyTarget(getReplyTarget(reply))}</span>
+            Replying to{" "}
+            <span className="mono">
+              {formatReplyTarget(getReplyTarget(reply))}
+            </span>
           </div>
-          <Post
-            poast={reply}
-            user={user}
-            profile={profile}
-            spine={false}
-          />
+          <Post poast={reply} user={user} profile={profile} spine={false} />
         </div>
       ))}
     </div>
   );
 }
 
-function ProfileMedia({ feed, userId }: { feed: FC | undefined; userId: string }) {
+function ProfileMedia({
+  feed,
+  userId,
+}: {
+  feed: FC | undefined;
+  userId: string;
+}) {
   const [, navigate] = useLocation();
   const media = getProfileMedia(feed, userId);
   if (media.length === 0) {
@@ -226,7 +246,10 @@ function ProfileMedia({ feed, userId }: { feed: FC | undefined; userId: string }
   }
 
   return (
-    <div id="profile-media-grid" className="trill-media-grid profile-media-grid">
+    <div
+      id="profile-media-grid"
+      className="trill-media-grid profile-media-grid"
+    >
       {media.map((item) => (
         <ProfileMediaTile
           key={item.id}
@@ -238,7 +261,13 @@ function ProfileMedia({ feed, userId }: { feed: FC | undefined; userId: string }
   );
 }
 
-function ProfileMediaTile({ item, onOpen }: { item: ProfileMediaItem; onOpen: () => void }) {
+function ProfileMediaTile({
+  item,
+  onOpen,
+}: {
+  item: ProfileMediaItem;
+  onOpen: () => void;
+}) {
   const [failed, setFailed] = useState(false);
   return (
     <button
@@ -247,7 +276,14 @@ function ProfileMediaTile({ item, onOpen }: { item: ProfileMediaItem; onOpen: ()
       onClick={onOpen}
       aria-label={`Open post containing ${item.label}`}
     >
-      {!failed && <img src={item.url} alt="" loading="lazy" onError={() => setFailed(true)} />}
+      {!failed && (
+        <img
+          src={item.url}
+          alt=""
+          loading="lazy"
+          onError={() => setFailed(true)}
+        />
+      )}
       <span className="profile-media-label mono">{item.label}</span>
       {item.multi && (
         <span className="profile-media-multi" title="Multiple images">
@@ -270,7 +306,9 @@ function ProfileEmptyState({
 }) {
   return (
     <div className="profile-tab-empty">
-      <span className="profile-tab-empty-icon" aria-hidden="true">{icon}</span>
+      <span className="profile-tab-empty-icon" aria-hidden="true">
+        {icon}
+      </span>
       <h3>{title}</h3>
       <p>{body}</p>
     </div>

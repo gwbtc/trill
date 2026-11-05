@@ -65,10 +65,12 @@ export default function UserModal({ user }: { user: UserType }) {
   const userString = getUserId(user);
   const userKind = getUserKind(user);
   const profile = profiles.get(userString);
-  const isInFollowing = following.has(userString);
+  const foling = "urbit" in user ? following.urbit : following.nostr;
+  const fgraph = "urbit" in user ? followGraph.urbit : followGraph.nostr;
+  const isInFollowing = foling.has(userString);
   const isInGraph = Object.hasOwn(followGraph, userString);
   const isFollowing = isInFollowing || isInGrap;
-  const isPending = followGraph?.[userString]?.length == 0;
+  const isPending = fgraph?.[userString]?.length == 0;
   const isFollower = followers.includes(userString);
   const userFeed = following.get(userString);
   const postCount = userFeed ? Object.keys(userFeed.feed).length : 0;

@@ -3,6 +3,7 @@ import type { Content, Cursor, FC, FlatFeed, Poast } from "@/types/trill";
 import { defaultGate, engagementBunt } from "./bunts";
 import type {
   BasicProfile,
+  Disaggregated,
   NostrFeeds,
   SourcedFeed,
   UrbitID,
@@ -112,12 +113,13 @@ export function eventToPoast(event: Wevent): Poast | null {
   const ts = event.created_at * 1000;
   const id = `${ts}`;
   const uid: UrbitID = {
-    point: 0n, patp: "~zod", gwid: {
-      english:
-        { nym: "", abridged: "", foreshortened: "" },
+    point: 0n,
+    patp: "~zod",
+    gwid: {
+      english: { nym: "", abridged: "", foreshortened: "" },
       hanzi: { nym: "", abridged: "", foreshortened: "" },
-    }
-  }
+    },
+  };
   const authorFull = { host: uid, author: uid };
 
   const poast: Poast = {
@@ -283,12 +285,26 @@ function updateCursor(cursor: Cursor, ncursor: Cursor, earlier: boolean) {
   const shouldChange = earlier ? nw < or : nw > or;
   return shouldChange ? ncursor : cursor;
 }
-export function consolidateFeeds(fols: Map<string, FC>): FC {
+export function consolidateFeeds(fols: Disaggregated<Map<string, FC>>): FC {
   const f: FlatFeed = {};
   let start: Cursor = null;
   let end: Cursor = null;
-  const feeds = fols.entries();
-  for (const [_userString, fc] of feeds) {
+  const urbitfeeds = fols.urbit.entries();
+  const nostrfeeds = fols.nostr.entries();
+
+  // TODO make this code DRY
+  for (const [_userString, fc] of urbitfeeds) {
+    start = updateCursor(start, fc.start, true);
+    end = updateCursor(end, fc.end, false);
+
+    const poasts = Object.values(fc.feed);
+    for (const p of poasts) {
+      const nid = findId(f, p.id);
+      if ("error" in nid) continue;
+      f[nid.ok] = p;
+    }
+  }
+  for (const [_userString, fc] of nostrfeeds) {
     start = updateCursor(start, fc.start, true);
     end = updateCursor(end, fc.end, false);
 

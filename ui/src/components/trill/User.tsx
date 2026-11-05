@@ -1,4 +1,3 @@
-
 import { unwrap } from "@/logic/result";
 import PostList from "@/components/feed/PostList";
 import useLocalState from "@/state/state";
@@ -112,23 +111,25 @@ function UserFeed({
           )}
         </button>
 
-        <button
-          onClick={handleRequestAccess}
-          disabled={isAccessLoading}
-          className="action-btn access"
-        >
-          {isAccessLoading ? (
-            <>
-              <Icon name="settings" size={16} />
-              Requesting...
-            </>
-          ) : (
-            <>
-              <Icon name="key" size={16} />
-              Request Access
-            </>
-          )}
-        </button>
+        {!feed && (
+          <button
+            onClick={handleRequestAccess}
+            disabled={isAccessLoading}
+            className="action-btn access"
+          >
+            {isAccessLoading ? (
+              <>
+                <Icon name="settings" size={16} />
+                Requesting...
+              </>
+            ) : (
+              <>
+                <Icon name="key" size={16} />
+                Request Access
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {feed && hasFeed ? (
@@ -151,9 +152,8 @@ function UserFeed({
             <Icon name="messages" size={48} color="textMuted" />
             <h3>No Posts Available</h3>
             <p>
-              This user's posts are not publicly visible.
-              {" "}Try following them or request temporary access to
-              see their content.
+              This user's posts are not publicly visible. Try following them or
+              request temporary access to see their content.
             </p>
           </div>
         </div>

@@ -47,7 +47,7 @@ export function parseStateFact(s: unknown): StateFactSlices {
         end: st.timeline.end ?? null,
       }
     : emptyFC();
-  const following = disaggregateFollowing(st.following1);
+  const following = disaggregateFollowing(st.following);
   const followGraph = disaggregateFollowGraph(st.followGraph);
 
   return {
@@ -88,8 +88,10 @@ export function disaggregateFollowing(
   f: Record<string, FC>,
 ): Disaggregated<Map<string, FC>> {
   const r = { urbit: new Map(), nostr: new Map() };
+  console.log("disaggregating", f);
   for (const e of Object.entries(f)) {
     const u = stringToUser(e[0]);
+    console.log({ e, u });
     if ("error" in u) continue;
     if ("urbit" in u.ok) r.urbit.set(e[0], e[1]);
     if ("nostr" in u.ok) r.nostr.set(e[0], e[1]);

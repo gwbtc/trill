@@ -1,12 +1,10 @@
 import "@/styles/Follows.css";
 import TabStrip, { type TabItem } from "@/components/ui/TabStrip";
 import useLocalState from "@/state/state";
-import { useState } from "react";
-import type { NostrFollowGraph, UrbitFollowGraph, UserKey, UserProfile, UserType } from "@/types/nostrill";
-import type { FC } from "@/types/trill";
+import { useMemo, useState } from "react";
+import type { UserProfile } from "@/types/nostrill";
 import Avatar from "@/components/Avatar";
-import { stringToUser } from "@/logic/nostrill";
-import { abbreviateHex } from "@/logic/utils";
+import { buildFollowEntries, type FollowEntryData } from "@/logic/follows";
 import {
   getDisplayName,
   getFollowerCount,
@@ -15,7 +13,6 @@ import {
 } from "@/logic/userDisplay";
 import UserModal from "@/components/modals/UserModal";
 import { UserPlus } from "lucide-react";
-import type { UserTagged } from "@/logic/stateFact";
 
 type FollowFilter = "all" | "urbit" | "nostr";
 
@@ -26,21 +23,26 @@ const FOLLOW_FILTERS: TabItem<FollowFilter>[] = [
 ];
 
 export default function Follows() {
-  const { following, followGraph, profiles, setModal } = useLocalState((s) => ({
-    following: s.following,
-    followGraph: s.followGraph,
-    profiles: s.profiles,
-    setModal: s.setModal,
-  }));
-
+  const { following, followGraph, profiles, setModal, stateLoaded, our, pubkey } =
+    useLocalState((s) => ({
+      following: s.following,
+      followGraph: s.followGraph,
+      profiles: s.profiles,
+      setModal: s.setModal,
+      stateLoaded: s.stateLoaded,
+      our: s.api?.airlock.our,
+      pubkey: s.pubkey,
+    }));
   const [filter, setFilter] = useState<FollowFilter>("all");
+  const entries = useMemo(
+    () => buildFollowEntries(following, followGraph, [our ?? "", pubkey]),
+    [following, followGraph, our, pubkey],
+  );
+  const visible = filter === "all"
+    ? [...entries.urbit, ...entries.nostr]
+    : entries[filter];
 
-
-  if (filter === "all") return(
-    <></>
-  )
-  
-  else return (
+  return (
     <div id="screen-follows" className="follows-page trill-screen">
       <header className="follows-header trill-screen-header">
         <div className="follows-header-top">
@@ -48,6 +50,12 @@ export default function Follows() {
             <h1>Following</h1>
             <p>Ships and keys you follow across the network</p>
           </div>
+          {stateLoaded && (
+            <div className="follows-count" aria-live="polite">
+              <span className="count-number">{visible.length}</span>
+              <span className="count-label">following</span>
+            </div>
+          )}
         </div>
         <TabStrip
           id="follows-filter"
@@ -58,129 +66,60 @@ export default function Follows() {
           buttonClassName="follows-filter-chip"
         />
       </header>
-    {
-    filter === "urbit" ?
-    (<UrbitFollowsList following={following.urbit} followGraph={followGraph.urbit} />)
-    :
-    (<NostrFollowsList following={following.nostr}  followGraph={followGraph.nostr} />)
-    }
-    </div>
 
-  );
-}
-
-function UrbitFollowsList({following, followGraph}: { following: Map<string, FC>, followGraph: UrbitFollowGraph[]}){
-  const { profiles, setModal } = useLocalState((s) => ({
-    following: s.following,
-    followGraph: s.followGraph,
-    profiles: s.profiles,
-    setModal: s.setModal,
-  }));
-  return(<>
-          {followGraph.map(ft => {
-            const [uid, follows] = ft;
-            const id = uid.patp;
-            const user = {urbit: uid}
-            return (
-              <FollowEntry
-                key={uid.point}
-                feed={null}
-                user={user}
-                profile={profiles.get(id)}
-                onOpen={() => setModal(<UserModal user={user} />)}
-                kind="urbit"
-              />
-            );
-            })
-            }
-
-    </>)
-}
-function NostrFollowsList({following, followGraph}: {following: Map<string, FC>, followGraph: NostrFollowGraph[]}){
-  const { profiles, setModal } = useLocalState((s) => ({
-    following: s.following,
-    followGraph: s.followGraph,
-    profiles: s.profiles,
-    setModal: s.setModal,
-  }));
-  return(<>
-          {followGraph.map(ft => {
-            const [k, v] = ft;
-            const id = k.pubkey
-            const user = {nostr: id}
-            return (
-              <FollowEntry
-                key={k.pubkey}
-                feed={null}
-                user={user}
-                profile={profiles.get(id)}
-                onOpen={() => setModal(<UserModal user={user} />)}
-                kind="nostr"
-              />
-            );
-            })
-            }
-
-    </>)
-}
-function FollowsList({following, followGraph}: {following: Map<string, FC>, followGraph: NostrFollowGraph[]}){
-const count = followGraph.length + following.size;
-const followList = Array.from(following.entries());
-  return count === 0? (
+      {!stateLoaded ? (
+        <div className="follows-empty" role="status">Loading follows...</div>
+      ) : visible.length === 0 ? (
         <div className="follows-empty">
-          <UserPlus size={48} />
-          <h3>No follows yet</h3>
+          <UserPlus size={48} aria-hidden="true" />
+          <h3>{filter === "all" ? "No follows yet" : `No ${filter === "urbit" ? "Urbit" : "Nostr"} follows yet`}</h3>
           <p>Start following users to see them here</p>
         </div>
       ) : (
-      <div>
-          <div className="follows-count">
-            <span className="count-number">{following.size}</span>
-            <span className="count-label">following</span>
-          </div>
         <div id="follows-grid" className="follows-grid">
-          {Array.from(followList).map(([id, f]) => {
-            const user = stringToUser(id);
-            if ("error" in user) return null
-            console.log({user})
-            return (
-              <FollowEntry
-                key={id}
-                feed={f}
-                id={id}
-                user={user.ok}
-                profile={profiles.get(id)}
-                onOpen={() => setModal(<UserModal user={user.ok} />)}
-              />
-            );
-          })}
-          
+          {visible.map((entry) => (
+            <FollowEntry
+              key={`${getUserKind(entry.user)}/${entry.id}`}
+              entry={entry}
+              profile={profiles.get(entry.id)}
+              onOpen={() => setModal(<UserModal user={entry.user} />)}
+            />
+          ))}
         </div>
       )}
-      </div>
-    
-  
+    </div>
+  );
 }
+
 function FollowEntry({
-  feed,
+  entry: { feed, user },
   profile,
-  user,
   onOpen,
-  kind 
 }: {
-  feed: FC | null;
-  user: UserType;
+  entry: FollowEntryData;
   profile: UserProfile | undefined;
   onOpen: () => void;
-  kind: UserKey;
 }) {
   const displayName = getDisplayName(user, profile);
+  const kind = getUserKind(user);
   const postCount = feed ? Object.keys(feed.feed).length : null;
+  const followerCount = profile ? getFollowerCount(profile) : null;
 
   return (
-    <div className="follow-card" role="link" onClick={onOpen}>
+    <div
+      className="follow-card"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+    >
       <div className="follow-card-header">
-        <Avatar user={user} picOnly={true} size={56} profile={profile} />
+        <Avatar user={user} picOnly size={56} profile={profile} noClick />
         <div className="follow-card-info">
           <h3 className="follow-card-name">{displayName}</h3>
           <p className="follow-card-id">{getHandleLabel(user)}</p>
@@ -190,24 +129,22 @@ function FollowEntry({
 
       {profile?.about && <p className="follow-card-about">{profile.about}</p>}
 
-      <div className="follow-card-stats">
-        <div className="stat-item">
-          <span className="stat-value">{postCount}</span>
-          {postCount && (
-            <span className="stat-label">
-              {postCount === 1 ? "post" : "posts"}
-            </span>
+      {(postCount !== null || followerCount !== null) && (
+        <div className="follow-card-stats">
+          {postCount !== null && (
+            <div className="stat-item">
+              <span className="stat-value">{postCount}</span>
+              <span className="stat-label">{postCount === 1 ? "post" : "posts"}</span>
+            </div>
+          )}
+          {followerCount !== null && (
+            <div className="stat-item">
+              <span className="stat-value">{followerCount}</span>
+              <span className="stat-label">{followerCount === 1 ? "follower" : "followers"}</span>
+            </div>
           )}
         </div>
-        {profile && (
-          <div className="stat-item">
-            <span className="stat-value">{getFollowerCount(profile)}</span>
-            <span className="stat-label">
-              {getFollowerCount(profile) === 1 ? "follower" : "followers"}
-            </span>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
