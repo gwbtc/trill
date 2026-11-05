@@ -18,7 +18,8 @@
     dbuglib=nostrill-dbug
 |%
 +$  versioned-state
-  $%  state-1:sur
+  $%  state-2:sur
+      state-1:oldsur
       state-0:oldsur
   ==
 --
@@ -57,9 +58,8 @@
   =/  old-state  !<(versioned-state old-state)
   =.  state
   ?-  -.old-state
-    :: %0  (state-0-to-1:oldsur old-state)
-    %0  *state:sur
-    %1  *state:sur
+    %0  (state-0-to-2:oldsur old-state)
+    %1  (state-1-to-2:oldsur old-state)
     %2  old-state
   ==
   ::  heal ships that went through that fallback: schnorr rejects a

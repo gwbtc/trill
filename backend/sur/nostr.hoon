@@ -46,7 +46,7 @@
 +$  ek  event-key
 ++  event-comparator  ::  to make sure we don't wipe out conflicting events
   |=  [a=event-key b=event-key]  ^-  ?
-  ?:  .=(-.a -.b)  .y  
+  ?:  .=(-.a -.b)  (gth +.a +.b)
   (gth -.a -.b)
 ::
 +$  wfeed       ((mop ek wevent) event-comparator)

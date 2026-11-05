@@ -405,12 +405,10 @@
       ?~  ujon  ~&  failed-parse-metadata=ujon  `state
       =/  umeta  (user-meta:de:njs u.ujon)
       ?~  umeta  ~&  >>  failed-dejs-metadata=ujon  `state
-      =/  prof  (empty-nostr-profile:scri pubkey.event u.umeta)
-      ::  keep the follow list if their kind 3 came first
-      =/  old  (~(get by profiles.state) [%nostr pubkey.event])
-      =?  prof  ?=(^ old)
-        prof(following following.u.old, following-count following-count.u.old)
-      =.  profiles.state  (~(put by profiles.state) [%nostr pubkey.event] prof)
+      =/  data  (~(gut by user-map.nostr-data.state) pubkey.event *user-data:nsur)
+      =.  data  data(pubkey pubkey.event, profile `u.umeta)
+      =.  user-map.nostr-data.state
+        (~(put by user-map.nostr-data.state) pubkey.event data)
       `state
     ::  +parse-follows: a kind 3 contact list, whose p tags are who they
     ::  follow. replaceable, so the latest one simply replaces the last.
@@ -418,45 +416,39 @@
     ::
     ++  parse-follows
       ^-  (quip card _state)
-      =/  follows=(set user:sur)
+      =/  follows=(set @ux)
         %-  silt
         %+  murn  tags.event
         |=  tag=(list @t)
-        ^-  (unit user:sur)
+        ^-  (unit @ux)
         ?~  tag  ~
         ?.  =('p' i.tag)  ~
         ?~  t.tag  ~
         ::  a bare hex pubkey, no 0x
         =/  pk  (rush i.t.tag hex)
         ?~  pk  ~
-        `[%nostr `@ux`u.pk]
-      =/  key  [%nostr pubkey.event]
-      =/  prof
-        %+  ~(gut by profiles.state)  key
-        (empty-nostr-profile:scri pubkey.event *user-meta:nsur)
-      =.  following.prof  follows
-      =.  following-count.prof  ~(wyt in follows)
-      =.  profiles.state  (~(put by profiles.state) key prof)
+        `u.pk
+      =/  data  (~(gut by user-map.nostr-data.state) pubkey.event *user-data:nsur)
+      =.  data  data(pubkey pubkey.event, following `follows)
+      =.  user-map.nostr-data.state
+        (~(put by user-map.nostr-data.state) pubkey.event data)
       `state
     ::
     ++  parse-poast
       ^-  (quip card _state)
       ::  file the event under this sub's named sourced feed
-      =/  sfs  (~(gut by nostr-feeds.state) name.u.req *sourced-feeds:nsur)
+      =/  sfs  (~(gut by feeds.nostr-data.state) name.u.req *sourced-feeds:nsur)
       =/  sf   (~(gut by sfs) url.relay *sourced-feed:nsur)
-      =.  feed.sf  (put:norm:nsur feed.sf created-at.event event)
+      =.  feed.sf  (put:norm:nsur feed.sf [created-at.event id.event] event)
       =.  sub.sf   u.req
-      =.  nostr-feeds.state
-        (~(put by nostr-feeds.state) name.u.req (~(put by sfs) url.relay sf))
-      ::  if we follow the author, also file into their trill feed
-      =/  user  [%nostr pubkey.event]
-      =/  user-feed  (~(get by following.state) user)
-      =/  profile  (~(get by profiles.state) user)
-      =?  following.state  ?=(^ user-feed)
-        =/  pw  (event-to-post:evlib event profile `url.relay)
-        =/  poast=post:post  -.pw
-        =/  nf  (put:orm:feed u.user-feed id.poast poast)
-        (~(put by following.state) [%nostr pubkey.event] nf)
+      =.  feeds.nostr-data.state
+        (~(put by feeds.nostr-data.state) name.u.req (~(put by sfs) url.relay sf))
+      ::  Native feeds are separate; cache this author's raw Nostr notes.
+      =/  data  (~(gut by user-map.nostr-data.state) pubkey.event *user-data:nsur)
+      =.  data  data(pubkey pubkey.event)
+      =.  feed.data  (put:norm:nsur feed.data [created-at.event id.event] event)
+      =.  user-map.nostr-data.state
+        (~(put by user-map.nostr-data.state) pubkey.event data)
       `state
     --
   ::
@@ -473,7 +465,7 @@
     =^  cards  relay
       ?:  (is-feed:nreq filters.reqs)
         ::  TODO don't send all at once, stream in chunks
-        =/  sf=(unit sourced-feeds:nsur)  (~(get by nostr-feeds.state) name.reqs)
+        =/  sf=(unit sourced-feeds:nsur)  (~(get by feeds.nostr-data.state) name.reqs)
         ?~  sf  `relay
         =/  =wfeed:nsur  (make-wfeed:lib u.sf)
         =/  c  (update-ui:cardslib [%nostr %feed name.reqs wfeed])
@@ -485,8 +477,8 @@
         `relay
       =/  thread-id  (thread-req:nreq filters.reqs)
       ?^  thread-id
-        =/  sfs  (~(gut by nostr-feeds.state) name.reqs *sourced-feeds:nsur)
-        =/  events=(list [@ud event:nsur])
+        =/  sfs  (~(gut by feeds.nostr-data.state) name.reqs *sourced-feeds:nsur)
+        =/  events=(list [ek:nsur event:nsur])
           %-  zing
           %+  turn  ~(tap by sfs)
           |=  [url=@t sf=sourced-feed:nsur]
@@ -496,7 +488,7 @@
               =/  refs  (get-references:evlib ev)
               (~(has in refs) u.thread-id)
           ==
-        =/  f  (gas:norm:nsur *nostr-feed:nsur subset)
+        =/  f  (gas:norm:nsur *feed:nsur subset)
         =/  c  (update-ui:cardslib [%nostr %thread f])
         [:~(c) relay]
       ::
@@ -506,7 +498,7 @@
     ::  alongside their posts, and is caught by +user-req above
     =/  prof-cards=(list card:agent:gall)
       ?.  (profs-req:nreq filters.reqs)  ~
-      ~[(update-ui:cardslib [%prof profiles.state])]
+      ~[(update-ui:cardslib [%nostr %data nostr-data.state])]
     ::  TODO handle chunked requests: pop the queue, send the next sub
     ::  one-shot subs close at %eose; ongoing subs record it
     ::  and stay live
@@ -593,11 +585,11 @@
     `conn(subs (~(put by subs.conn) name rg))
   =.  relays.state  (~(put by relays.state) url.relay relay)
   ::  file the sub at nostr-feeds, preserving already-cached events
-  =/  osfs  (~(gut by nostr-feeds.state) name *sourced-feeds:nsur)
+  =/  osfs  (~(gut by feeds.nostr-data.state) name *sourced-feeds:nsur)
   =/  old   (~(get by osfs) url.relay)
-  =/  =sourced-feed:nsur  [?~(old *nostr-feed:nsur feed.u.old) +.d]
-  =.  nostr-feeds.state
-    (~(put by nostr-feeds.state) name (~(put by osfs) url.relay sourced-feed))
+  =/  =sourced-feed:nsur  [?~(old *feed:nsur feed.u.old) +.d]
+  =.  feeds.nostr-data.state
+    (~(put by feeds.nostr-data.state) name (~(put by osfs) url.relay sourced-feed))
   $(wids t.wids, css (weld css -.d))
 ::  +sign-drafts: sign (and seal) events for one of our own agents,
 ::  publish them, and tell it their ids. only an agent on this ship may
@@ -769,7 +761,7 @@
   ++  send-prof
     |=  wids=(list @ud)
     ^-  (list card)
-    =/  prof  (~(get by profiles.state) [%urbit src.bowl])
+    =/  prof  (~(get by profiles.state) src.bowl)
     ?~  prof  ~&  "send-prof failed"  ~
     =/  event  (profile-to-event:evlib i.keys.state u.prof eny.bowl now.bowl)
     =/  [cards=(list card) urls=(list @t)]  (send-event-to-relays wids event)

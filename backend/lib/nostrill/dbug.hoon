@@ -53,7 +53,7 @@
     profiles     profiles.state
     following    following.state
     feed-perms   feed-perms.state
-    nostr-feeds  nostr-feeds.state
+    nostr-feeds  feeds.nostr-data.state
     fols         ~(. followlib [state bowl])
     scry         ~(. scri [state bowl])
 +$  card  card:agent:gall
@@ -188,7 +188,7 @@
       `state
   ::  nostr feed inspection
     %nostr-feeds-wipe
-      =.  nostr-feeds  *nostr-feeds:nsur
+      =.  nostr-feeds  *feeds:nsur
       `state
   ::  nostr feed inspection
     %nostr-feeds-print
@@ -209,7 +209,7 @@
       `state
   ::  profiles
     %profile-own
-      ~&  >  own-prof=(~(get by profiles) [%urbit our.bowl])
+      ~&  >  own-prof=(~(get by profiles) our.bowl)
       `state
     %profiles-print
       =/  pfs  ~(tap by profiles)
@@ -219,7 +219,7 @@
         ~&  >  profile=+.i.pfs
         $(pfs t.pfs)
     %profiles-wipe
-      =.  profiles  *(map user:sur user-profile:comms)
+      =.  profiles  *(map @p user-profile:comms)
       `state
   ::  follows
     %follows-print
@@ -227,7 +227,7 @@
       ~&  followers=get-followers:scry
       `state
     [%follow-feed @p]
-      ~&  (~(get by following) [%urbit +.noun])
+      ~&  (~(get by following) +.noun)
       `state
   ::  keys
     %keys-generate

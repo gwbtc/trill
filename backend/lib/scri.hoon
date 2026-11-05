@@ -9,7 +9,7 @@
     gwid,
     gwidj=json-gwid,
     ws=websockets,
-    topicsj=json-topics
+    topicsj=json-topics, json-nostr
 
 |_  [=state:sur =bowl:gall]
 +$  card  card:agent:gall
@@ -50,13 +50,33 @@
         ''
         ''
         ~
+++  my-following  ^-  (set user:sur)
+  %-  silt
+  %+  weld
+    (turn ~(tap in ~(key by following.state)) |=(p=@p `user:sur`[%urbit p]))
+    (turn ~(tap in following.nostr-data.state) |=(p=@ux `user:sur`[%nostr p]))
+
+++  cached-profile
+  |=  u=user:sur
+  ^-  (unit user-profile:comms)
+  ?:  ?=(%urbit -.u)  (~(get by profiles.state) +.u)
+  =/  data  (~(get by user-map.nostr-data.state) +.u)
+  ?~  data  ~
+  ?~  profile.u.data  ~
+  =/  p  (empty-nostr-profile +.u u.profile.u.data)
+  =/  follows=(set user:sur)
+    %-  silt
+    %+  turn  ~(tap in (fall following.u.data ~))
+    |=(pk=@ux `user:sur`[%nostr pk])
+  `p(following follows, following-count ~(wyt in follows))
+
 ++  default-profile  ^-  user-profile:comms
   =/  nostrgwid  (make:b:gwid pub.i.keys.state)
   =/  urgwid  (make:b:gwid our.bowl)
   =/  fans  get-followers
   :*  pub.i.keys.state
-      ~(key by following.state)
-      ~(wyt by following.state)
+      my-following
+      ~(wyt in my-following)
       fans
       ~(wyt in fans)
       (default-user-meta our.bowl)
@@ -115,7 +135,7 @@
   :: TODO what about non urbit stuff
   =/  =user:sur  [%urbit u.host]
   =/  fed=(unit feed:feed)
-    ?:  .=(u.host our.bowl)  `feed.state  (~(get by following.state) user)
+    ?:  .=(u.host our.bowl)  `feed.state  (~(get by following.state) u.host)
   ?~  fed
     =/  msg  'Feed not found'
         [%thread `@da`0 msg %done %ng]
@@ -139,7 +159,7 @@
     =/  msg  'Host is not a @p'
         [%feed msg %done %ng]
   =/  =user:sur  [%urbit u.host]
-  =/  fed=(unit feed:feed)  ?:  .=(u.host our.bowl)  `feed.state  (~(get by following.state) user)
+  =/  fed=(unit feed:feed)  ?:  .=(u.host our.bowl)  `feed.state  (~(get by following.state) u.host)
   ?~  fed
   =/  msg  'Feed not found'
         [%feed msg %done %ng]
@@ -171,7 +191,7 @@
   =/  ns=(unit @da)  ?~  hed  ~  (some key.u.hed)
   =/  ne=(unit @da)  ?~  tal  ~  (some key.u.tal)
   =/  =fc:feed  [nf ns ne]
-  =/  uprof  (~(get by profiles.state) user)
+  =/  uprof  (~(get by profiles.state) u.host)
   =/  profile  ?^  uprof  u.uprof
     ?:  .=(our.bowl u.host)  default-profile  (empty-profile [%urbit u.host])
   =/  msg  ''
@@ -180,7 +200,7 @@
 ++  own-profile
 ^-  (unit (unit cage))
   :-  ~  :-  ~  :-  %json  !>
-  =/  uprof  (~(get by profiles.state) [%urbit our.bowl])
+  =/  uprof  (~(get by profiles.state) our.bowl)
   %-  en-profile:en:appjs 
     ?^  uprof  u.uprof  default-profile
     
@@ -191,7 +211,7 @@
   =/  usert  (branch-id u.network ids)
   ?~  usert  ~
   :-  ~  :-  ~  :-  %json  !>
-  =/  uprof  (~(get by profiles.state) -.u.usert)
+  =/  uprof  (cached-profile -.u.usert)
   %-  en-profile:en:appjs 
     ?^  uprof  u.uprof
     ?:  +.u.usert  default-profile  (empty-profile -.u.usert)
@@ -312,7 +332,7 @@
 ++  nostr-feeds-scry
 ^-  (unit (unit cage))
   :-  ~  :-  ~  :-  %json  !>
-  (en-nostr-feeds:en:appjs nostr-feeds.state)
+  (feeds:en:json-nostr feeds.nostr-data.state)
   
 
 --

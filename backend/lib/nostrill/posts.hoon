@@ -26,12 +26,7 @@
   ?-  policy
     %everyone  g
     %following
-      =/  ships
-        %+  murn  ~(tap by following.state)
-        |=  [u=user:sur *]
-        ^-  (unit @p)
-        ?.  ?=(%urbit -.u)  ~
-        `+.u
+      =/  ships  ~(tap in ~(key by following.state))
       g(ship.lock [(silt [our.bowl ships]) & &])
     %mentioned
       g(ship.lock [(silt [our.bowl mentions]) & &])
@@ -39,7 +34,7 @@
 ++  wrap-post  |=  p=post:post  ^-  post-wrapper:comms
   =/  pubkey  ?:  .=(author.p our.bowl)  pub.i.keys.state  0x0
   =/  user  (atom-to-user:lib author.p)
-  =/  profile  (~(get by profiles.state) user)
+  =/  profile  (~(get by profiles.state) author.p)
   [p pubkey profile ~ ~]
 
   
@@ -49,12 +44,12 @@
     =.  feed.state  (put:orm:feed feed.state id.p p)
     state
     ::
-    =/  host  (atom-to-user:lib host.p)
+    =/  host  host.p
     =/  uf  (~(get by following.state) host)
     ?~  uf  state
     =/  nf  (put:orm:feed u.uf id.p p)
     =.  following.state  (~(put by following.state) host nf)
-    =/  =upid:sur  [host id.p]
+    =/  =upid:sur  [[%urbit host] id.p]
     =.  timeline.state  (put:uorm:sur timeline.state upid p)
     state
 ++  add-reply  |=  p=post:post  ^+  state
@@ -67,7 +62,7 @@
       =.  feed.state  (put:orm:feed feed.state id.p p)
       state
       ::
-      =/  host  (atom-to-user:lib host.p)
+      =/  host  host.p
       =/  uf  (~(get by following.state) host)
       ?~  uf  state
       =/  parent  (get:orm:feed u.uf u.parent.p)
@@ -77,9 +72,9 @@
       =/  nf  (put:orm:feed nf id.p p)
       =.  following.state  (~(put by following.state) host nf)
 
-      =/  ppid=upid:sur  [host id.u.parent]      
+      =/  ppid=upid:sur  [[%urbit host] id.u.parent]
       =.  timeline.state  (put:uorm:sur timeline.state ppid u.parent)
-      =/  =upid:sur  [host id.p]
+      =/  =upid:sur  [[%urbit host] id.p]
       =.  timeline.state  (put:uorm:sur timeline.state upid p)
       state
 
@@ -88,7 +83,7 @@
     =.  feed.state  (delete-with-children:feedlib feed.state p)
     state
     ::
-    =/  host  (atom-to-user:lib host.p)
+    =/  host  host.p
     =/  uf  (~(get by following.state) host)
     ?~  uf  state
     =/  nf  (delete-with-children:feedlib u.uf p)
@@ -115,7 +110,7 @@
 ++  handle-post  |=  poke=post-poke:ui
   ^-  (quip card _state)
   |^
-  =/  profile  (~(get by profiles.state) [%urbit our.bowl])
+  =/  profile  (~(get by profiles.state) our.bowl)
   =/  pubkey  pub.i.keys.state
   =/  crds  ~(. cards:lib bowl)
   ::  TODO UI notifications  [%hark ]
@@ -377,7 +372,7 @@
             :: TODO we kinda should use timeline for this
             :: If we have the relevant post in our state somewhere we want to update the UI too. Else we just send the headsup poke to the post host
           :: =/  up  (get:orm:feed timeline.state id.poke)
-            =/  uf  (~(get by following.state) host.poke)
+            =/  uf  (~(get by following.state) host)
             ?~  uf  :_  state  :~((poke-host:crds host default-eng))
             =/  up  (get:orm:feed u.uf id.poke)
             ?~  up  :_  state  :~((poke-host:crds host default-eng))
@@ -402,7 +397,7 @@
         =/  eng-card  (poke-host:crds host eng-poke)
         =/  fed=(unit feed:feed)
           ?:  .=(host our.bowl)  `feed.state
-          (~(get by following.state) host.poke)
+          (~(get by following.state) host)
         ?~  fed  :_  state  :~(eng-card)
         =/  up  (get:orm:feed u.fed id.poke)
         ?~  up  :_  state  :~(eng-card)

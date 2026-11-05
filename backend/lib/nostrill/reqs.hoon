@@ -73,7 +73,7 @@
         =/  lp  latest-page:feedlib
         =/  lp2  lp(count backlog.feed-perms.state)
         =/  =fc:feed  (lp2 feed.state)
-        =/  uprof  (~(get by profiles.state) [%urbit our.bowl])
+        =/  uprof  (~(get by profiles.state) our.bowl)
         =/  prof  ?^  uprof  u.uprof
           ~(default-profile scri [state bowl])
         =/  fd=feed-data:comms  [fc prof]

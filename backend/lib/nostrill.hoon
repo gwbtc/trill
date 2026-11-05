@@ -70,15 +70,15 @@
       =/  url=@t  -.i.l
       =/  sf=sourced-feed:nsur  +.i.l
       =/  f=feed:nsur  feed.sf
-      =/  posts=(list [@ud event:nsur])  (tap:norm:nsur f)
+      =/  posts=(list [ek:nsur event:nsur])  (tap:norm:nsur f)
       =/  nw
         |-  ?~  posts  w
         =/  =event:nsur  +.i.posts
-          =/  exists  (get:worm:nsur w created-at.event)
+          =/  exists  (get:worm:nsur w [created-at.event id.event])
           =/  relays  ?~  exists  ~[url]
             [url relays.u.exists]
           =/  wev=wevent:nsur  [relays event]
-          =.  w  (put:worm:nsur w created-at.event wev)
+          =.  w  (put:worm:nsur w [created-at.event id.event] wev)
           $(posts t.posts)
         $(l t.l, w nw)
 ::

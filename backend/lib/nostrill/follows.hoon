@@ -10,7 +10,7 @@
 ++  push-profile
   ^-  (quip card:agent:gall _state)
   =/  fresh  ~(default-profile scri [state bowl])
-  =/  cur  (~(get by profiles.state) [%urbit our.bowl])
+  =/  cur  (~(get by profiles.state) our.bowl)
   =/  prof=user-profile:comms
     ?~  cur  fresh
     %=  u.cur
@@ -20,7 +20,7 @@
       follower-count   follower-count.fresh
     ==
   =?  profiles.state  ?=(^ cur)
-    (~(put by profiles.state) [%urbit our.bowl] prof)
+    (~(put by profiles.state) our.bowl prof)
   :_  state
   :~  (update-followers:cards:lib [%prof `prof])
   ==
@@ -31,7 +31,7 @@
   :: TODO we have an empty set as a market for pending follow request of sorts
     ?-  -.user
       %urbit  
-        =.  follow-graph.state  (save-follow-graph ~ .n)
+        =.  follow-graph.state  (save-follow-graph +.user ~ .n)
         =/  =fact:ui  [%fols %graph follow-graph.state]  
         :_  state
         :~
@@ -39,7 +39,7 @@
             (urbit-watch +.user)
         ==
       %nostr
-        =/  nf  (~(add in following.nostr-data.state) +.user)
+        =/  nf  (~(put in following.nostr-data.state) +.user)
         =.  following.nostr-data.state  nf
         =/  =fact:ui  [%nostr %data nostr-data.state]  
         :_  state
@@ -57,7 +57,6 @@
       %urbit  
         =.  following.state  (~(del by following.state) +.user)
         =/  graph  (~(get by follow-graph.state) our.bowl)
-        ?~  graph  `state
         =.  follow-graph.state
           ?~  graph  follow-graph.state
             =/  nset  (~(del in u.graph) user)
@@ -77,7 +76,7 @@
         =/  f2=fact:ui  [%nostr %data nostr-data.state]
         =/  c2  (update-ui:cards:lib f2)
         :_  state
-        [c1 c2 pcs]
+        ~[c1 c2]
     ==
   
   ::  TODO close the user's relay subscription
@@ -103,12 +102,12 @@
     ?@  p.fr  state     ::  deferred
     ?@  +.p.fr  state   ::  approval denied
     =/  fd=feed-data:comms  data.p.fr
-    =.  following.state   (~(put by following.state) user feed.fc.fd)
+    =.  following.state   (~(put by following.state) src.bowl feed.fc.fd)
     =.  timeline.state  (add-new-feed:feedlib timeline.state feed.fc.fd)
-    =.  profiles.state  (~(put by profiles.state) user profile.fd)
-    =/  graph  (~(get by follow-graph.state) [%urbit our.bowl])
+    =.  profiles.state  (~(put by profiles.state) src.bowl profile.fd)
+    =/  graph  (~(get by follow-graph.state) our.bowl)
     =/  follows  ?~  graph  (silt ~[user])  (~(put in u.graph) user)
-    =.  follow-graph.state  (~(put by follow-graph.state) [%urbit our.bowl] follows)
+    =.  follow-graph.state  (~(put by follow-graph.state) our.bowl follows)
     state
   =/  =fact:ui  [%fols %new-urbit enfr]
   =^  pcs  state  push-profile
@@ -127,7 +126,7 @@
   |=  p=@p
   ^-  (quip card:agent:gall _state)
   =.  following.state  (~(del by following.state) p)
-  =/  graph  (~(get by follow-graph.state) our.bow])
+  =/  graph  (~(get by follow-graph.state) our.bowl)
   ?~  graph  `state
   =/  ngraph  (~(del in u.graph) [%urbit p])
   =.  follow-graph.state  (~(put by follow-graph.state) our.bowl ngraph)

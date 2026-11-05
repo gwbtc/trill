@@ -13,9 +13,9 @@
   ^-  (quip card _state)
   =/  ks  (gen-keys:nostr-keys eny.bowl)
   =.  keys.state  [ks keys.state]
-  =/  curr  (~(get by profiles.state) [%urbit src.bowl])
+  =/  curr  (~(get by profiles.state) src.bowl)
   =/  np  ?~  curr  default-profile:scry  u.curr(pubkey pub.ks)
-  =.  profiles.state  (~(put by profiles.state) [%urbit src.bowl] np)
+  =.  profiles.state  (~(put by profiles.state) src.bowl np)
   ::  publish the new identity's kind-0 to the global relay,
   ::  signed by the fresh key
   =/  event  (profile-to-event:evlib i.keys.state np eny.bowl now.bowl)
@@ -32,7 +32,7 @@
     %add
       =/  prof  default-profile:scry
       =.  user-meta.prof  +.poke
-      =.  profiles.state  (~(put by profiles.state) [%urbit our.bowl] prof)
+      =.  profiles.state  (~(put by profiles.state) our.bowl prof)
       ::  publish to the global relay
       =/  event  (profile-to-event:evlib i.keys.state prof eny.bowl now.bowl)
       :_  state
@@ -40,7 +40,7 @@
           (send-card:global:nclient [%event event])
       ==
     %del
-      =.  profiles.state  (~(del by profiles.state) [%urbit our.bowl])
+      =.  profiles.state  (~(del by profiles.state) our.bowl)
       ::  TODO send deletion to relay
       :_  state
       :~  (update-followers:cards:lib [%prof ~])
@@ -60,7 +60,7 @@
 ::
 ++  give-prof
   ^-  (list card)
-  =/  uprof  (~(get by profiles.state) [%urbit our.bowl])
+  =/  uprof  (~(get by profiles.state) our.bowl)
   =/  prof  ?^  uprof  u.uprof  default-profile:scry
   =/  =fact:comms  [%prof `prof]
   :~  [%give %fact ~ %noun !>(fact)]
@@ -72,8 +72,8 @@
   |=  prof=(unit user-profile:comms)
   ^-  (quip card _state)
   =.  profiles.state  ?~  prof
-    (~(del by profiles.state) [%urbit src.bowl])
-    (~(put by profiles.state) [%urbit src.bowl] u.prof)
+    (~(del by profiles.state) src.bowl)
+    (~(put by profiles.state) src.bowl u.prof)
   :_  state
   :~  (update-ui:cards:lib [%prof profiles.state])
   ==
