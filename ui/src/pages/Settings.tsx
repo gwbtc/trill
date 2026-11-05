@@ -1,4 +1,4 @@
-import useLocalState from "@/state/state";
+import useLocalState, { useStore } from "@/state/state";
 import { unwrap } from "@/logic/result";
 import { stringToUser } from "@/logic/nostrill";
 import ConfirmationDialog from "@/components/modals/ConfirmationDialog";
@@ -20,6 +20,7 @@ import {
 import {
   Check,
   Clock3,
+  Globe2,
   KeyRound,
   MessageCircle,
   Palette,
@@ -37,17 +38,20 @@ const BACKLOG_UNITS: TabItem<BacklogUnit>[] = [
 ];
 
 function Settings() {
-  const { key, relays, relayLatency, api, sets, setModal, lists, profiles } = useLocalState((s) => ({
+  const { key, relays, relayLatency, api, sets, settingsLoaded, setModal, lists, profiles } = useLocalState((s) => ({
     key: s.pubkey,
     relays: s.relays,
     relayLatency: s.relayLatency,
     api: s.api,
     sets: s.uiSettings,
+    settingsLoaded: s.uiSettingsLoaded,
     setModal: s.setModal,
     lists: s.lists,
     profiles: s.profiles,
   }));
   const [newRelay, setNewRelay] = useState("");
+  const [pendingGlobalSharing, setPendingGlobalSharing] = useState<boolean | null>(null);
+  const shareGlobally = pendingGlobalSharing ?? (sets.posting?.global !== false);
   const [isCyclingKey, setIsCyclingKey] = useState(false);
   const [backlogSize, setBacklogSize] = useState<number>(
     sets?.relay?.["backlog-size"] || 24,
@@ -131,6 +135,23 @@ function Settings() {
     const hours = backlogUnit === "days" ? backlogSize * 24 : backlogSize;
     setMisc("relay", "backlog-size", hours);
   }
+  async function setGlobalSharing(enabled: boolean) {
+    if (!api || pendingGlobalSharing !== null) return;
+    setPendingGlobalSharing(enabled);
+    try {
+      unwrap(await api.setSettings("posting", "global", enabled));
+      useStore.setState(s => ({ uiSettings: {
+        ...s.uiSettings,
+        posting: { ...s.uiSettings.posting, global: enabled },
+      } }));
+      toast.success("Setting saved");
+    } catch (error) {
+      toast.error("Failed to save setting");
+      console.error("global sharing setting error:", error);
+    } finally {
+      setPendingGlobalSharing(null);
+    }
+  }
   async function setMisc(bucket: string, entry: string, value: any) {
     if (!api) return;
     try {
@@ -191,6 +212,23 @@ function Settings() {
                 {isCyclingKey ? "Cycling..." : "Cycle key"}
               </button>
             </div>
+          </div>
+        </div>
+
+        <div id="settings-publishing" className="settings-section">
+          <div className="section-header">
+            <Globe2 size={18} />
+            <h2>Publishing</h2>
+          </div>
+          <div className="settings-panel">
+            <label className="settings-checkbox-row">
+              <input type="checkbox" checked={shareGlobally}
+                disabled={!settingsLoaded || pendingGlobalSharing !== null}
+                onChange={e => void setGlobalSharing(e.target.checked)}
+                aria-describedby="global-sharing-description" />
+              <span>Share new posts to the global feed</span>
+            </label>
+            <p id="global-sharing-description">Share your new posts with everyone browsing Trill’s global feed. Enabled by default.</p>
           </div>
         </div>
 

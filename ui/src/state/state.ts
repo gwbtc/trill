@@ -80,6 +80,7 @@ export type LocalState = {
   api: IO | null;
   init: () => Promise<void>;
   uiSettings: Record<string, any>;
+  uiSettingsLoaded: boolean;
   modal: JSX.Element | null;
   setModal: (modal: JSX.Element | null) => void;
   composerData: ComposerData | null;
@@ -220,7 +221,7 @@ export const useStore = creator((set, get) => ({
           return;
         }
         const uiSettings = r.ok.desk;
-        set({ uiSettings });
+        set({ uiSettings, uiSettingsLoaded: true });
       });
       api.scryStorage().then((r) => {
         if ("ok" in r) {
@@ -668,6 +669,7 @@ export const useStore = creator((set, get) => ({
   followGraph: { urbit: [], nostr: [] },
   lists: emptyLists(),
   uiSettings: {},
+  uiSettingsLoaded: false,
   modal: null,
   setModal: (modal) => set({ modal }),
   // composer data

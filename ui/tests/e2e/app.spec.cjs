@@ -1367,3 +1367,71 @@ test("our live Nostr replies use our ship identity even without cached profile m
   await expect(snippet.locator("header .name")).toHaveText("zod");
   await page.screenshot({ path: testInfo.outputPath("own-live-reply-ship-identity.png") });
 });
+
+test("global-feed sharing defaults on and is configured in Settings instead of the composer", async ({ page }, testInfo) => {
+  let saved = {};
+  await page.route("**/~/scry/settings/desk/nostrill.json", route => route.fulfill({ status: 200, json: { desk: saved } }));
+  await page.goto("f");
+  await page.getByRole("button", { name: "Compose", exact: true }).click();
+  const modal = page.locator("#compose-modal");
+  await expect(modal.getByTitle("global", { exact: true })).toHaveCount(0);
+  await modal.locator(".input-editor").fill("Shared by default");
+  await modal.getByRole("button", { name: "Broadcast", exact: true }).click();
+  await expect.poll(() => pokeLog).toContainEqual({ post: { add: { content: "Shared by default", global: true, anon: false, reply: "everyone" } } });
+  await page.goto("sets");
+  const toggle = page.getByRole("checkbox", { name: "Share new posts to the global feed", exact: true });
+  await expect(toggle).toBeChecked();
+  await toggle.uncheck();
+  await expect.poll(() => pokeLog).toContainEqual({ "put-entry": { desk: "nostrill", "bucket-key": "posting", "entry-key": "global", value: false } });
+  await expect(toggle).not.toBeChecked();
+  saved = { posting: { global: false } };
+  await page.screenshot({ path: testInfo.outputPath("global-sharing-settings.png") });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator("#settings-publishing").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("global-sharing-settings-mobile.png") });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("f");
+  await page.getByRole("button", { name: "Compose", exact: true }).click();
+  await modal.locator(".input-editor").fill("Opted out after reload");
+  await modal.getByRole("button", { name: "Broadcast", exact: true }).click();
+  await expect.poll(() => pokeLog).toContainEqual({ post: { add: { content: "Opted out after reload", global: false, anon: false, reply: "everyone" } } });
+  await page.goto("sets");
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
+  await expect(toggle).toBeChecked();
+  saved = { posting: { global: true } };
+  await page.goto("f");
+  const inline = page.locator("#composer");
+  await expect(inline.getByTitle("global", { exact: true })).toHaveCount(0);
+  await inline.locator(".input-editor").fill("Sharing enabled again");
+  await inline.getByRole("button", { name: "Post", exact: true }).click();
+  await expect.poll(() => pokeLog).toContainEqual({ post: { add: { content: "Sharing enabled again", global: true, anon: false, reply: "everyone" } } });
+});
+
+test("a rejected global-sharing setting keeps the saved preference", async ({ page }) => {
+  await page.goto("sets");
+  const toggle = page.getByRole("checkbox", { name: "Share new posts to the global feed", exact: true });
+  await expect(toggle).toBeEnabled();
+  nackPokes = true;
+  await toggle.uncheck();
+  await expect(page.getByText("Failed to save setting", { exact: true })).toBeVisible();
+  await expect(toggle).toBeChecked();
+  await expect(toggle).toBeEnabled();
+});
+
+test("posting waits for a saved global-feed opt-out instead of using the default", async ({ page }) => {
+  let release;
+  const ready = new Promise(resolve => { release = resolve; });
+  await page.route("**/~/scry/settings/desk/nostrill.json", async route => {
+    await ready;
+    await route.fulfill({ status: 200, json: { desk: { posting: { global: false } } } });
+  });
+  await page.goto("f");
+  await page.getByRole("button", { name: "Compose", exact: true }).click();
+  const modal = page.locator("#compose-modal");
+  await modal.locator(".input-editor").fill("Respect the opt-out");
+  await modal.getByRole("button", { name: "Broadcast", exact: true }).click();
+  expect(pokeLog.some(poke => poke.post?.add)).toBe(false);
+  release();
+  await expect.poll(() => pokeLog).toContainEqual({ post: { add: { content: "Respect the opt-out", global: false, anon: false, reply: "everyone" } } });
+});

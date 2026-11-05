@@ -85,11 +85,6 @@ function Composer({
     "everyone" | "following" | "mentioned"
   >("everyone");
 
-  const [isGlobal, setGlobal] = useState(true);
-  function toggleGlobal() {
-    setGlobal((s) => !s);
-  }
-
   const inputRef = useRef<HTMLDivElement>(null);
 
   // Input
@@ -111,9 +106,16 @@ function Composer({
 
   async function addSimple(content: string) {
     if (!api) return;
+    // Startup settings may still be in flight. Read them before publishing so
+    // a saved opt-out is never replaced by the default during initial loading.
+    if (!useStore.getState().uiSettingsLoaded) {
+      const result = await api.scrySettings();
+      if ("error" in result) return result;
+      useStore.setState({ uiSettings: result.ok.desk, uiSettingsLoaded: true });
+    }
     return await api.addPost(
       content.trim(),
-      isGlobal,
+      useStore.getState().uiSettings.posting?.global !== false,
       isAnon || false,
       replyMode,
     );
@@ -521,18 +523,6 @@ function Composer({
                 </button>
               </>
             )}
-            <button
-              type="button"
-              onClick={toggleGlobal}
-              className="icon-btn"
-              title="global"
-            >
-              <Icon
-                size={20}
-                name="planet"
-                filter={isGlobal ? undefined : "opacity(0.3)"}
-              />
-            </button>
           </div>
 
           {isModal && (

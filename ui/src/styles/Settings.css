@@ -723,3 +723,18 @@
   margin: 0;
   font-size: 12.5px;
 }
+.settings-panel .settings-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.settings-checkbox-row input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--color-primary);
+}
