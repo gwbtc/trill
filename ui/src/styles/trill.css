@@ -1174,11 +1174,29 @@ a.nostr-mention:hover {
   font-weight: 700;
 }
 
-/* .not-found {
-  border: 1px solid var(--text-color);
-  border-radius: 1rem;
-  padding: 0.5rem;
-} */
+.not-found {
+  margin-block: 20px;
+  padding: 16px 20px;
+  color: var(--color-text-secondary);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.not-found p {
+  margin: 0;
+}
+
+.not-found p + p,
+.not-found p + button {
+  margin-block-start: 12px;
+}
+
+.post-spinner {
+  display: block;
+  inline-size: 48px;
+  block-size: 48px;
+  margin: 24px auto;
+}
 
 .youtube-thumbnail {
   width: 70%;

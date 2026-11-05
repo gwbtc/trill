@@ -1,6 +1,6 @@
 import { useParams } from "wouter";
 import useLocalState from "@/state/state";
-import { ErrorPage } from "@/pages/Error";
+import ThreadState from "@/components/thread/ThreadState";
 import "@/styles/trill.css";
 import "@/styles/feed.css";
 import ComposerModal from "@/components/modals/ComposerModal";
@@ -52,10 +52,10 @@ export function NostrThreadLoader() {
     }
     return undefined;
   });
-  if (!id) return <ErrorPage msg="No thread id passed" />;
+  if (!id) return <div id="screen-thread" className="trill-screen"><ThreadState title="Unable to load thread">No thread ID was provided.</ThreadState></div>;
   // the route carries the event id (hex, note or nevent); nostr feeds are
   // keyed by timestamp ids, so look the event up by hash
-  if (!eventId) return <ErrorPage msg="Unknown thread id format" />;
+  if (!eventId) return <div id="screen-thread" className="trill-screen"><ThreadState title="Invalid thread link">The post ID in this link isn’t recognized.</ThreadState></div>;
   if (event)
     return (
       <div id="screen-thread" className="trill-screen">

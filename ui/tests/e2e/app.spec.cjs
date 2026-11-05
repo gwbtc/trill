@@ -1082,3 +1082,76 @@ test("Nostr parsing scales with new events rather than cached feed size", async 
   expect(await page.evaluate(() => window.__parses)).toBe(200);
   await page.screenshot({ path: testInfo.outputPath("linear-nostr-parsing.png") });
 });
+
+function ancestorFixture() {
+  const { finalizeEvent } = require("nostr-tools");
+  // Public fixture key, used only to sign mocked browser relay responses.
+  const key = new Uint8Array(32); key[31] = 1;
+  const note = (content, tags = []) => finalizeEvent({ kind: 1, content, tags, created_at: 1700000000 }, key);
+  const root = note("Conversation root");
+  const parent = note("Immediate parent", [["e", root.id, "wss://context.example/", "root", root.pubkey]]);
+  const mention = note("This mention is not an ancestor");
+  const selected = note("Selected nested reply", [["e", root.id, "wss://context.example/", "root", root.pubkey], ["e", parent.id, "", "reply", parent.pubkey], ["e", mention.id, "", "mention"], ["q", mention.id]]);
+  return { root, parent, mention, selected };
+}
+
+test("a cached Nostr reply loads its ancestors and keeps the selected post focused", async ({ page }, testInfo) => {
+  feedFixtureKind = "state2";
+  state2Snapshot = state2Fixture();
+  const { root, parent, mention, selected } = ancestorFixture();
+  state2Snapshot.nostr.feeds.timeline["wss://one.example"].feed = [selected];
+  state2Snapshot.nostr.feeds.timeline["wss://two.example"].feed = [];
+  const requests = [];
+  await page.routeWebSocket(/wss:\/\/(one|context)\.example/, ws => {
+    ws.onMessage(raw => {
+      const msg = JSON.parse(String(raw));
+      if (msg[0] !== "REQ") return;
+      for (const id of msg[2].ids || []) {
+        requests.push(id);
+        const event = id === root.id ? root : id === parent.id ? parent : null;
+        if (event && ws.url().includes("context.example")) ws.send(JSON.stringify(["EVENT", msg[1], event]));
+      }
+      ws.send(JSON.stringify(["EOSE", msg[1]]));
+    });
+  });
+  await page.goto(`t/n/${selected.id}`);
+  await expect(page.getByText(root.content, { exact: true })).toBeVisible();
+  await expect(page.getByText(parent.content, { exact: true })).toBeVisible();
+  const focus = page.getByRole("region", { name: "Selected post", exact: true });
+  await expect(focus).toContainText(selected.content);
+  await expect(focus).toBeFocused();
+  const ids = await page.locator("[data-thread-event]").evaluateAll(nodes => nodes.map(node => node.getAttribute("data-thread-event")));
+  expect(ids).toEqual([root.id, parent.id, selected.id]);
+  expect(requests).not.toContain(mention.id);
+  const bounds = await focus.boundingBox();
+  expect(bounds.y).toBeGreaterThanOrEqual(0);
+  expect(Math.abs(bounds.y + bounds.height / 2 - page.viewportSize().height / 2)).toBeLessThanOrEqual(2);
+  await focus.locator("#thread-reply-composer").click();
+  await expect(page.locator("#compose-modal")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.screenshot({ path: testInfo.outputPath("nostr-ancestor-chain.png") });
+});
+
+test("legacy Nostr ancestry keeps an available root when the immediate parent is missing", async ({ page }, testInfo) => {
+  feedFixtureKind = "state2";
+  state2Snapshot = state2Fixture();
+  const { finalizeEvent } = require("nostr-tools");
+  const { root, parent, mention } = ancestorFixture();
+  const key = new Uint8Array(32); key[31] = 1;
+  const selected = finalizeEvent({ kind: 1, content: "Legacy selected reply", created_at: 1700000001, tags: [["e", root.id], ["e", mention.id, "", "mention"], ["e", parent.id]] }, key);
+  state2Snapshot.nostr.feeds.timeline["wss://one.example"].feed = [selected];
+  state2Snapshot.nostr.feeds.timeline["wss://two.example"].feed = [];
+  await page.routeWebSocket(/wss:\/\/one\.example/, ws => ws.onMessage(raw => {
+    const msg = JSON.parse(String(raw));
+    if (msg[0] !== "REQ") return;
+    if (msg[2].ids?.includes(root.id)) ws.send(JSON.stringify(["EVENT", msg[1], root]));
+    ws.send(JSON.stringify(["EOSE", msg[1]]));
+  }));
+  await page.goto(`t/n/${selected.id}`);
+  await expect(page.getByText(root.content, { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Selected post" })).toContainText(selected.content);
+  await expect(page.getByText("Some earlier posts couldn’t be loaded.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry earlier posts" })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath("nostr-missing-parent-mobile.png") });
+});

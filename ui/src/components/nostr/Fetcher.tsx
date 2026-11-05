@@ -1,48 +1,55 @@
 import { NRelay1 } from "@nostrify/nostrify";
 import useLocalState from "@/state/state";
-import spinner from "@/assets/triangles.svg";
 import { useEffect, useState } from "react";
 import type { Wevent } from "@/types/nostr";
 import NostrThread from "./Thread";
+import ThreadState from "@/components/thread/ThreadState";
 
 export default function Thread({ id }: { id: string }) {
-  // TODO iterate over relays; for now the first one is asked
-  const relayUrl = useLocalState((s) => Object.keys(s.relays)[0]);
+  const { relayKey, stateLoaded } = useLocalState((s) => ({
+    relayKey: JSON.stringify(Object.keys(s.relays)), stateLoaded: s.stateLoaded,
+  }));
   const [data, setData] = useState<Wevent>();
   const [status, setStatus] = useState<"loading" | "done">("loading");
 
-  // depends on the url, not the relays object: that changes on every relay
-  // status fact, and re-running would open (and leak) a socket each time
+  // Depend on URLs, not connection-status objects. Query the configured
+  // relays together; a miss on the first one is not a miss everywhere.
   useEffect(() => {
-    if (!relayUrl) return;
-    const relay = new NRelay1(relayUrl);
+    const urls = JSON.parse(relayKey) as string[];
+    if (!urls.length) return;
+    const connections = urls.map(url => ({ url, relay: new NRelay1(url) }));
     const ctrl = new AbortController();
+    const signal = AbortSignal.any([ctrl.signal, AbortSignal.timeout(8000)]);
     setStatus("loading");
     (async () => {
       try {
-        for await (const msg of relay.req([{ ids: [id] }], { signal: ctrl.signal })) {
-          if (msg[0] === "EVENT") setData({ ...msg[2], relays: [relayUrl] });
-          if (msg[0] === "EOSE" || msg[0] === "CLOSED") break;
-        }
+        const note = await Promise.any(connections.map(async ({ url, relay }) => {
+          for await (const msg of relay.req([{ ids: [id], kinds: [1, 667] }], { signal })) {
+            if (msg[0] === "EVENT" && msg[2].id === id) return { ...msg[2], relays: [url] };
+            if (msg[0] === "EOSE" || msg[0] === "CLOSED") break;
+          }
+          throw new Error("Note unavailable");
+        }));
+        if (!ctrl.signal.aborted) setData(note);
       } catch {
-        // aborted on unmount, or the relay failed; show what we have
+        // Aborted on unmount, timed out, or no configured relay had the note.
+      } finally {
+        for (const { relay } of connections) void relay.close();
       }
       if (!ctrl.signal.aborted) setStatus("done");
     })();
     return () => {
       ctrl.abort();
-      relay.close();
+      for (const { relay } of connections) void relay.close();
     };
-  }, [relayUrl, id]);
+  }, [relayKey, id]);
 
   if (data) return <NostrThread event={data} relays={data.relays ?? []} />;
-  if (!relayUrl)
-    return <p className="x-center not-found">Add a Nostr relay to load this thread.</p>;
+  const urls = JSON.parse(relayKey) as string[];
+  if (!stateLoaded) return <ThreadState title="Loading note…" loading />;
+  if (!urls.length)
+    return <ThreadState title="No relay configured">Add a Nostr relay to load this thread.</ThreadState>;
   if (status === "done")
-    return <p className="x-center not-found">This note wasn't found on {relayUrl}.</p>;
-  return (
-    <div className="loading-container">
-      <img className="x-center" src={spinner} alt="Loading" />
-    </div>
-  );
+    return <ThreadState title="Note not found">{urls.length === 1 ? `This note wasn't found on ${urls[0]}.` : "This note wasn’t found on the configured relays."}</ThreadState>;
+  return <ThreadState title="Loading note…" loading />;
 }

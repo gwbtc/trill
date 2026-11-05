@@ -1,5 +1,5 @@
 import useLocalState from "@/state/state";
-import spinner from "@/assets/triangles.svg";
+import ThreadState from "@/components/thread/ThreadState";
 import { toFlat } from "@/logic/trill/helpers";
 import type { FC, FullNode, Poast } from "@/types/trill";
 import type { UserProfile } from "@/types/nostrill";
@@ -136,28 +136,17 @@ function Loader({
         <Head poast={poast} profile={profile} />
         <ThreadReplyComposer poast={poast} />
         <div id="thread-children" className={`thread-replies-${threadStyle}`}>
-          <h2>Loading Replies...</h2>
-          <div className="loading-container">
-            <img className="x-center" src={spinner} alt="Loading" />
-          </div>
+          <ThreadState title="Loading replies…" loading compact />
         </div>
       </>
     );
   if (error)
     return (
-      <div className="thread-header">
-        <h2>Error Loading Thread</h2>
-        <p className="error">{error}</p>
-      </div>
+      <ThreadState title="Error loading thread">{error}</ThreadState>
     );
   else
     return (
-      <div id="feed-proper">
-        <h2>Loading Thread...</h2>
-        <div className="loading-container">
-          <img className="x-center" src={spinner} alt="Loading" />
-        </div>
-      </div>
+      <ThreadState title="Loading thread…" loading />
     );
 }
 
@@ -190,7 +179,7 @@ function LongThread({
   profile?: UserProfile;
   threadStyle: ThreadStyle;
 }) {
-  if (thread.length === 0) return <p>wtf</p>;
+  if (thread.length === 0) return <ThreadState title="Thread not found">This thread has no available posts.</ThreadState>;
   const op = thread[0];
   // `thread` is only the author's self-reply chain; everyone else's replies
   // to posts in it hang off the chain nodes' children

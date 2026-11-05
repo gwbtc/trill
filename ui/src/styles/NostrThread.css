@@ -1,0 +1,42 @@
+.nostr-thread-view {
+  padding-block-end: 50dvh;
+}
+
+.nostr-thread-ancestors > h2 {
+  margin: 0;
+  padding: 20px 20px 8px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.nostr-thread-focus {
+  border-inline-start: 3px solid var(--color-primary, #543fd7);
+  scroll-margin-block: 24px;
+  outline-offset: -2px;
+}
+
+.nostr-thread-context-note {
+  margin: 0;
+  padding: 16px 20px;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.nostr-thread-context-note p {
+  margin: 0;
+}
+
+.nostr-thread-context-note button {
+  margin-block-start: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-background);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}

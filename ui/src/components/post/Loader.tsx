@@ -122,8 +122,10 @@ function PostData(props: Props) {
           </div>
         ) : "error" in data ? (
           <div className={props.className}>
-            <p className="x-center not-found">Post not found</p>
-            <p className="x-center not-found">{data.error}</p>
+            <div className="not-found">
+              <p>Post not found</p>
+              <p>{data.error}</p>
+            </div>
           </div>
         ) : (
           <Component
