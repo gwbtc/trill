@@ -13,6 +13,45 @@
   font-size: 20px;
 }
 
+#s3-browser .media-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+#s3-browser .media-upload {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--color-primary);
+  color: var(--color-on-primary, #fff);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+#s3-browser button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#s3-browser .media-upload-error {
+  margin: 0;
+  color: var(--color-error);
+  overflow-wrap: anywhere;
+}
+
+#s3-browser .media-status {
+  overflow-wrap: anywhere;
+}
+
 #s3-browser .media-status {
   margin: 0;
   padding-block: 16px;

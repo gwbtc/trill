@@ -1441,6 +1441,7 @@ async function installJarsMock(page, { exists = false, headStatus, createStatus 
   const calls = [];
   let present = exists;
   let failUpload = false;
+  const uploadedKeys = new Set();
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jC3sAAAAASUVORK5CYII=", "base64");
   await page.route("**/~/scry/s3-server/config.json", route => route.fulfill({ status: 200, json: { region: "us-east-1", accessKeyId: "~zod", secretAccessKey: "public-jars-test-fixture" } }));
   await page.route(/\/jars\/trill(?:\/.*)?(?:\?.*)?$/, async route => {
@@ -1456,11 +1457,14 @@ async function installJarsMock(page, { exists = false, headStatus, createStatus 
       if (createStatus === 200) present = true;
       return route.fulfill({ status: createStatus, headers, body: createStatus === 200 ? "" : '<Error><Code>AccessDenied</Code><Message>Bucket creation denied</Message></Error>' });
     }
-    if (method === "GET" && bucket) return route.fulfill({ status: 200, headers: { ...headers, "content-type": "application/xml" }, body: '<?xml version="1.0"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>trill</Name><IsTruncated>false</IsTruncated><Contents><Key>folder/photo #1?.png</Key><Size>68</Size></Contents></ListBucketResult>' });
-    if (method === "PUT") return route.fulfill({ status: failUpload ? 500 : 200, headers, body: failUpload ? '<Error><Code>InternalError</Code><Message>Fixture upload failed</Message></Error>' : "" });
+    if (method === "GET" && bucket) return route.fulfill({ status: 200, headers: { ...headers, "content-type": "application/xml" }, body: '<?xml version="1.0"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>trill</Name><IsTruncated>false</IsTruncated><Contents><Key>folder/photo #1?.png</Key><Size>68</Size></Contents>' + [...uploadedKeys].map(key => `<Contents><Key>${key}</Key><Size>68</Size></Contents>`).join("") + '</ListBucketResult>' });
+    if (method === "PUT") {
+      if (!failUpload) uploadedKeys.add(url.pathname.split("/").at(-1));
+      return route.fulfill({ status: failUpload ? 500 : 200, headers, body: failUpload ? '<Error><Code>InternalError</Code><Message>Fixture upload failed</Message></Error>' : "" });
+    }
     return route.fulfill({ status: 200, headers: { ...headers, "content-type": "image/png" }, body: png });
   });
-  return { calls, failUploads: () => { failUpload = true; } };
+  return { calls, failUploads: () => { failUpload = true; }, allowUploads: () => { failUpload = false; } };
 }
 
 async function pasteJarsImage(page, editor) {
@@ -1535,6 +1539,7 @@ test("missing Jars leaves the composer usable and explains unavailable media", a
   await page.getByRole("button", { name: "Compose", exact: true }).click();
   await page.locator("#compose-modal").getByTitle("Add image", { exact: true }).click();
   await expect(page.locator("#s3-browser").getByText("Media storage is unavailable on this ship.", { exact: true })).toBeVisible();
+  await expect(page.locator("#s3-browser").getByRole("button", { name: "Upload image", exact: true })).toBeDisabled();
   await page.screenshot({ path: testInfo.outputPath("jars-unavailable.png") });
   expect(jarRequests).toEqual([]);
   await page.keyboard.press("Escape");
@@ -1555,4 +1560,67 @@ test("Jars bucket creation and invalid configuration failures do not enable uplo
   await browser.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(browser.getByText("Couldn’t prepare media storage.", { exact: true })).toBeVisible();
   expect(jars.calls).toHaveLength(before);
+});
+
+test("the media picker uploads an image file and inserts it into the composer", async ({ page }, testInfo) => {
+  const jars = await installJarsMock(page, { exists: true });
+  let release;
+  const uploadReady = new Promise(resolve => { release = resolve; });
+  await page.route(/\/jars\/trill\/[^/?]+\.png\?/, async route => {
+    if (route.request().method() === "PUT") await uploadReady;
+    await route.fallback();
+  });
+  await page.goto("f");
+  await page.getByRole("button", { name: "Compose", exact: true }).click();
+  const modal = page.locator("#compose-modal");
+  await modal.getByTitle("Add image", { exact: true }).click();
+  const browser = page.locator("#s3-browser");
+  const upload = browser.getByRole("button", { name: "Upload image", exact: true });
+  await expect(upload).toBeEnabled();
+  const chooserEvent = page.waitForEvent("filechooser");
+  await upload.click();
+  const chooser = await chooserEvent;
+  await chooser.setFiles({ name: "photo.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jC3sAAAAASUVORK5CYII=", "base64") });
+  await expect(browser.getByRole("status")).toContainText("Uploading photo.png…");
+  await expect(upload).toBeDisabled();
+  await expect(browser.getByRole("button", { name: "Choose folder/photo #1?.png", exact: true })).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath("image-file-upload-progress.png") });
+  release();
+  await expect(browser).toHaveCount(0);
+  const image = modal.locator(".input-editor img");
+  await expect(image).toHaveAttribute("src", /^http:\/\/localhost:8900\/jars\/trill\/.+\.png$/);
+  await expect(modal.getByRole("button", { name: "Broadcast", exact: true })).toBeEnabled();
+  const url = await image.getAttribute("src");
+  expect(jars.calls.filter(call => call.method === "PUT")).toHaveLength(1);
+  await modal.getByTitle("Add image", { exact: true }).click();
+  await expect(browser.getByRole("button", { name: `Choose ${url.split("/").at(-1)}`, exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath("image-file-upload-picker-mobile.png") });
+});
+
+test("file uploads reject non-images, preserve drafts on failure and allow retrying the same file", async ({ page }) => {
+  const jars = await installJarsMock(page, { exists: true });
+  jars.failUploads();
+  await page.goto("f");
+  await page.getByRole("button", { name: "Compose", exact: true }).click();
+  const modal = page.locator("#compose-modal");
+  const editor = modal.locator(".input-editor");
+  await editor.fill("Keep this draft");
+  await modal.getByTitle("Add image", { exact: true }).click();
+  const browser = page.locator("#s3-browser");
+  const input = browser.locator('input[type="file"]');
+  await expect(browser.getByRole("button", { name: "Upload image", exact: true })).toBeEnabled();
+  await input.setInputFiles({ name: "text.txt", mimeType: "text/plain", buffer: Buffer.from("not an image") });
+  await expect(browser.getByRole("alert")).toHaveText("Choose an image file.");
+  expect(jars.calls.filter(call => call.method === "PUT")).toHaveLength(0);
+  const file = { name: "same-photo.png", mimeType: "image/png", buffer: Buffer.from("fixture image") };
+  await input.setInputFiles(file);
+  await expect(browser.getByRole("alert")).toHaveText("Couldn’t upload same-photo.png. Try again.");
+  await expect(editor).toHaveText("Keep this draft");
+  await expect(editor.locator("img")).toHaveCount(0);
+  jars.allowUploads();
+  await input.setInputFiles(file);
+  await expect(browser).toHaveCount(0);
+  await expect(editor).toContainText("Keep this draft");
+  await expect(editor.locator("img")).toHaveCount(1);
 });

@@ -89,13 +89,13 @@ export async function listMedia(config: S3Config, signal: AbortSignal) {
   return { keys: [...keys], limited: xml.getElementsByTagNameNS("*", "IsTruncated")[0]?.textContent === "true" };
 }
 
-export async function uploadToS3(file: File, config: S3Config): Promise<string> {
+export async function uploadToS3(file: File, config: S3Config, signal?: AbortSignal): Promise<string> {
   const extension = file.name.match(/\.([a-z0-9]{1,12})$/i)?.[1]?.toLowerCase();
   const key = `${Date.now()}-${crypto.randomUUID()}${extension ? `.${extension}` : ""}`;
   const payload = new Uint8Array(await file.arrayBuffer());
   // Content-Type belongs on the object itself, not x-amz-meta-content-type.
   const headers = new Headers({ "content-type": file.type || "application/octet-stream" });
-  const response = await request(config, "PUT", key, payload, headers);
+  const response = await request(config, "PUT", key, payload, headers, signal);
   await response.arrayBuffer();
   return mediaUrl(config, key);
 }

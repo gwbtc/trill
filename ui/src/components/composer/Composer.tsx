@@ -323,8 +323,8 @@ function Composer({
     setS3Open(false);
     if (!inputRef.current) return;
     restoreComposerCaret(inputRef.current, caretRef.current);
-    setInput((s) => s + ` ![](${url}) `);
     insertComposerImage(url);
+    setInput(serializeComposerContent(inputRef.current, inputRef.current.innerText));
   };
 
   const openS3Browser = () => {
