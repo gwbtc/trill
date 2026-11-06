@@ -46,7 +46,7 @@
       ::  A single inline element
       ++  element   $+  inline-element
                     $@  ~
-                    $%(escape entity code hardbrk softbrk text emphasis strong strikethru link image autolink)
+                    $%(escape entity code hardbrk softbrk text emphasis strong strikethru link image autolink task-checkbox html)
       ::
       ::  Any amount of elements
       ++  contents  (list element)
@@ -86,11 +86,20 @@
       +$  link        [%link =contents =target:ln]
       ::
       ::  Images
-      +$  image       [%image alt-text=@t =target:ln]
+      +$  image       [%image =contents =target:ln]
       ::
-      ::  Autolink: a link that's just itself, surrounded by "<...>"
-      +$  autolink    [%autolink text=@t]
+      ::  Autolink: a URI or email address surrounded by "<...>"
+      +$  autolink-target
+        $%  [%uri text=@t]
+            [%email text=@t]
+        ==
+      +$  autolink    [%autolink target=autolink-target]
       ::
+      ::  Task-list marker. Only produced at the start of a list item.
+      +$  task-checkbox  [%task-checkbox is-checked=?]
+      ::
+      ::  HTML
+      +$  html        [%html text=@t]
     --
   ::
   ::  Leaf nodes: non-nested (i.e., terminal) nodes
@@ -98,7 +107,7 @@
     |%
       ++  node  $+  leaf-node
                 $@  ~
-                $%(heading break codeblk-indent codeblk-fenced link-ref-def table paragraph blank-line)
+                $%(heading break codeblk-indent codeblk-fenced html link-ref-def table paragraph blank-line)
       ::
       ::  Heading, either setext or ATX style
       +$  heading         [%heading style=?(%setext %atx) level=@ =contents:inline]
@@ -114,6 +123,8 @@
       ::  Can be indented up to 3 spaces.
       +$  codeblk-fenced  [%fenced-codeblock char=@t char-count=@ info-string=@t indent-level=@ text=@t]
       ::
+      ::  HTML
+      +$  html            [%html text=@t]
       ::
       ::  Link reference definition (defines a named link which can be referenced elsewhere)
       +$  link-ref-def    [%link-ref-definition label=@t =urlt:ln]
@@ -148,7 +159,8 @@
       ::  Can be indented up to 3 spaces
       +$  ul  [%ul indent-level=@ marker-char=@t contents=(list markdown)] :: is-tight=?
       ::
-      ::  Task list: unordered list of tasks
+      ::  Legacy task list. New parses use `%ul` with inline task checkboxes,
+      ::  allowing task and ordinary items to coexist.
       ::  Can be indented up to 3 spaces
       +$  tl  [%tl indent-level=@ marker-char=@t contents=(list [is-checked=? =markdown])] :: is-tight=?
     --

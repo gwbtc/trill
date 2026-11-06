@@ -1,5 +1,6 @@
 /-  tp=trill-post, md=markdown
 /+  sr=sortug, mdlib=markdown
+=|  markdown-refs=(map @t urlt:ln:md)
 |%
 
 ++  get-ref
@@ -51,13 +52,79 @@
         ~
     ==
   post
-:: new! using wispem's lib
+:: Parse Markdown, then adapt its AST to Trill text and media blocks.
 ++  tokenise
 |=  t=@t  ^-  (each content-list:tp @t)
-  =/  parsed  (rush t markdown:de:mdlib)
+  =/  parsed  (de:mdlib t)
   ?~  parsed  [%| 'parsing error']
+  =.  markdown-refs  (all-link-ref-definitions:mdlib u.parsed)
   :-  %&
-  %+  turn  u.parsed  de-node  
+  %-  zing
+  %+  turn  u.parsed  de-node-blocks
+:: Images belong to media blocks, not Trill's text-only inline union.
+++  de-node-blocks
+  |=  =node:markdown:md
+  ^-  content-list:tp
+  =/  block  (de-node node)
+  =/  blocks=content-list:tp  ?:(?=([%paragraph ~] block) ~ ~[block])
+  =/  pics  (images-node node)
+  ?~  pics  blocks
+  =/  media=content-list:tp  ~[[%media %images pics]]
+  (weld blocks media)
+
+++  image-url
+  |=  tar=target:ln:md
+  ^-  (unit @t)
+  ?:  ?=(%direct -.tar)  `text.url.urlt.tar
+  =/  ref  (~(get by markdown-refs) (normalize-reference-label:mdlib label.tar))
+  ?~  ref  ~
+  `text.url.u.ref
+
+++  images-inline
+  |=  inls=contents:inline:md
+  ^-  (list @t)
+  %-  zing
+  %+  turn  inls
+  |=  inl=element:inline:md
+  ^-  (list @t)
+  ?+  -.inl  ~
+    %image
+      =/  url  (image-url target.inl)
+      ?~  url  ~
+      ~[u.url]
+    %emphasis    (images-inline contents.inl)
+    %strong      (images-inline contents.inl)
+    %strikethru  (images-inline contents.inl)
+    %link        (images-inline contents.inl)
+  ==
+
+++  images-nodes
+  |=  nodes=markdown:md
+  ^-  (list @t)
+  (zing (turn nodes images-node))
+
+++  images-node
+  |=  =node:markdown:md
+  ^-  (list @t)
+  ?~  node  ~
+  ?:  ?=(%leaf -.node)
+    =/  leaf=node:leaf:markdown:md  +.node
+    ?+  -.leaf  ~
+      %paragraph  (images-inline contents.leaf)
+      %heading    (images-inline contents.leaf)
+    ==
+  =/  container=node:container:markdown:md  +.node
+  ?-  -.container
+    %block-quote  (images-nodes markdown.container)
+    %ol  (zing (turn contents.container images-nodes))
+    %ul  (zing (turn contents.container images-nodes))
+    %tl
+      %-  zing
+      %+  turn  contents.container
+      |=  [is-checked=? doc=markdown:md]
+      (images-nodes doc)
+  ==
+
 ++  de-node  |=  =node:markdown:md  ^-  block:tp
   ?~  node  [%paragraph ~]
   ?-  -.node
@@ -72,8 +139,8 @@
     %break                [%paragraph :~([%break ~])]
     %indent-codeblock     [%codeblock text.node '']
     %fenced-codeblock     [%codeblock text.node info-string.node]
-    :: %html                 [%codeblock text.node 'html']
-    %link-ref-definition  [%paragraph :~([%link '' label.node])]
+    %html                 [%paragraph ~[[%text text.node]]]
+    %link-ref-definition  [%paragraph ~]
     %paragraph            [%paragraph (de-inline contents.node)]
     %blank-line           [%paragraph :~([%break ~])]
     %table                [%paragraph :~([%break ~])]  :: TODO
@@ -86,9 +153,14 @@
   ?:  .=(4 level.h)  %h4
   ?:  .=(5 level.h)  %h5  %h6
 ++  de-inline  |=  inls=contents:inline:md
+  ^-  paragraph:tp
   =|  res=(list inline:tp)
   |-  ?~  inls  (flop res)
     =/  inl  i.inls
+    ?:  ?&  ?=(%image -.inl)
+            ?=(^ (image-url target.inl))
+        ==
+      $(inls t.inls)
     =/  r=inline:tp  ?-  -.inl
       ::  a backslash-escaped character is just that character
       %escape           [%text char.inl]
@@ -101,11 +173,11 @@
       %strong           (de-strong +.inl)
       %strikethru       [%strike (flatten-inline contents.inl)]
       %link             [%link (de-target target.inl) (flatten-inline contents.inl)]
-      %image            [%link (de-target target.inl) (de-target target.inl)]
-      :: TODO
-      :: %image            [%img (de-target target.inl) alt-text.inl]
+      :: Unresolved references remain literal Markdown rather than broken media.
+      %image            [%text (crip (element:reference-label:mdlib inl))]
       %autolink         [%text '']
-      :: %html             [%codespan text.inl]
+      %html             [%text text.inl]
+      %task-checkbox    [%text ?:(is-checked.inl '[x] ' '[ ] ')]
     ==
     $(inls t.inls, res [r res])
 ++  de-inline-text  |=  txt=@t
@@ -121,10 +193,13 @@
 ?:  .=('_' char)  [%italic (flatten-inline inls)]
                   [%bold (flatten-inline inls)]
 ++  de-target  |=  tar=target:ln:md
-:: TODO lotsa stuff here
+  ^-  @t
   ?-  -.tar
     %direct  text.url.urlt.tar
-    %ref     label.tar
+    %ref
+      =/  ref  (~(get by markdown-refs) (normalize-reference-label:mdlib label.tar))
+      ?~  ref  label.tar
+      text.url.u.ref
   ==
 ++  flatten-inline  |=  inls=contents:inline:md  ^-  @t
   =/  res  ""
@@ -138,7 +213,7 @@
       %emphasis         (trip (flatten-inline contents.inl))
       %strong           (trip (flatten-inline contents.inl))
       %link             (trip (flatten-inline contents.inl))
-      %image            (trip (de-target target.inl))
+      %image            ""
       :: %html             (trip text.inl)
     ==
     $(inls t.inls, res "{res} {r}")
@@ -209,12 +284,11 @@
   ?+  -.media.b  "![{(trip p.media.b)}]({(trip p.media.b)})"
   :: TODO
 %images
-  :: %^  foldi:sr  p.media.b  ""  |=  [i=@ud [url=@t caption=@t] acc=tape]
-  :: =/  line  "![{(trip caption)}]({(trip url)})"
-  :: ?:  .=(+(i) (lent p.media.b))
-  :: "{acc}{line}"
-  :: "{acc}{line}\0a"
-  ""
+  %-  zing
+  %+  join  "\0a"
+  %+  turn  p.media.b
+  |=  url=@t
+  "![]({(trip url)})"
   ==
 %codeblock
   """

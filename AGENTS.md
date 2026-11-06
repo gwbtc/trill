@@ -63,6 +63,8 @@ Unfollow deletes the cached feed and removes an edge from our own graph set, but
 
 `enfollowing` and `engraph` now send native ship-keyed JSON objects. `nostr` snapshots and `%nostr %data` facts encode the separate Nostr data subtree through `lib/json/nostr.hoon`; `/j/nostr` retains the sourced-feeds read endpoint. Nostr kind-0/kind-3 responses populate optional metadata/contact values under `user-map`, and notes populate raw per-author feeds. Keep unknown (`null`) distinct from known empty lists. Frontend types and parsers must follow this contract; legacy disaggregation code is not automatically compatible.
 
+Markdown enters through `tokenise` in `lib/trill/post.hoon`, using the active `lib/markdown.hoon` and `sur/markdown.hoon`; `omarkdown.hoon` files are preserved references. The adapter resolves reference definitions, lifts image nodes into `%media %images` blocks, and exports them back to Markdown for relay publication. Keep image parse/export round trips intact; `tests/markdown-media.hoon` covers direct/reference/nested images and literal link/code cases. HTML remains literal text. Existing list/table adapter TODOs do not imply full support for every parser feature.
+
 Native posts use ordered maps keyed by `@da`, with thread/reply relationships and engagement stored in the post. `lib/nostrill/posts.hoon` updates native feeds and emits add/update/delete facts. `lib/scri.hoon` serves feed/thread reads; feed scries accept count/order arguments, but `sfeed` still has TODOs for actually enforcing count/order. Do not advertise complete pagination until those paths are verified.
 
 ## Relay Engine & Update Costs
