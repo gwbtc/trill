@@ -8,6 +8,8 @@ export interface TlonGroup {
   id: string;
   title: string;
   description: string;
+  image?: string;
+  cover?: string;
   channels: TlonChannel[];
 }
 export interface TlonChannel {
@@ -178,6 +180,8 @@ export class TlonChannelsClient {
       });
       groups.set(id, {
         id,
+        image: typeof meta.image === "string" ? meta.image : "",
+        cover: typeof meta.cover === "string" ? meta.cover : "",
         title: typeof meta.title === "string" && meta.title ? meta.title : id,
         description:
           typeof meta.description === "string" ? meta.description : "",

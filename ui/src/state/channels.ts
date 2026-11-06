@@ -333,6 +333,8 @@ export const useChannelsStore = create<ChannelsState>((set, get) => ({
             previous &&
             previous.title === group.title &&
             previous.description === group.description &&
+            previous.image === group.image &&
+            previous.cover === group.cover &&
             previous.channels.length === group.channels.length &&
             previous.channels.every(
               (channel, index) => channel === group.channels[index],
