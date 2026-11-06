@@ -7,6 +7,82 @@ let mockReconnectMs = 10;
 let fixtureSnapshotsPending = true;
 let walletSubscriptions = new Set();
 let chatSubscriptions = new Set();
+let tlonSubscriptions = new Map();
+let tlonEvents = [];
+let tlonActions = [];
+let tlonInvitesHandled = new Set();
+let tlonHistoryRequests = [];
+let tlonBlocked = new Set();
+let tlonMuted = new Set();
+let tlonSent = new Map();
+let tlonGroups = {};
+let tlonUnavailable = false;
+const TLON_CLUB = "0v12345";
+const TLON_TIME = "170141184506204487328429881284054442000";
+const tlonTime = (time) => String(time).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+function tlonWrit(author, text, offset = 0) {
+  const time = (BigInt(TLON_TIME) + BigInt(offset)).toString();
+  return { type: "post", seal: { id: `${author}/${tlonTime(time)}`, time, seq: offset }, essay: { author, sent: 1700000000000 + offset * 1000, content: [{ inline: [text] }], kind: "/chat", meta: null, blob: null } };
+}
+function tlonRows() {
+  const fixture = dmInboxFixture();
+  const rows = new Map();
+  for (const [id, dm] of Object.entries(fixture.dms)) rows.set(id, tlonWrit(id, Object.values(dm.fc.feed)[0].contents[0].paragraph[0].text));
+  for (const [id, request] of Object.entries(fixture.requests)) if (!tlonInvitesHandled.has(id)) rows.set(id, tlonWrit(id, request.post.contents[0].paragraph[0].text));
+  if (dmInboxFixtureKind === "group") rows.set(TLON_CLUB, tlonWrit("~nec", "group hello", 2));
+  for (const [id, messages] of tlonSent) if (messages.length) rows.set(id, messages.at(-1));
+  return rows;
+}
+async function tlonScry(route) {
+  if (tlonUnavailable) return route.fulfill({ status: 404, body: "chat is not installed" });
+  const path = decodeURIComponent(new URL(route.request().url()).pathname.split("/scry/chat")[1]).replace(/\.json$/, "");
+  const rows = tlonRows();
+  let json;
+  if (path === "/v4/heads") json = [...rows].map(([whom, latest]) => ({ whom, latest, recency: latest.essay.sent }));
+  else if (path === "/clubs") json = { ...(dmInboxFixtureKind === "group" ? { [TLON_CLUB]: { team: ["~zod", "~nec", "~bud"], hive: [], meta: { title: "Team chat", description: "", image: "", cover: "" }, net: "done" }, "0v999": { team: ["~nec"], hive: [], meta: { title: "Declined group" }, net: "done" } } : {}), ...tlonGroups };
+  else if (path === "/dm") json = [...rows.keys()].filter((id) => id.startsWith("~") && !(dmInboxFixtureKind === "requests" && !tlonInvitesHandled.has(id)));
+  else if (path === "/dm/invited") json = dmInboxFixtureKind === "requests" ? ["~litzod", "~nec"].filter((id) => !tlonInvitesHandled.has(id)) : [];
+  else if (path === "/dm/archive") json = [];
+  else if (path === "/blocked") json = [...new Set([...(dmInboxFixtureKind === "statuses" ? ["~bud"] : []), ...tlonBlocked])];
+  else if (path === "/unreads") json = Object.fromEntries([...rows.keys()].map((id) => [id, { recency: 1700000000000, count: 12, unread: { id: rows.get(id).seal.id, time: TLON_TIME, count: 1 }, threads: {} }]));
+  else if (/^\/v4\/(dm|club)\//.test(path)) {
+    tlonHistoryRequests.push(path);
+    const id = path.split("/")[3];
+    const older = path.includes("/older/");
+    const messages = older ? [tlonWrit("~bud", "older group message", 0)] : [...(rows.has(id) ? [rows.get(id)] : []), ...(tlonSent.get(id) ?? [])];
+    json = { writs: Object.fromEntries(messages.map((m) => [m.seal.time, m])), older: !older && id === TLON_CLUB ? TLON_TIME : null, newer: null, total: messages.length, newest: 0 };
+  } else return route.fulfill({ status: 404, body: "unexpected chat scry: " + path });
+  return route.fulfill({ status: 200, json });
+}
+function tlonBody() {
+  const events = tlonEvents.splice(0);
+  return events.flatMap(({ path, json, response = "diff" }) => [...tlonSubscriptions].filter(([, watched]) => watched === path).map(([id]) => `id: ${++ackEventId}\ndata: ${JSON.stringify({ response, id, json })}\n\n`)).join("");
+}
+function tlonPoke(action) {
+  tlonActions.push(action);
+  if (nackPokes) return;
+  if (action.mark === "chat-dm-rsvp") tlonInvitesHandled.add(action.json.ship);
+  if (action.mark === "chat-block-ship") tlonBlocked.add(action.json.ship);
+  if (action.mark === "chat-unblock-ship") tlonBlocked.delete(action.json.ship);
+  if (action.mark === "activity-action-2") {
+    const { source, volume } = action.json.adjust;
+    if (volume) tlonMuted.add(source.dm.ship ?? source.dm.club); else tlonMuted.delete(source.dm.ship ?? source.dm.club);
+  }
+  if (action.mark === "chat-club-create") tlonGroups[action.json.id] = { team: ["~zod"], hive: action.json.hive, net: "done", meta: { title: "", description: "", image: "", cover: "" } };
+  if (action.mark === "chat-club-action-2" && action.json.diff.delta.team) {
+    const crew = tlonGroups[action.json.id];
+    const { ship, ok } = action.json.diff.delta.team;
+    if (crew) { crew.hive = crew.hive.filter((id) => id !== ship); if (ok) crew.team.push(ship); crew.net = "done"; }
+  }
+  const diff = action.mark === "chat-dm-action-2" ? action.json.diff : action.mark === "chat-club-action-2" ? action.json.diff.delta.writ : null;
+  if (diff?.delta?.add) {
+    const whom = action.json.ship ?? action.json.id;
+    const add = { ...diff.delta.add, time: diff.id.split("/")[1].replaceAll(".", ""), seq: 10 };
+    const writ = { type: "post", seal: { id: diff.id, time: add.time, seq: 10 }, essay: add.essay };
+    tlonSent.set(whom, [...(tlonSent.get(whom) ?? []), writ]);
+    tlonEvents.push({ path: "/v4", json: { whom, id: diff.id, response: { add } } });
+  }
+}
 let walletPending = false;
 const walletFixture = () => ({
   balance: 12060,
@@ -71,6 +147,8 @@ async function installUrbitMock(page) {
     "**/~/scry/noschat/**",
     (route) => route.fulfill({ status: 200, json: dmInboxFixture() }),
   );
+  await page.route("**/~/scry/chat/**", tlonScry);
+  await page.route("**/~/scry/activity/v6/volume-settings.json", (route) => route.fulfill({ status: 200, json: Object.fromEntries([...new Set([...(dmInboxFixtureKind === "statuses" ? ["~nec"] : []), ...tlonMuted])].map((id) => [`dm/${id}`, Object.fromEntries(["dm-invite", "dm-post", "dm-post-mention", "dm-reply", "dm-reply-mention", "dm-react"].map((type) => [type, { unreads: false, notify: false }]))])) }));
   await page.route("**/~/scry/storage/**", (route) =>
     route.fulfill({ status: 404, json: { error: "no storage" } }),
   );
@@ -106,7 +184,7 @@ async function handleChannel(route) {
           : fixtureSnapshotsPending && feedFixtureKind === "zap" ? zapFeedFixtureBody()
           : fixtureSnapshotsPending && dmInboxFixtureKind === "requests" ? dmRequestFixtureBody()
           : ""
-      ) + walletFixtureBody() + takePokeAcks() + ": heartbeat\n\n",
+      ) + walletFixtureBody() + tlonBody() + takePokeAcks() + ": heartbeat\n\n",
     });
     fixtureSnapshotsPending = false;
     return;
@@ -126,7 +204,10 @@ async function handleChannel(route) {
         state2Subscriptions.add(action.id);
         state2Initialized.delete(action.id);
       }
+      if (action.action === "subscribe" && action.app === "chat") tlonSubscriptions.set(action.id, action.path);
+      if (action.action === "unsubscribe") tlonSubscriptions.delete(action.subscription);
       if (action.action !== "poke") continue;
+      if (action.app === "chat" || action.app === "activity") tlonPoke(action);
       if (feedFixtureKind === "state2" && action.json?.fols?.del?.nostr) {
         const key = action.json.fols.del.nostr;
         state2Snapshot.nostr.following = state2Snapshot.nostr.following.filter(id => id !== key);
@@ -371,6 +452,7 @@ function zapFeedFixtureBody() {
 }
 
 test.beforeEach(async ({ page }) => {
+  tlonSubscriptions = new Map(); tlonEvents = []; tlonActions = []; tlonInvitesHandled = new Set(); tlonHistoryRequests = []; tlonBlocked = new Set(); tlonMuted = new Set(); tlonSent = new Map(); tlonGroups = {}; tlonUnavailable = false;
   dmInboxFixtureKind = "empty";
   notificationFixtureKind = "empty";
   feedFixtureKind = "empty";
@@ -588,7 +670,7 @@ test("messages inbox, picker, and composer work", async ({ page }) => {
 
   await page.locator(".dm-new-button").click();
   await expect(page.locator("#new-dm-modal")).toBeVisible();
-  await page.getByPlaceholder("Search people or paste a ~ship / npub...").fill("~litzod");
+  await page.getByPlaceholder("Search people or paste a ~ship...").fill("~litzod");
   await page.getByRole("button", { name: /Message this address/ }).click();
   await expect(page).toHaveURL(/\/apps\/nostrill\/dms\/~litzod$/);
   await expect(page.locator("#dm-thread")).toBeVisible();
@@ -1702,4 +1784,189 @@ test("pasted attachments show upload progress below text and prevent premature p
   await expect(attachments.getByRole("status")).toHaveCount(0);
   await expect(attachments.locator("img")).not.toHaveAttribute("src", /^blob:/);
   await expect(modal.getByRole("button", { name: "Broadcast", exact: true })).toBeEnabled();
+});
+
+// Tlon browser scenarios mock real Airlock endpoints and stream facts.
+test("Tlon group history, live messages and pagination keep exact IDs", async ({ page }, testInfo) => {
+  dmInboxFixtureKind = "group";
+  await page.goto("dms");
+  await expect(page.getByText("Team chat")).toBeVisible();
+  await expect(page.getByText("Declined group")).toHaveCount(0);
+  await page.getByRole("button", { name: "Open conversation with Team chat" }).click();
+  await expect(page.locator("#dm-thread")).toContainText("group hello");
+  await expect(page.locator(".dm-message-author")).toHaveText("~nec");
+  await page.getByRole("button", { name: "Load older messages" }).click();
+  await expect(page.locator("#dm-thread")).toContainText("older group message");
+  expect(tlonHistoryRequests).toContain(`/v4/club/${TLON_CLUB}/writs/older/${tlonTime(TLON_TIME)}/50/heavy`);
+  await page.getByRole("button", { name: "Conversation options" }).click();
+  await expect(page.getByRole("menuitem", { name: "Block", exact: true })).toHaveCount(0);
+  await page.getByRole("menuitem", { name: "Mute", exact: true }).click();
+  await expect.poll(() => tlonActions.find((action) => action.mark === "activity-action-2")?.json.adjust.source).toEqual({ dm: { club: TLON_CLUB } });
+  await page.locator(".dm-peer-button").click();
+  await expect(page.getByRole("region", { name: "Group members" })).toContainText("~bud");
+  const editor = page.locator(".dm-composer textarea");
+  await editor.fill("group outgoing");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(editor).toHaveValue("");
+  await expect(page.locator("#dm-thread").getByText("group outgoing", { exact: true })).toHaveCount(1);
+  const action = tlonActions.find((action) => action.mark === "chat-club-action-2");
+  expect(action.app).toBe("chat"); expect(action.json.id).toBe(TLON_CLUB);
+  expect(action.json.diff.delta.writ.id).toMatch(/^~zod\/\d{1,3}(\.\d{3})+$/);
+  expect(action.json.diff.delta.writ.delta.add.essay.content).toEqual([{ inline: ["group outgoing"] }]);
+  const incoming = tlonWrit("~bud", "live from another member", 3);
+  tlonEvents.push({ path: "/v4", json: { whom: TLON_CLUB, id: incoming.seal.id, response: { add: { essay: incoming.essay, time: incoming.seal.time, seq: 3 } } } });
+  await expect(page.locator("#dm-thread")).toContainText("live from another member");
+  await page.screenshot({ path: testInfo.outputPath("tlon-group-desktop.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(editor).toBeVisible();
+  const editorBounds = await editor.boundingBox();
+  const navBounds = await page.locator(".left-rail").boundingBox();
+  expect(editorBounds.y + editorBounds.height).toBeLessThanOrEqual(navBounds.y);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("tlon-group-mobile.png"), fullPage: true });
+});
+
+test("Tlon rejected sends retain drafts and retry the same message ID", async ({ page }, testInfo) => {
+  await page.goto("dms/~nec");
+  const editor = page.locator(".dm-composer textarea");
+  await expect(editor).toBeEnabled();
+  nackPokes = true;
+  await editor.fill("do not lose me");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.locator(".dm-delivery-status.failed")).toBeVisible();
+  await expect(editor).toHaveValue("do not lose me");
+  const first = tlonActions.find((action) => action.mark === "chat-dm-action-2");
+  nackPokes = false;
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(editor).toHaveValue("");
+  await expect(page.locator("#dm-thread").getByText("do not lose me", { exact: true })).toHaveCount(1);
+  const sends = tlonActions.filter((action) => action.mark === "chat-dm-action-2");
+  expect(sends).toHaveLength(2); expect(sends[1].json.diff.id).toBe(first.json.diff.id);
+  await expect(page.locator(".dm-delivery-status.failed")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("tlon-direct-retry.png"), fullPage: true });
+});
+
+test("Tlon multi-person creation uses club IDs and member invitations", async ({ page }) => {
+  await page.goto("dms");
+  await page.getByRole("button", { name: "New message", exact: true }).first().click();
+  await page.getByLabel("Message several people").check();
+  const search = page.getByPlaceholder("Search people or paste a ~ship...");
+  await search.fill("~nec"); await page.getByRole("button", { name: /Add this person/ }).click();
+  await expect(page.getByRole("button", { name: "Create group" })).toBeDisabled();
+  await search.fill("~bud"); await page.getByRole("button", { name: /Add this person/ }).click();
+  await page.getByRole("button", { name: "Create group" }).click();
+  await expect(page).toHaveURL(/\/dms\/0v/);
+  const create = tlonActions.find((action) => action.mark === "chat-club-create");
+  expect(create.json.hive).toEqual(["~nec", "~bud"]);
+  expect(create.json.id).toMatch(/^0v[0-9a-v]+(?:\.[0-9a-v]{5})*$/);
+  await expect(page.locator("#dm-thread")).toBeVisible();
+  await page.locator(".dm-composer textarea").fill("new group hello");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect.poll(() => tlonActions.find((action) => action.mark === "chat-club-action-2")?.json.id).toBe(create.json.id);
+});
+
+test("Tlon drafts stay in their conversation across route changes", async ({ page }) => {
+  await page.goto("dms/~nec");
+  await page.locator(".dm-composer textarea").fill("nec draft");
+  await page.getByRole("button", { name: "Back to messages" }).click();
+  await page.getByRole("button", { name: "New message", exact: true }).first().click();
+  await page.getByPlaceholder("Search people or paste a ~ship...").fill("~bud");
+  await page.getByRole("button", { name: /Message this address/ }).click();
+  await expect(page.locator(".dm-composer textarea")).toHaveValue("");
+  await page.locator(".dm-composer textarea").fill("bud draft");
+  await page.getByRole("button", { name: "Back to messages" }).click();
+  await page.getByRole("button", { name: /Open conversation with .*nec/ }).click();
+  await expect(page.locator(".dm-composer textarea")).toHaveValue("nec draft");
+  expect(tlonActions.filter((action) => action.mark === "chat-dm-action-2")).toHaveLength(0);
+});
+
+test("Tlon unavailable errors do not block Trill startup and can reconnect", async ({ page }, testInfo) => {
+  tlonUnavailable = true;
+  await page.goto("dms");
+  await expect(page.getByRole("heading", { name: "Chat unavailable" })).toBeVisible();
+  await expect(page.locator("#left-nav")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("tlon-unavailable.png"), fullPage: true });
+  tlonUnavailable = false;
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.getByText("No messages yet")).toBeVisible();
+  await expect.poll(() => [...tlonSubscriptions.values()].sort()).toEqual(["/dm/invited", "/unreads", "/v4"]);
+});
+
+test("Tlon rich stories render safely and search finds loaded messages", async ({ page }) => {
+  dmInboxFixtureKind = "statuses";
+  const message = tlonWrit("~litzod", "", 4);
+  message.essay.content = [{ inline: ["rich ", { bold: ["message"] }, { link: { href: "javascript:alert(1)", content: "unsafe" } }] }, { block: { code: { code: "<script>alert(1)</script>", lang: "html" } } }];
+  tlonSent.set("~litzod", [message]);
+  await page.goto("dms/~litzod");
+  await expect(page.locator("#dm-thread strong")).toHaveText("message");
+  await expect(page.locator("#dm-thread a[href^='javascript:']")).toHaveCount(0);
+  await expect(page.locator("#dm-thread code")).toHaveText("<script>alert(1)</script>");
+  await page.getByRole("button", { name: "Conversation options" }).click();
+  await page.getByRole("menuitem", { name: "Search", exact: true }).click();
+  await page.getByPlaceholder("Search this conversation").fill("rich message");
+  await expect(page.locator(".dm-search-result")).toHaveCount(1);
+  await page.locator(".dm-search-result").click();
+  await expect(page.locator(".dm-message-row.highlighted")).toContainText("rich message");
+});
+
+test("Tlon live edits and deletes win over an in-flight history snapshot", async ({ page }) => {
+  dmInboxFixtureKind = "statuses";
+  const original = tlonWrit("~litzod", "old cached text");
+  let release;
+  let entered = false;
+  await page.route("**/~/scry/chat/v4/dm/~litzod/writs/newest/50/heavy.json", async (route) => {
+    entered = true;
+    await new Promise((resolve) => { release = resolve; });
+    await route.fulfill({ status: 200, json: { writs: { [original.seal.time]: original }, older: null, newer: null, total: 1, newest: 0 } });
+  });
+  await page.goto("dms/~litzod");
+  await expect.poll(() => entered).toBe(true);
+  const edited = tlonWrit("~litzod", "edited while loading");
+  tlonEvents.push({ path: "/v4", json: { whom: "~litzod", id: edited.seal.id, response: { add: { essay: edited.essay, time: edited.seal.time, seq: 1 } } } });
+  await expect(page.locator("#dm-thread")).toContainText("edited while loading");
+  release();
+  await expect(page.locator(".dm-composer textarea")).toBeEnabled();
+  await expect(page.locator("#dm-thread")).not.toContainText("old cached text");
+  tlonEvents.push({ path: "/v4", json: { whom: "~litzod", id: edited.seal.id, response: { del: null } } });
+  await expect(page.locator("#dm-thread")).not.toContainText("edited while loading");
+});
+
+test("Tlon subscription kicks close companion watches and reconnect cleanly", async ({ page }) => {
+  await page.goto("dms");
+  await expect(page.getByText("No messages yet")).toBeVisible();
+  tlonEvents.push({ path: "/v4", response: "quit", json: null });
+  await expect(page.getByRole("heading", { name: "Chat unavailable" })).toBeVisible();
+  await expect.poll(() => tlonSubscriptions.size).toBe(0);
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.getByText("No messages yet")).toBeVisible();
+  await expect.poll(() => [...tlonSubscriptions.values()].sort()).toEqual(["/dm/invited", "/unreads", "/v4"]);
+});
+
+test("Tlon rejected invitations remain actionable", async ({ page }) => {
+  dmInboxFixtureKind = "requests";
+  await page.goto("dms");
+  const row = page.locator(".dm-request-row", { hasText: "please accept" });
+  await expect(row).toBeVisible();
+  nackPokes = true;
+  await row.getByRole("button", { name: /Accept request/ }).click();
+  await expect(page.getByText("Chat action failed. Please try again.")).toBeVisible();
+  await expect(row.getByRole("button", { name: /Accept request/ })).toBeEnabled();
+  nackPokes = false;
+  await row.getByRole("button", { name: /Accept request/ }).click();
+  await expect(row).toBeHidden();
+});
+
+test("Tlon group invitations accept through membership actions", async ({ page }) => {
+  tlonGroups["0vabc"] = { team: ["~nec", "~bud"], hive: ["~zod"], net: "invited", meta: { title: "Group invitation", description: "", image: "", cover: "" } };
+  await page.goto("dms");
+  const row = page.locator(".dm-request-row", { hasText: "Group invitation" });
+  await expect(row).toBeVisible();
+  await row.getByRole("button", { name: /Accept request/ }).click();
+  await expect(row).toBeHidden();
+  const action = tlonActions.find((action) => action.mark === "chat-club-action-2");
+  expect(action.json.id).toBe("0vabc");
+  expect(action.json.diff.delta.team).toEqual({ ship: "~zod", ok: true });
+  await page.getByRole("button", { name: "Inbox", exact: true }).click();
+  await page.getByRole("button", { name: "Open conversation with Group invitation" }).click();
+  await expect(page.locator(".dm-composer textarea")).toBeEnabled();
 });

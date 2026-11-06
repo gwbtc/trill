@@ -6,11 +6,6 @@ import { create } from "zustand";
 import type {
   DFollowGraph,
   Disaggregated,
-  DM,
-  DMFact,
-  DMJail,
-  DMRequests,
-  DMs,
   Fact,
   FollowGraph,
   NostrData,
@@ -58,7 +53,6 @@ import { emptyLists, parseLists, type Lists } from "@/logic/lists";
 import { SYNC_SUB_NAME } from "@/logic/constants";
 import type { S3Config, UrbitContacts } from "@/types/urbit";
 import { getPoint } from "@/logic/gw";
-import { fixDMRequests, fixDMs, parseBigint } from "@/logic/utils";
 import { pingRelays } from "@/logic/latency";
 import { mentionedPubkeys } from "@/logic/nostrRefs";
 import toast from "react-hot-toast";
@@ -130,10 +124,6 @@ export type LocalState = {
   lastNostrEventTime: number;
   lastDroppedWs: string;
   dismissDroppedWs: () => void;
-  //chat
-  dms: DMs;
-  dmRequests: DMRequests;
-  dmJail: DMJail;
   // debates (%debates), keyed by debateKey
   debates: Map<string, Debate>;
   debateInvites: Map<string, Invitation>;
@@ -141,8 +131,6 @@ export type LocalState = {
   // the debate we're in (one at a time), and the ones others we track are in
   currentDebate: Presence | null;
   debatePresences: Map<string, Presence>;
-  setDmRequests: (requests: DMRequests) => void;
-  lastChatFact: DM | null;
   // the ecash wallet (%trill-wallet); null until it answers, or if it
   // isn't running
   wallet: WalletState | null;
@@ -617,38 +605,6 @@ export const useStore = creator((set, get) => ({
           if ("lists" in fact) set({ lists: parseLists(fact.lists) });
         }
       });
-      api.scryDMs().then((r) => {
-        if ("error" in r) {
-          console.error("error scrying dms", r);
-          return;
-        }
-        set({
-          dms: fixDMs(r.ok.dms),
-          dmRequests: fixDMRequests(r.ok.requests),
-          dmJail: r.ok.jail,
-        });
-      });
-      api.subscribeDMs((data: DMFact) => {
-        if ("init" in data) {
-          const dms = fixDMs(data.init.dms);
-          const dmRequests = fixDMRequests(data.init.requests);
-          const dmJail = data.init.jail;
-          set({ dms, dmRequests, dmJail });
-        }
-        if ("peer" in data) {
-          const cooked = parseBigint(data.peer);
-          const dms = { ...get().dms, [data.peer.peer.patp]: cooked };
-          const dmRequests = { ...get().dmRequests };
-          delete dmRequests[data.peer.peer.patp];
-          set({ dms, dmRequests, lastChatFact: cooked });
-        }
-        if ("requests" in data) {
-          set({ dmRequests: fixDMRequests(data.requests) });
-        }
-        if ("error" in data) {
-          console.error(data.error, "error in chat fact");
-        }
-      });
       // measure real relay latency now and periodically
       const measureLatency = async () => {
         const urls = Object.keys(get().relays);
@@ -710,10 +666,6 @@ export const useStore = creator((set, get) => ({
   lastNostrEventTime: 0,
   lastDroppedWs: "",
   dismissDroppedWs: () => set({ lastDroppedWs: "" }),
-  // dms
-  dms: {},
-  dmRequests: {},
-  dmJail: { muted: [], blocked: [] },
   // debates
   debates: new Map(),
   debateInvites: new Map(),
@@ -721,8 +673,6 @@ export const useStore = creator((set, get) => ({
   currentDebate: null,
   debatePresences: new Map(),
   wallet: null,
-  setDmRequests: (dmRequests) => set({ dmRequests }),
-  lastChatFact: null,
   our: null,
 }));
 

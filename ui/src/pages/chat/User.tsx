@@ -1,404 +1,303 @@
 import "@/styles/Messages.css";
-import { UrbitAvatar } from "@/components/Avatar";
-import useLocalState from "@/state/state";
-import { ArrowLeft, LoaderCircle } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "wouter";
-import { abbreviatePatp, parseBigint } from "@/logic/utils";
-import type { FC } from "@/types/trill";
-import spinner from "@/assets/triangles.svg";
-import {
-  fcToMessages,
-  getDmDeliveryMap,
-  type DmMessageView,
-} from "@/logic/dms";
-import { patpToFallbackUID, patpToUID } from "@/logic/gw";
-import {
-  ProfiledRender,
-  useDmProfileToggle,
-  useRenderCount,
-} from "@/logic/renderProfile";
+import { useChatStore } from "@/state/chat";
+import useLocalState from "@/state/state";
+import { normalizeTlonWhom } from "@/logic/tlon/client";
+import { conversationPreview } from "@/logic/tlon/story";
+import { patpToFallbackUID } from "@/logic/gw";
+import toast from "react-hot-toast";
 import DmComposer from "./Composer";
 import DmConversationHeader, { openUserModal } from "./Header";
 import DmInlinePanel, { buildRichDmMessages } from "./InlinePanel";
 import DmThread from "./Thread";
-import type { ChatData, DmPanel } from "./types";
-import type { UrbitID } from "@/types/nostrill";
-import toast from "react-hot-toast";
+import { useConversationName } from "./Conversation";
+import type { DmPanel } from "./types";
 
-const EMPTY_DM_FEED: FC = {
-  start: null,
-  end: null,
-  feed: {},
-};
-
-function emptyDm(peer: string): ChatData | null {
-  if (!peer.startsWith("~")) return null;
-  try {
-    return {
-      live: false,
-      fc: EMPTY_DM_FEED,
-      lastId: null,
-      lastTs: null,
-      lastRead: null,
-      unread: 0,
-      peer: patpToFallbackUID(peer),
-      muted: false,
-      blocked: false,
-      delivery: {},
-    };
-  } catch {
-    return null;
-  }
-}
-
-function safeDecode(s: string) {
-  try {
-    return decodeURIComponent(s);
-  } catch {
-    return s;
-  }
-}
-
+const EMPTY_MESSAGES: import("@/logic/tlon/types").TlonMessage[] = [];
 export default function DmRoute() {
-  const params = useParams<{ id?: string }>();
-  const activePeer = params.id ? safeDecode(params.id) : "";
-  // keyed by peer: going from one conversation to another remounts, so
-  // the old peer's messages, draft and menus never carry over
-  return <Loader key={activePeer} activePeer={activePeer} />;
-}
-
-function Loader({ activePeer }: { activePeer: string }) {
-  const [, navigate] = useLocation();
-  const { api, lastChatFact } = useLocalState((s) => ({
-    api: s.api,
-    lastChatFact: s.lastChatFact,
-  }));
-  const [data, setData] = useState<ChatData>();
-
-  useEffect(() => {
-    if (!api || !activePeer) return;
-    api
-      .scryDM(activePeer)
-      .then((res) => {
-        if ("ok" in res) {
-          const cooked = parseBigint(res.ok);
-          setData({ ...cooked, live: false });
-          return;
-        }
-        const fallback = emptyDm(activePeer);
-        if (fallback) setData(fallback);
-      })
-      .catch(() => {
-        const fallback = emptyDm(activePeer);
-        if (fallback) setData(fallback);
-      });
-  }, [api, activePeer]);
-
-  useEffect(() => {
-    if (!lastChatFact) return;
-    setData((prev) =>
-      prev && lastChatFact.peer.patp === prev.peer.patp
-        ? { ...lastChatFact, live: true }
-        : prev,
-    );
-  }, [lastChatFact]);
-
-  if (!data)
-    return <FallBackUser api={api} patp={activePeer} navigate={navigate} />;
-
-  return <ChatUser data={data} navigate={navigate} />;
-}
-function FallBackUser({
-  patp,
-  api,
-  navigate,
-}: {
-  api: any;
-  patp: string;
-  navigate: (s: string) => void;
-}) {
-  const [gwid, setGwid] = useState<UrbitID>();
-  function closeConversation() {
-    navigate("/dms");
-  }
-  async function fetchGwid() {
-    const mgwid = await patpToUID(api, patp);
-    if ("error" in mgwid) toast.error(mgwid.error);
-    else setGwid(mgwid.ok);
-  }
-  useEffect(() => {
-    fetchGwid();
-  }, [patp]);
-  if (!gwid) return <LoaderCircle className="connections-spinner" size={24} />;
-  else
+  const { id = "" } = useParams<{ id?: string }>();
+  let target: string;
+  try {
+    target = normalizeTlonWhom(decodeURIComponent(id));
+  } catch {
     return (
-      <div id="screen-messages" className="trill-screen messages-screen">
-        <div className="dm-conversation-shell">
-          <header className="trill-screen-header dm-conversation-header">
-            <button
-              type="button"
-              className="dm-icon-button"
-              onClick={closeConversation}
-              aria-label="Back to messages"
-            >
-              <ArrowLeft size={20} strokeWidth={2} />
-            </button>
-            <button type="button" className="dm-peer-button">
-              <UrbitAvatar uid={gwid} size={38} />
-              <span className="dm-peer-copy">
-                <span className="dm-peer-name">
-                  {gwid.gwid.english.abridged}
-                </span>
-                <span className="dm-peer-id mono" />
-              </span>
-            </button>
-          </header>
-
-          <div className="y-center">
-            <h2 className="x-center">Fetching...</h2>
-            <div className="loading-container">
-              <img src={spinner} alt="Loading" className="x-center" />
-            </div>
-          </div>
-        </div>
+      <div className="dm-empty-state">
+        <h2>Invalid conversation address</h2>
+        <a href="/apps/nostrill/dms">Back to messages</a>
       </div>
     );
+  }
+  return <Conversation key={target} id={target} />;
 }
-
-function ChatUser({
-  data,
-  navigate,
-}: {
-  data: ChatData;
-  navigate: (s: string) => void;
-}) {
-  useDmProfileToggle();
-  const { api, our, setModal } = useLocalState((s) => ({
-    api: s.api,
-    our: s.our,
-    setModal: s.setModal,
-  }));
+function Conversation({ id }: { id: string }) {
+  const [, navigate] = useLocation();
+  const status = useChatStore((s) => s.status);
+  const error = useChatStore((s) => s.error);
+  const row = useChatStore((s) => s.conversations.get(id));
+  const thread = useChatStore((s) => s.threads.get(id));
+  const our = useChatStore((s) => s.our);
+  const muted = useChatStore((s) => s.muted.has(id));
+  const name = useConversationName(row);
+  const setModal = useLocalState((s) => s.setModal);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
   const [panel, setPanel] = useState<DmPanel>("thread");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [muted, setMuted] = useState(data.muted);
-  const [blocked, setBlocked] = useState(data.blocked);
-  const [highlightedMessageId, setHighlightedMessageId] = useState<
-    string | null
-  >(null);
+  const [query, setQuery] = useState("");
+  const [highlighted, setHighlighted] = useState<string | null>(null);
+  const [responding, setResponding] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const threadRef = useRef<HTMLDivElement>(null);
-  const threadBottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef(new Map<string, HTMLDivElement>());
-  const pendingScrollMessageId = useRef<string | null>(null);
-  const initialScrolledPeer = useRef("");
-
-  const lastId = data.lastId ? data.lastId.toString() : "";
-  const name = data.peer.gwid.english.abridged || data.peer.patp;
-  const id2 = abbreviatePatp(data.peer.patp);
-  const messages = useMemo(
-    () =>
-      fcToMessages(
-        data.fc,
-        our?.patp || "",
-        data.lastRead,
-        getDmDeliveryMap(data),
-      ),
-    [data.fc, data.delivery, our?.patp, data.lastRead],
+  const firstUnread = useRef(row?.firstUnreadTime);
+  const messages = thread?.messages ?? EMPTY_MESSAGES;
+  const rich = useMemo(
+    () => buildRichDmMessages(messages, our),
+    [messages, our],
   );
-  const pendingApproval =
-    messages.length === 1 && messages[0]?.delivery === "pending";
-  const richMessages = useMemo(
-    () => buildRichDmMessages(data.fc, our?.patp || ""),
-    [data.fc, our?.patp],
-  );
-
-  useRenderCount("ChatUser", () => ({
-    peer: data.peer.patp,
-    panel,
-    messageCount: messages.length,
-    searchQueryLength: searchQuery.length,
-  }));
-
-  function closeConversation() {
-    navigate("/dms");
-  }
-
-  function openPeer() {
-    setModal(openUserModal(data.peer));
-  }
-
-  async function toggleMuted() {
-    if (!api) return;
-    const next = !muted;
-    setMuted(next);
-    setMenuOpen(false);
-    const res = next
-      ? await api.muteChat(data.peer.patp)
-      : await api.unmuteChat(data.peer.patp);
-    if ("error" in res) setMuted(!next);
-  }
-
-  async function toggleBlocked() {
-    if (!api) return;
-    const next = !blocked;
-    setBlocked(next);
-    setMenuOpen(false);
-    const res = next
-      ? await api.blockChat(data.peer.patp)
-      : await api.unblockChat(data.peer.patp);
-    if ("error" in res) setBlocked(!next);
-  }
-
-  function openPanel(next: DmPanel) {
-    setPanel(next);
-    setMenuOpen(false);
-  }
-
-  function jumpToMessage(messageId: string) {
-    pendingScrollMessageId.current = messageId;
-    setHighlightedMessageId(messageId);
-    setPanel("thread");
-  }
-
-  async function retryMessage(message: DmMessageView) {
-    if (!api || !message.text.trim()) return;
-    const res = await api.addChat(data.peer.patp, message.text);
-    if ("error" in res) console.error("Failed to retry DM:", res.error);
-  }
-
+  const lastId = messages.at(-1)?.id;
   useEffect(() => {
-    if (!api || !data.lastId) return;
-    if (data.lastRead !== data.lastId) void api.markChatRead(data);
-  }, [api, data]);
-
+    if (status === "ready") void useChatStore.getState().open(id);
+  }, [status, id]);
   useEffect(() => {
-    setMuted(data.muted);
-    setBlocked(data.blocked);
-  }, [data.peer.patp, data.muted, data.blocked]);
-
-  useLayoutEffect(() => {
-    if (panel !== "thread") return;
-    if (pendingScrollMessageId.current) return;
-    const thread = threadRef.current;
-    if (!thread) return;
-
-    const isInitialScroll = initialScrolledPeer.current !== lastId;
-    const scrollToBottom = () => {
-      thread.scrollTo({
-        top: thread.scrollHeight,
-        behavior: isInitialScroll ? "auto" : "smooth",
-      });
-      threadBottomRef.current?.scrollIntoView({
-        block: "end",
-        behavior: isInitialScroll ? "auto" : "smooth",
-      });
-      initialScrolledPeer.current = lastId;
+    if (
+      !thread?.loaded ||
+      !row?.unread ||
+      row.invited ||
+      panel !== "thread" ||
+      document.visibilityState !== "visible"
+    )
+      return;
+    firstUnread.current ??= row.firstUnreadTime;
+    void useChatStore
+      .getState()
+      .read(id)
+      .catch(() => {});
+  }, [id, row?.unread, row?.latest?.id, row?.invited, thread?.loaded, panel]);
+  useEffect(() => {
+    const readVisible = () => {
+      if (
+        document.visibilityState === "visible" &&
+        panel === "thread" &&
+        useChatStore.getState().threads.get(id)?.loaded
+      ) {
+        void useChatStore
+          .getState()
+          .read(id)
+          .catch(() => {});
+      }
     };
-
-    scrollToBottom();
-    const frame = window.requestAnimationFrame(scrollToBottom);
-    return () => window.cancelAnimationFrame(frame);
-  }, [data.lastId, data.fc.feed, panel, lastId]);
-
+    document.addEventListener("visibilitychange", readVisible);
+    window.addEventListener("focus", readVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", readVisible);
+      window.removeEventListener("focus", readVisible);
+    };
+  }, [id, panel]);
   useLayoutEffect(() => {
     if (panel !== "thread") return;
-    const messageId = pendingScrollMessageId.current;
-    if (!messageId) return;
-
-    const target = messageRefs.current.get(messageId);
-    if (!target) return;
-
-    target.scrollIntoView({
-      block: "center",
-      behavior: "smooth",
-    });
-    pendingScrollMessageId.current = null;
-  }, [panel, highlightedMessageId]);
-
-  useEffect(() => {
-    if (!highlightedMessageId) return;
-    const timeout = window.setTimeout(() => {
-      setHighlightedMessageId((current) =>
-        current === highlightedMessageId ? null : current,
-      );
-    }, 4800);
-    return () => window.clearTimeout(timeout);
-  }, [highlightedMessageId]);
-
+    const target = highlighted ? messageRefs.current.get(highlighted) : null;
+    if (target) target.scrollIntoView({ block: "center" });
+    else if (scrollRef.current)
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [lastId, panel, highlighted]);
   useEffect(() => {
     if (!menuOpen) return;
-    function onPointerDown(event: PointerEvent) {
-      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
-    }
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setMenuOpen(false);
-    }
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
+    const pointer = (e: PointerEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", pointer);
+    document.addEventListener("keydown", key);
     return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", pointer);
+      document.removeEventListener("keydown", key);
     };
   }, [menuOpen]);
-
-  return (
-    <ProfiledRender id="DM ChatUser">
-      <div
-        id="screen-messages"
-        className={`trill-screen messages-screen conversation-open${muted ? " conversation-muted" : ""}${blocked ? " conversation-blocked" : ""}`}
-      >
-        <div className="dm-conversation-shell">
-          <DmConversationHeader
-            peer={data.peer}
-            name={name}
-            id2={id2}
-            muted={muted}
-            blocked={blocked}
-            menuOpen={menuOpen}
-            menuRef={menuRef}
-            onBack={closeConversation}
-            onOpenPeer={openPeer}
-            onToggleMenu={() => setMenuOpen((open) => !open)}
-            onToggleMuted={toggleMuted}
-            onToggleBlocked={toggleBlocked}
-            onOpenPanel={openPanel}
-          />
-
-          {panel === "thread" ? (
-            <ProfiledRender id="DM Thread">
-              <DmThread
-                messages={messages}
-                live={data.live}
-                lastRead={data.lastRead}
-                peerName={name}
-                pendingApproval={pendingApproval}
-                highlightedMessageId={highlightedMessageId}
-                threadRef={threadRef}
-                threadBottomRef={threadBottomRef}
-                messageRefs={messageRefs}
-                onRetryMessage={retryMessage}
-              />
-            </ProfiledRender>
-          ) : (
-            <ProfiledRender id="DM InlinePanel">
-              <DmInlinePanel
-                panel={panel}
-                searchQuery={searchQuery}
-                setSearchQuery={setSearchQuery}
-                richMessages={richMessages}
-                onSearchResultClick={jumpToMessage}
-                onClose={() => openPanel("thread")}
-              />
-            </ProfiledRender>
-          )}
-
-          <ProfiledRender id="DM Composer">
-            <DmComposer api={api} peer={data.peer.patp} blocked={blocked} />
-          </ProfiledRender>
-        </div>
+  async function action(operation: () => Promise<void>) {
+    setMenuOpen(false);
+    try {
+      await operation();
+    } catch {
+      toast.error("Chat action failed. Please try again.");
+    }
+  }
+  async function respond(accept: boolean) {
+    setResponding(true);
+    try {
+      await useChatStore.getState().respond(id, accept);
+      if (!accept) navigate("/dms");
+    } catch {
+      toast.error("Could not update this request");
+    } finally {
+      setResponding(false);
+    }
+  }
+  async function older() {
+    const node = scrollRef.current;
+    const before = node?.scrollHeight ?? 0;
+    await useChatStore.getState().older(id);
+    requestAnimationFrame(() => {
+      if (node) node.scrollTop += node.scrollHeight - before;
+    });
+  }
+  if (status === "error")
+    return (
+      <div className="dm-empty-state" role="alert">
+        <h2>Chat unavailable</h2>
+        <p>{error}</p>
+        <button onClick={() => useChatStore.getState().reconnect()}>
+          Retry
+        </button>
       </div>
-    </ProfiledRender>
+    );
+  if (!row && status === "ready" && thread)
+    return (
+      <div className="dm-empty-state" role="alert">
+        <h2>Conversation unavailable</h2>
+        <p>
+          {thread.error || "This conversation is no longer in your messages."}
+        </p>
+        <button onClick={() => navigate("/dms")}>Back to messages</button>
+      </div>
+    );
+  if (!row || !thread)
+    return (
+      <div className="dm-empty-state" role="status">
+        Loading conversation...
+      </div>
+    );
+  return (
+    <div
+      id="screen-messages"
+      className={`trill-screen messages-screen conversation-open${muted ? " conversation-muted" : ""}${row.blocked ? " conversation-blocked" : ""}`}
+    >
+      <div className="dm-conversation-shell">
+        <DmConversationHeader
+          conversation={row}
+          name={name}
+          id2={row.kind === "group" ? `${row.members.length} members` : id}
+          muted={muted}
+          blocked={row.blocked}
+          menuOpen={menuOpen}
+          menuRef={menuRef}
+          onBack={() => navigate("/dms")}
+          onOpenPeer={() =>
+            row.kind === "direct"
+              ? setModal(openUserModal(patpToFallbackUID(id)))
+              : setMembersOpen((v) => !v)
+          }
+          onToggleMenu={() => setMenuOpen((v) => !v)}
+          onToggleMuted={() =>
+            void action(() => useChatStore.getState().mute(id, !muted))
+          }
+          onToggleBlocked={() =>
+            void action(() => useChatStore.getState().block(id, !row.blocked))
+          }
+          onOpenPanel={(next) => {
+            setPanel(next);
+            setMenuOpen(false);
+          }}
+        />
+        {membersOpen && (
+          <section className="dm-members" aria-label="Group members">
+            {[...new Set([...row.members, ...row.invitedMembers])].map(
+              (ship) => (
+                <button
+                  key={ship}
+                  onClick={() =>
+                    setModal(openUserModal(patpToFallbackUID(ship)))
+                  }
+                >
+                  {ship}
+                  {row.invitedMembers.includes(ship) ? " (invited)" : ""}
+                </button>
+              ),
+            )}
+          </section>
+        )}
+        {row.invited && (
+          <div className="dm-request-banner">
+            Message request{" "}
+            <button disabled={responding} onClick={() => void respond(true)}>
+              Accept
+            </button>
+            <button disabled={responding} onClick={() => void respond(false)}>
+              Reject
+            </button>
+          </div>
+        )}
+        {thread.error && (
+          <div className="dm-chat-error" role="alert">
+            {thread.error}
+            <button
+              onClick={() =>
+                void (thread.loaded
+                  ? older()
+                  : useChatStore.getState().open(id))
+              }
+            >
+              Retry loading
+            </button>
+          </div>
+        )}
+        {!thread.loaded && thread.loading && (
+          <div className="dm-chat-error" role="status">
+            Loading messages...
+          </div>
+        )}
+        {panel === "thread" ? (
+          <DmThread
+            messages={messages}
+            our={our}
+            group={row.kind === "group"}
+            highlighted={highlighted}
+            firstUnread={firstUnread.current}
+            threadRef={scrollRef}
+            messageRefs={messageRefs}
+            older={!!thread.older}
+            loading={thread.loading}
+            onOlder={() => void older()}
+            onRetry={(message) =>
+              void action(() =>
+                useChatStore
+                  .getState()
+                  .send(id, conversationPreview(message.content)),
+              )
+            }
+          />
+        ) : (
+          <DmInlinePanel
+            panel={panel}
+            searchQuery={query}
+            setSearchQuery={setQuery}
+            richMessages={rich}
+            onSearchResultClick={(messageId) => {
+              setHighlighted(messageId);
+              setPanel("thread");
+            }}
+            onClose={() => {
+              setHighlighted(null);
+              setPanel("thread");
+            }}
+          />
+        )}
+        {!row.invited && (
+          <DmComposer
+            peer={id}
+            blocked={row.blocked}
+            disabledReason={
+              row.archived
+                ? "This conversation is archived."
+                : !thread.loaded
+                  ? "Loading messages..."
+                  : undefined
+            }
+          />
+        )}
+      </div>
+    </div>
   );
 }

@@ -1,7 +1,3 @@
-import type { DM } from "@/types/nostrill";
-
-export type ChatData = DM & { live: boolean };
-
 export type DmPanel = "thread" | "search" | "media" | "links";
 
 export type DmRichMessage = {

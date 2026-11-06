@@ -16,11 +16,8 @@ import {
 } from "../constants";
 import type {
   BasicProfile,
-  DM,
   GroundwireID,
   NostrFeeds,
-  PeekDMRes,
-  PeekDMInboxRes,
   PeekFeedRes,
   PeekRes,
   PeekThreadRes,
@@ -143,7 +140,7 @@ export default class IO {
   }
   private async sub(path: string, handler: Handler, agent?: string) {
     const app = agent ? agent : "nostrill";
-    // keyed per agent: nostrill, hark and noschat all serve "/ui"
+    // keyed per agent: nostrill, hark and wallet all serve "/ui"
     const key = `${app}${path}`;
     if (this.subs.has(key)) return;
 
@@ -627,67 +624,4 @@ export default class IO {
   //     return { error: `${e}` };
   //   }
   // }
-  // %noschat
-  // scries
-  async scryDMs(): AsyncRes<PeekDMInboxRes> {
-    const path = `/j/dms`;
-    const res = await this.scry(path, "noschat");
-    return res;
-  }
-  async scryDM(ship: string): AsyncRes<PeekDMRes> {
-    const path = `/j/dm/${ship}`;
-    const res = await this.scry(path, "noschat");
-    return res;
-  }
-  //  subs
-  async subscribeDMs(handler: any) {
-    const path = "/ui";
-    const res = await this.sub(path, handler, "noschat");
-    return res;
-  }
-  async subscribeDM(ship: string, handler: any) {
-    const path = `/dm/${ship}`;
-    const res = await this.sub(path, handler, "noschat");
-    return res;
-  }
-  // pokes
-  async addChat(peer: string, content: string) {
-    const json = { send: { content, peer } };
-    return this.poke(json, "noschat");
-  }
-  async muteChat(peer: string) {
-    const json = { mute: peer };
-    return this.poke(json, "noschat");
-  }
-  async unmuteChat(peer: string) {
-    const json = { unmute: peer };
-    return this.poke(json, "noschat");
-  }
-  async blockChat(peer: string) {
-    const json = { block: peer };
-    return this.poke(json, "noschat");
-  }
-  async unblockChat(peer: string) {
-    const json = { unblock: peer };
-    return this.poke(json, "noschat");
-  }
-  async blockChatStrong(peer: string, msg: string) {
-    const json = { gtfo: { peer, msg } };
-    return this.poke(json, "noschat");
-  }
-  async markChatRead(dm: DM) {
-    const id = dm.lastId!.toString();
-    const peer = dm.peer.patp;
-    const json = { read: { id, peer } };
-    return this.poke(json, "noschat");
-  }
-  // requests
-  async acceptReq(peer: string) {
-    const json = { accept: peer };
-    return this.poke(json, "noschat");
-  }
-  async rejectReq(peer: string) {
-    const json = { reject: peer };
-    return this.poke(json, "noschat");
-  }
 }

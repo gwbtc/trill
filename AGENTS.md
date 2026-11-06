@@ -7,7 +7,8 @@ This guide covers both the Gall backend and browser frontend. Read `WALLET.md` a
 
 The Tlon chat migration starts with `ui/src/logic/tlon/`; read `TLON_CHAT.md`
 for the installed `%groups` desk's `%chat` v4 API and phased UI migration.
-The existing chat screens still use `%noschat` until that integration is switched.
+The inbox and DM screens now use `%chat`; `%noschat` remains installed to
+preserve old history, but the browser no longer reads or subscribes to it.
 
 ## Backend Structure & Ownership
 Use the `urbit` skill when reviewing or changing Hoon. Read imports and nearby molds first. Paths in this section are relative to `backend/`.
@@ -120,7 +121,7 @@ Paths below are relative to `ui/src/`:
 | `components/composer/` | Inline/modal composition, contenteditable input, autocomplete, emoji, snippets, S3 media. |
 | `components/modals/`, `ui/` | Feature dialogs and shared controls such as `TabStrip` and modal close buttons. |
 | `components/profile/`, `permissions/`, `settings/`, `topics/`, `debates/`, `wallet/` | Feature-specific UI. |
-| `state/state.ts` | Shared Zustand store, initialization, subscription processing, feeds, profiles, notifications, wallet and debate state. |
+| `state/state.ts`, `state/chat.ts` | Main application store plus independent Tlon chat state and lifecycle. |
 | `logic/` | API adapters, parsers, transformations, validation, identity, search, and feature helpers. |
 | `hooks/` | Shared behavior for relay actions, access requests, identities, thread layout, and WebSockets. |
 | `types/` | Urbit/Nostr wire and application types; `trill.ts` defines shared post/feed structures. |
@@ -141,7 +142,7 @@ Wouter and Vite both use `/apps/nostrill`. Route paths below are relative to tha
 | `/t/u/:host/:id` | Native Urbit thread. |
 | `/t/n/:id` | Nostr thread; accepts decoded hex, note, or nevent identifiers. |
 | `/fols`, `/bookmarks`, `/notif` | Connections, saved posts, notifications. |
-| `/dms`, `/dms/:id` | Inbox and peer conversation. |
+| `/dms`, `/dms/:id` | Tlon inbox and direct/group conversation (ship or club ID). |
 | `/debates`, `/debates/:host/:id` | Debate directory and room. |
 | `/wallet`, `/sets`, `/search` | Wallet, settings, local search. |
 
@@ -150,7 +151,7 @@ The shell combines `Sidebar`, the main column, and `RightRail`. Keep lazy route 
 ## Backend Communication & State Rules
 `logic/api.ts` creates the `urbit-api` Airlock, discovers `/~/host`, opens the channel, and uses `http://localhost:8900` in development. Production uses the current origin. Vite proxies `/apps/nostrill/jars` to the ship’s `/jars` for media requests; Airlock still connects directly, so live development requires a reachable, authenticated ship.
 
-`logic/requests/nostrill.ts` exports `IO`, the central adapter for scries (reads), pokes (actions), threads, and subscriptions. Its default agent is `nostrill`; it also addresses `noschat`, `hark`, `trill-wallet`, `debates`, `trill-ai-client`, settings, and `s3-server`. Add request encoding here rather than duplicating wire payloads in components.
+`logic/requests/nostrill.ts` exports `IO`, the central adapter for scries (reads), pokes (actions), threads, and subscriptions. Its default agent is `nostrill`; it also addresses `chat`, `activity`, `hark`, `trill-wallet`, `debates`, `trill-ai-client`, settings, and `s3-server`. Add request encoding here rather than duplicating wire payloads in components.
 
 - Result-returning methods resolve to `{ ok }` or `{ error }`. Check the discriminant or use `logic/result.ts`'s `unwrap` in a try/catch; both objects are truthy. Other helpers may reject, so inspect the method's contract.
 - Mutation success waits for the agent acknowledgement, including negative acknowledgements. Keep failed drafts and show an error; sending the HTTP request alone is insufficient.
@@ -169,7 +170,7 @@ TanStack Query handles selected reads, including post/thread loading (`["trill-t
 - **Composition:** `Composer.tsx` serves inline and modal flows; `composerData` selects reply, quote, shared-card, or topic context. `composerDom.ts` manages serialization and caret/text insertion. `Composer.tsx` keeps image attachments outside contenteditable, renders them below the input, and serializes their Markdown after text; preserve removal, upload cancellation, and image-only posting. Preserve the character limit, failed drafts, and acknowledgement handling. Global-feed sharing is a ship-owned Settings preference (`posting.global`), enabled unless explicitly false; wait for settings before sending a new text/topic post. Keep this out of per-composer state. Explicit relay cross-posting currently excludes replies/quotes because the send path lacks Nostr threading tags.
 - **Media storage:** `initMedia()` detects Jars via `%s3-server` `/config`, validates its runtime config, and checks `/jars/trill/` before creating the bucket only on HTTP 404. Other errors leave uploads unavailable and retryable. Composer paste uploads, the media picker’s native image-file chooser, media browsing, and profile uploads share `logic/s3.ts`; successful file uploads insert the public URL and refresh listings, while closing the picker aborts pending uploads; `%storage` credentials are no longer read. Use short-lived presigned requests with Jars credentials (kept in memory); wildcard CORS does not permit Authorization headers from the dev frontend. Config without a secret works only through the same-origin Eyre session. Development signs for the ship API origin, then sends requests through the Vite media proxy; it restores the signed Host/path to avoid duplicate Eyre/Jars CORS headers. Published URLs still use the ship origin; production requests use the current origin directly. Object reads are public. Jars listings lack continuation tokens: preserve the limited-results notice rather than pretending to paginate.
 - **Identity and threads:** Reuse `logic/gw.ts`, `nostr.ts`, `userDisplay.ts`, and `utils.ts` for parsing, display, and links. Native and Nostr threads have separate loaders. Nostr routes identify events by hash, not their feed-map key. `logic/nostrThread.ts` parses marked and legacy ancestor references; `useNostrAncestors` resolves raw cached events and bounded relay reads, caches successful reads with TanStack Query, and cancels on navigation. Keep mentions/quotes out of ancestry and retain the selected event as the reply target. Preserve pending access (`"maybe"`) versus denied access (`null`) handling.
-- **Messaging and notifications:** `pages/chat/` and `logic/dms.ts` adapt `noschat` data, delivery/read state, requests, and muted/blocked conversations. Hark supplies notifications through the store; `logic/notifications.ts` adapts them. Preserve numeric ID normalization and the request/inbox distinction.
+- **Messaging and notifications:** `pages/chat/`, `logic/tlon/` and `state/chat.ts` implement Tlon direct/group DMs. `ChatSync` owns shell-wide watches, buffers bootstrap facts, closes companion watches on kicks and disables Airlock automatic resubscribe-on-quit. Conversation routes load paginated history and preserve exact string IDs, live edits/deletes, per-conversation drafts and failed acknowledgements. Group IDs are clubs, never a participant's ship. Mute uses `%activity` notification volumes; watch/unwatch is not mute. Pins use ship settings `trill-chat`, with old `noschat` pins as a read fallback. `logic/dms.ts` and legacy molds remain reference helpers, not active transport. Hark still supplies Trill notifications through `logic/notifications.ts`. Read `TLON_CHAT.md` for scope and validation boundaries.
 - **Lists and search:** Bookmarks, mutes, and reports are agent-owned (`logic/lists.ts`). Keep filtering consistent across feeds. `pages/Search.tsx` searches loaded profiles/posts and derives hashtags locally; `q` and `tab` are URL state, and recent queries use localStorage. Do not imply server-wide search coverage.
 - **Topics and AI:** `TrendingTopics` polls the ship's topics data and refreshes after `TOPIC_PREFS_EVENT`. `logic/topics.ts` parses sources, preferences, related links, and spam review data. Provider settings use `trill-ai-client`; read `logic/aiClient.ts` and the IO methods for validation and key-update semantics.
 - **Wallet and debates:** Wallet state comes from `trill-wallet`; actions and phrase access go through IO. `logic/walletPrefs.ts` stores only browser conveniences such as balance visibility and preferred mint. Debates use `logic/debates.ts`, live store updates, and `DebatePresenceSync`. Keep pending operations and agent refusals visible.

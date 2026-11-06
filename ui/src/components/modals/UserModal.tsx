@@ -241,7 +241,7 @@ export default function UserModal({ user }: { user: UserType }) {
           )}
 
           <div className="user-modal-actions">
-            {!itsMe && (
+            {!itsMe && "urbit" in user && (
               <button className="action-btn primary" onClick={handleMessage}>
                 <MessageSquare size={17} />
                 Message

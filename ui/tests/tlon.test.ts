@@ -26,9 +26,9 @@ function fixture(overrides: Record<string, unknown> = {}) {
     "/v4/heads": [{ whom: "~nec", recency: 1793930000000, latest: writ }],
     "/clubs": { "0vabc": { team: ["~zod", "~nec"], hive: ["~bud"], meta: { title: "Our plans", description: "", image: "", cover: "" }, net: "invited" } },
     "/dm": ["~nec", "~bud"],
-    "/dm/invited": ["~lit"],
+    "/dm/invited": ["~litzod"],
     "/dm/archive": ["~bud"],
-    "/blocked": ["~lit"],
+    "/blocked": ["~litzod"],
     "/unreads": { "~nec": { count: 50, unread: { id: messageId, time, count: 2 }, threads: {} } },
     [`/v4/dm/~nec/writs/newest/50/heavy`]: { writs: { [time]: writ, "170141184508244403760301876757575761921": { type: "tombstone", id: "~nec/2" } }, older: time, newer: null, newest: 2, total: 2 },
     ...overrides,
@@ -60,8 +60,8 @@ describe("Tlon DM transport", () => {
     const inbox = await client.loadInbox();
     expect(inbox.conversations.get("~nec")?.unread).toBe(2);
     expect(inbox.conversations.get("~bud")?.archived).toBe(true);
-    expect(inbox.conversations.get("~lit")?.invited).toBe(true);
-    expect(inbox.conversations.get("~lit")?.blocked).toBe(true);
+    expect(inbox.conversations.get("~litzod")?.invited).toBe(true);
+    expect(inbox.conversations.get("~litzod")?.blocked).toBe(true);
     expect(inbox.conversations.get("0vabc")).toMatchObject({ kind: "group", title: "Our plans", invited: true, members: ["~zod", "~nec"], invitedMembers: ["~bud"] });
     expect(inbox.conversations.get("~nec")?.latest?.id).toBe(messageId);
   });

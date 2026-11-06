@@ -1,10 +1,11 @@
 # Tlon chat migration
 
-The first step is the transport/contract layer in `ui/src/logic/tlon/`.
-`IO.getTlonChat()` reuses the already authenticated Airlock connection and
-returns one client instance. It does not start watches until requested.
-The current screens still use `%noschat`; this change does not switch them,
-remove its agent, erase history, or import that history into Tlon.
+Trill's inbox and conversation screens now use Tlon's `%chat` agent for
+one-to-one and multi-person DMs. `IO.getTlonChat()` shares the authenticated
+Airlock connection; `state/chat.ts` owns chat state independently of the main
+Trill store. `%noschat` is no longer queried or watched by the browser.
+Its backend agent and persisted history remain intact; history is not imported
+into Tlon by this switch.
 
 ## Installed backend
 
@@ -29,8 +30,12 @@ Do not assume current upstream Tlon and this Groundwire fork are identical.
 
 Airlock scries omit `/x` and `.json`. Live subscriptions use `/v4`, `/unreads`
 and `/dm/invited`. `/v4` includes message deltas, club changes and DM status
-changes. The adapter reports typed event categories; applying deltas to a
-shared store belongs to the next migration step.
+changes. `ChatSync` opens one set of watches for the shell, before loading the inbox,
+and buffers facts during initialization. Routes share those watches; navigating
+between DMs does not create additional subscriptions. Shell cleanup closes the
+current watches, including watches created by a retry. Disable Airlock's
+`resubOnQuit` for these subscriptions: a kick closes companion watches and
+shows a retryable chat error rather than silently opening an orphan watch.
 
 | Action mark on `%chat` | JSON outline |
 | --- | --- |
@@ -56,21 +61,47 @@ not peer delivery. Subscription setup rolls back partially opened watches;
 cleanup is idempotent and suppresses late events. A kicked subscription
 reports an error and closes its companion watches.
 
-## Next steps
+## Frontend behavior
 
-1. Connect a dedicated chat store to this adapter. Subscribe before loading
-   the inbox and buffer/reconcile facts during initialization. Keep chat
-   availability/loading/errors separate from the main Trill initialization.
-2. Move the inbox and conversation views onto the new model, with stable
-   club IDs, member/author labels, pending requests and paginated history.
-   Preserve drafts and surface failed acknowledgements.
-3. Add multi-person DM creation/membership UI. Review `%activity` notification
-   volumes before implementing mute; `%chat` watch/unwatch is not a mute API.
-   Preserve pinned-chat preferences through an explicit settings migration.
-4. Replace the `%noschat` startup/subscriptions and user-entry flows once the
-   new screens pass browser tests. Keep old history available until a separate
-   archive/import decision; removing `%noschat` from `desk.bill` is deliberate.
-5. Add group/channel navigation and its `%channels` APIs as a separate phase.
+- The inbox preserves direct, invited, archived, blocked and multi-person
+  conversations, including empty conversations absent from `/heads`.
+  Club membership filters out declined groups that remain in `/clubs`.
+- Direct routes use ships; group routes use stable club IDs. The picker can
+  invite two or more other people into a new group. Headers expose joined and
+  invited members, and group messages show their author.
+- Conversation history loads 50 messages at a time. Older pages preserve scroll
+  position, and incoming edits/deletions take precedence over in-flight reads.
+  Reconnect reloads history instead of treating stale cache as authoritative.
+- Drafts stay in memory per conversation. Sending creates an optimistic row;
+  acknowledgement clears the unchanged draft, rejection retains it and exposes
+  retry. A retry reuses the same message ID. This is local acceptance, not a
+  delivered/read receipt from another ship.
+- Story rendering supports text formatting, lists, links, images, code and
+  mentions without converting chat messages into native Trill posts. Search,
+  media and link panels inspect loaded history; they are not full-history search.
+  Citations currently display a placeholder; reactions and threaded chat replies
+  are not part of this first UI milestone.
+- Mute uses `%activity` `/v6/volume-settings` and `activity-action-2`:
+  `{adjust: {source: {dm: {ship: "~nec"}}, volume: ...}}` (use `{club: id}` for
+  groups). All six DM event types disable `unreads` and `notify`. Unmute clears
+  the source override to inherited defaults. Settings load at connect/retry;
+  external changes in Tlon's notification UI require reconnecting Trill.
+- Pins write ship settings bucket `trill-chat`; if absent, the old `noschat`
+  pinned list is read as a fallback and preserved on the first explicit write.
+  Old mute/block policies are not copied across backends.
+
+The upstream [web client](https://github.com/tloncorp/tlon-apps/tree/develop/apps/tlon-web)
+uses shared [chat API helpers](https://github.com/tloncorp/tlon-apps/blob/develop/packages/api/src/client/chatApi.ts),
+[request definitions](https://github.com/tloncorp/tlon-apps/blob/develop/packages/api/src/client/requests/chat.ts)
+and [activity helpers](https://github.com/tloncorp/tlon-apps/blob/develop/packages/api/src/client/activityApi.ts).
+These were cross-checked on 2026-11-06. Keep installed-backend codecs authoritative
+where that checkout differs from upstream.
+
+## Remaining phases
+
+Group/channel navigation and `%channels` transport are separate work. Removing
+`%noschat` from `desk.bill`, archiving/importing its history, richer citations,
+chat reactions and threaded chat replies require explicit follow-up work.
 
 ## Verification
 
@@ -84,3 +115,14 @@ Read-only live scries verified the v4 heads, club, DM and unread endpoints on
 zod (currently empty). Direct/group message, club creation and mark-read JSON
 were also decoded through the installed Hoon `chat-json` library using
 `-eval` with that library as a dependency. No test message was published.
+
+The mocked Playwright scenarios in `ui/tests/e2e/app.spec.cjs` cover direct and
+multi-person sending, exact pagination cursors, group creation, requests,
+negative acknowledgements, per-conversation drafts, live updates during reads,
+rich text safety, unavailable-agent recovery and subscription-kick cleanup.
+Run `cd ui && bun run test:e2e -- --grep "Tlon|messages inbox|message requests|muted and blocked"`.
+Successful group desktop/mobile, direct retry and unavailable-state screenshots
+are saved in the corresponding `ui/test-results/playwright/` test directories.
+These browser fixtures do not prove live peer delivery. The activity mute JSON
+was independently decoded through installed `activity-json` without changing
+any live notification settings.

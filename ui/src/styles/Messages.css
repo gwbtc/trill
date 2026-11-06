@@ -1419,3 +1419,29 @@
     justify-content: center;
   }
 }
+
+.dm-open-conversation { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.dm-group-avatar { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 50%; background: var(--color-background-hover); color: var(--color-text-secondary); }
+.dm-chat-error, .dm-request-banner, .dm-members { padding: 12px 18px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.dm-chat-error { color: var(--color-text-secondary); }
+.dm-load-older { display: block; margin: 8px auto 18px; }
+.dm-group-toggle { display: flex; align-items: center; gap: 8px; padding: 12px 20px; }
+.dm-selected-members { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 20px; }
+.dm-selected-members button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--color-border); border-radius: 8px; }
+.dm-selected-members small { flex-basis: 100%; color: var(--color-text-secondary); }
+.dm-create-group { margin-left: auto; }
+.dm-message-author { font-size: 12px; margin-bottom: 6px; opacity: .75; }
+.dm-bubble-text pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.dm-bubble-text img { max-width: 100%; height: auto; }
+
+@media (max-width: 600px) {
+  #main-column:has(.conversation-open) { padding-bottom: 0; }
+  .conversation-open { min-height: 0; }
+  .conversation-open .dm-conversation-shell { height: calc(100dvh - 58px - env(safe-area-inset-bottom)); }
+  #trill-shell:has(.conversation-open) #compose-button,
+  body:has(.conversation-open) .nostr-signal.fixed { display: none; }
+}
+.dm-peer-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-selected-members button, .dm-members button, .dm-load-older,
+.dm-request-banner button, .dm-chat-error button { cursor: pointer; }
+.dm-members { flex-shrink: 0; max-height: 160px; overflow-y: auto; }

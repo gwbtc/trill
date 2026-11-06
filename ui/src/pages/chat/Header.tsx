@@ -1,4 +1,5 @@
-import Avatar from "@/components/Avatar";
+import { ConversationAvatar } from "./Conversation";
+import type { TlonConversation } from "@/logic/tlon/types";
 import UserModal from "@/components/modals/UserModal";
 import type { UrbitID } from "@/types/nostrill";
 import {
@@ -16,7 +17,7 @@ import type { RefObject } from "react";
 import type { DmPanel } from "./types";
 
 export default function DmConversationHeader({
-  peer,
+  conversation,
   name,
   id2,
   muted,
@@ -30,7 +31,7 @@ export default function DmConversationHeader({
   onToggleBlocked,
   onOpenPanel,
 }: {
-  peer: UrbitID;
+  conversation: TlonConversation;
   name: string;
   id2: string;
   muted: boolean;
@@ -55,7 +56,7 @@ export default function DmConversationHeader({
         <ArrowLeft size={20} strokeWidth={2} />
       </button>
       <button type="button" className="dm-peer-button" onClick={onOpenPeer}>
-        <Avatar user={{ urbit: peer }} size={38} noClick picOnly />
+        <ConversationAvatar conversation={conversation} size={38} />
         <span className="dm-peer-copy">
           <span className="dm-peer-name">{name}</span>
           <span className="dm-peer-id mono">{id2}</span>
@@ -91,19 +92,33 @@ export default function DmConversationHeader({
               {muted ? <Bell size={16} /> : <BellOff size={16} />}
               {muted ? "Unmute" : "Mute"}
             </button>
-            <button type="button" role="menuitem" onClick={onToggleBlocked}>
-              {blocked ? <ShieldOff size={16} /> : <Ban size={16} />}
-              {blocked ? "Unblock" : "Block"}
-            </button>
-            <button type="button" role="menuitem" onClick={() => onOpenPanel("search")}>
+            {conversation.kind === "direct" && (
+              <button type="button" role="menuitem" onClick={onToggleBlocked}>
+                {blocked ? <ShieldOff size={16} /> : <Ban size={16} />}
+                {blocked ? "Unblock" : "Block"}
+              </button>
+            )}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => onOpenPanel("search")}
+            >
               <Search size={16} />
               Search
             </button>
-            <button type="button" role="menuitem" onClick={() => onOpenPanel("media")}>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => onOpenPanel("media")}
+            >
               <Image size={16} />
               Media
             </button>
-            <button type="button" role="menuitem" onClick={() => onOpenPanel("links")}>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => onOpenPanel("links")}
+            >
               <LinkIcon size={16} />
               Links
             </button>

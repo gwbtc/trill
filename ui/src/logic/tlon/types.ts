@@ -13,6 +13,7 @@ export interface TlonMessage {
   author: string;
   sent: number;
   content: TlonStory;
+  delivery?: "sending" | "failed";
 }
 
 export interface TlonConversation {
@@ -27,6 +28,7 @@ export interface TlonConversation {
   unread: number;
   recency: number;
   latest: TlonMessage | null;
+  firstUnreadTime?: string;
 }
 
 export interface TlonInbox {

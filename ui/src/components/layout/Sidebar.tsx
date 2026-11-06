@@ -16,7 +16,7 @@ import useLocalState from "@/state/state";
 import { withoutMuted } from "@/logic/lists";
 import ShipCard from "@/components/ShipCard";
 import { NowInDebate } from "@/components/debates/Presence";
-import { getDmUnreadCount } from "@/logic/dms";
+import { chatUnreadCount, useChatStore } from "@/state/chat";
 import "./Sidebar.css";
 
 const DISMISSED_NOTICES_KEY = "trill-dismissed-system-notices";
@@ -97,13 +97,12 @@ function saveDismissedNotices(notices: DismissedNotices) {
 
 function SlidingMenu() {
   const [location, navigate] = useLocation();
-  const { our, notifications, profile, setModal, dms, lists, debates, debateInvites } =
+  const { our, notifications, profile, setModal, lists, debates, debateInvites } =
     useLocalState((s) => ({
     our: s.our,
     notifications: s.notifications,
     profile: s.our ? s.profiles.get(s.our.patp) : undefined,
     setModal: s.setModal,
-    dms: s.dms,
     lists: s.lists,
     debates: s.debates,
     debateInvites: s.debateInvites,
@@ -117,7 +116,7 @@ function SlidingMenu() {
     (acc, n) => (n.unread ? acc + 1 : acc),
     0,
   );
-  const unreadDms = getDmUnreadCount(dms);
+  const unreadDms = useChatStore((s) => chatUnreadCount(s.conversations, s.muted));
 
   function goto(to: string) { navigate(to); }
 

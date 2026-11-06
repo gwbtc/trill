@@ -1,69 +1,68 @@
 import { Ban, Send } from "lucide-react";
 import { useRef, useState } from "react";
-import type IO from "@/logic/requests/nostrill";
+import { useChatStore } from "@/state/chat";
+import toast from "react-hot-toast";
 
 export default function DmComposer({
-  api,
   peer,
   blocked,
+  disabledReason,
 }: {
-  api: IO | null;
   peer: string;
   blocked: boolean;
+  disabledReason?: string;
 }) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const draftRef = useRef("");
-  const [hasDraft, setHasDraft] = useState(false);
-  const canSend = !blocked && hasDraft;
-
-  function submitMessage() {
-    const draft = draftRef.current.trim();
-    if (!api || blocked || !draft) return;
-    void api.addChat(peer, draft);
-    draftRef.current = "";
-    if (textareaRef.current) textareaRef.current.value = "";
-    setHasDraft(false);
+  const draft = useChatStore((s) => s.drafts[peer] ?? "");
+  const [sending, setSending] = useState(false);
+  const pending = useRef(false);
+  async function submit() {
+    if (blocked || disabledReason || pending.current || !draft.trim()) return;
+    pending.current = true;
+    setSending(true);
+    try {
+      await useChatStore.getState().send(peer, draft.trim());
+      if (useChatStore.getState().drafts[peer] === draft)
+        useChatStore.getState().setDraft(peer, "");
+    } catch {
+      toast.error("Message could not be sent. Your draft is saved.");
+    } finally {
+      pending.current = false;
+      setSending(false);
+    }
   }
-
-  function onComposerInput(event: React.ChangeEvent<HTMLTextAreaElement>) {
-    const nextDraft = event.target.value;
-    draftRef.current = nextDraft;
-    const nextHasDraft = nextDraft.trim().length > 0;
-    setHasDraft((current) => current === nextHasDraft ? current : nextHasDraft);
-  }
-
-  function onComposerKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (blocked) return;
-    if (event.key !== "Enter" || event.shiftKey) return;
-    event.preventDefault();
-    submitMessage();
-  }
-
   return (
     <footer className={`dm-composer${blocked ? " blocked" : ""}`}>
       {blocked && (
         <div className="dm-composer-blocked-note">
           <Ban size={14} />
-          This user is blocked. Unblock them to send messages.
+          Unblock this person to send messages.
         </div>
       )}
       <textarea
-        ref={textareaRef}
-        onChange={onComposerInput}
-        onKeyDown={onComposerKeyDown}
-        placeholder={blocked ? "Blocked users cannot be messaged" : "Send an encrypted message..."}
+        value={draft}
+        onChange={(e) => useChatStore.getState().setDraft(peer, e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            void submit();
+          }
+        }}
+        placeholder={
+          blocked
+            ? "Blocked users cannot be messaged"
+            : disabledReason || "Send an encrypted message..."
+        }
         rows={1}
-        disabled={blocked}
+        disabled={blocked || !!disabledReason}
       />
       <button
         type="button"
         className="dm-send-button"
-        onClick={submitMessage}
-        disabled={!canSend}
+        disabled={blocked || !!disabledReason || sending || !draft.trim()}
+        onClick={() => void submit()}
         aria-label="Send message"
-        title="Send"
       >
-        <Send size={20} strokeWidth={2} />
+        <Send size={20} />
       </button>
     </footer>
   );
