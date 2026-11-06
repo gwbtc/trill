@@ -117,8 +117,11 @@
   ::  TODO UI notifications  [%hark ]
     ?-  -.poke
       %share-ext
+      :: TODO
         ~|  %share-ext-not-implemented  !!
       %del
+        ~&  >>  deleting=poke
+        ~&  >  `@`id.poke
         =/  host=@p  host.poke
         ?.  .=(our.bowl host)
           ?~  pos=(get:orm:feed feed.state id.poke)
@@ -188,6 +191,8 @@
         (poke-host:crds `@p`-.ref eng-poke)
       %add
         =/  sp     (build-sp:postlib our.bowl our.bowl content.poke ~ ~)
+        ~&  >>  sp=sp
+        :: !!
         =/  p=post:post
           (build-post:postlib now.bowl pubkey sp)
         ::  mentions come from the raw text: the markdown parser

@@ -413,6 +413,7 @@ export default class IO {
         id,
       },
     };
+    console.log("deleting", json);
     return this.poke({ post: json });
   }
 

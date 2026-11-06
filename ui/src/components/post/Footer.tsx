@@ -42,7 +42,14 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
   );
   const our = api!.airlock.our!;
   function getComposerData(): SPID {
-    if (poast.event) return { nostr: { post: poast, pubkey: poast.event.pubkey, eventId: poast.event.id } };
+    if (poast.event)
+      return {
+        nostr: {
+          post: poast,
+          pubkey: poast.event.pubkey,
+          eventId: poast.event.id,
+        },
+      };
     return "urbit" in user
       ? { trill: poast }
       : { nostr: { post: poast, pubkey: user.nostr, eventId: poast.hash } };
@@ -123,6 +130,8 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
   }
 
   async function doCancelRP() {
+    // TODO
+    if ("nostr" in user) return;
     setRepostConfirmOpen(false);
     const repostId = findOurRepostId();
     if (!repostId) {
@@ -130,7 +139,7 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
       return;
     }
     setReposting(true);
-    const r = await api!.deletePost(user, repostId);
+    const r = await api!.deletePost(user.urbit.patp, repostId);
     if (!("error" in r)) {
       setRepostOverride(false);
       if (myRP) setRepostCountDelta((count) => count - 1);
@@ -168,12 +177,16 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
       ),
       { duration: 5000, id: `repost-${poast.id}`, position: "bottom-center" },
     );
-    const r = await api!.addRP(user, id);
-    if ("error" in r) {
-      toast.dismiss(toastId);
-      setRepostOverride(false);
-      if (!myRP) setRepostCountDelta((count) => count - 1);
-      toast.error("Could not publish repost");
+    if ("urbit" in user) {
+      const r = await api!.addRP(user.urbit.patp, id);
+      if ("error" in r) {
+        toast.dismiss(toastId);
+        setRepostOverride(false);
+        if (!myRP) setRepostCountDelta((count) => count - 1);
+        toast.error("Could not publish repost");
+      }
+    } else {
+      const r = await api!.addShareExt("", "nostr", id);
     }
     setReposting(false);
   }
@@ -183,6 +196,8 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
     doSendRP();
   }
   async function undoRepost() {
+    // TODO
+    if ("nostr" in user) return;
     setRepostConfirmOpen(false);
     const repostId = findOurRepostId();
     if (!repostId) {
@@ -191,7 +206,7 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
     }
     setRepostOverride(false);
     if (!myRP) setRepostCountDelta((count) => count - 1);
-    const r = await api!.deletePost(user, repostId);
+    const r = await api!.deletePost(user.urbit.patp, repostId);
     if ("error" in r) {
       setRepostOverride(true);
       if (!myRP) setRepostCountDelta((count) => count + 1);
@@ -252,7 +267,8 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
   }
 
   async function doDelete() {
-    const r = await api!.deletePost(user, poast.id);
+    if ("nostr" in user) return;
+    const r = await api!.deletePost(user.urbit.patp, poast.id);
     if ("error" in r) toast.error("Could not delete post");
     else toast.success("Post deleted");
     setModal(null);

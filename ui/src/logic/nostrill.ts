@@ -76,8 +76,10 @@ const rawFeedSlots = new WeakMap<FC, Map<string, string>>();
 const materializedFeeds = new WeakMap<FC, FlatFeed>();
 function indexedNostrFeed(events: Map<string, Wevent>, previous?: FC): FC {
   let reuseFeed = previous ? materializedFeeds.get(previous) : undefined;
-  let reuseEvents = reuseFeed && previous ? rawFeedEvents.get(previous) : undefined;
-  let reuseSlots = reuseFeed && previous ? rawFeedSlots.get(previous) : undefined;
+  let reuseEvents =
+    reuseFeed && previous ? rawFeedEvents.get(previous) : undefined;
+  let reuseSlots =
+    reuseFeed && previous ? rawFeedSlots.get(previous) : undefined;
   const slots = new Map<string, string>();
   const used = new Set<string>();
   let start: string | null = null;
@@ -93,14 +95,19 @@ function indexedNostrFeed(events: Map<string, Wevent>, previous?: FC): FC {
   }
   let converted: FlatFeed | undefined;
   const fc: FC = {
-    start, end,
+    start,
+    end,
     get feed() {
       if (!converted) {
         converted = {};
         for (const event of events.values()) {
           const id = slots.get(event.id)!;
           const oldSlot = reuseSlots?.get(event.id);
-          if (reuseFeed && oldSlot !== undefined && reuseEvents?.get(event.id) === event) {
+          if (
+            reuseFeed &&
+            oldSlot !== undefined &&
+            reuseEvents?.get(event.id) === event
+          ) {
             const post = reuseFeed[oldSlot];
             converted[id] = post.id === id ? post : { ...post, id };
           } else {
@@ -130,11 +137,16 @@ export function eventsToFc(postEvents: Wevent[]): FC {
   return indexedNostrFeed(events);
 }
 export function nostrEventsInFeed(fc: FC): Iterable<Wevent> {
-  return rawFeedEvents.get(fc)?.values() ?? Object.values(fc.feed).flatMap(p => p.event ? [p.event] : []);
+  return (
+    rawFeedEvents.get(fc)?.values() ??
+    Object.values(fc.feed).flatMap((p) => (p.event ? [p.event] : []))
+  );
 }
 export function nostrEventInFeed(fc: FC, id: string): Wevent | undefined {
   const events = rawFeedEvents.get(fc);
-  return events ? events.get(id) : Object.values(fc.feed).find(p => p.hash === id)?.event;
+  return events
+    ? events.get(id)
+    : Object.values(fc.feed).find((p) => p.hash === id)?.event;
 }
 // Merge one sub's per-relay feeds into a single FC, deduping by event id
 // while accumulating each event's source relays into Wevent.relays.
@@ -176,7 +188,8 @@ export function addEventToFc(event: Wevent, fc: FC): FC {
   let slot = Number(p.id);
   while (fc.feed[`${slot}`] && fc.feed[`${slot}`].hash !== p.hash) slot++;
   const existing = fc.feed[`${slot}`];
-  if (existing?.event === p.event && existing?.contents === p.contents) return fc;
+  if (existing?.event === p.event && existing?.contents === p.contents)
+    return fc;
   const next = { ...fc, feed: { ...fc.feed } };
   putPoast(next, p);
   return next;
@@ -210,6 +223,7 @@ export function extractURLs(text: string): {
 }
 
 export function eventToPoast(event: Wevent): Poast | null {
+  // console.log("etop", event);
   const valid = [1, 667];
   if (!valid.includes(event.kind)) return null;
   const cached = parsedEvents.get(event.id);

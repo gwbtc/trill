@@ -21,6 +21,7 @@ import { extractURLs } from "@/logic/nostrill.ts";
 import { IMAGE_REGEX } from "@/logic/constants.ts";
 
 function Body(props: PostProps) {
+  console.log("poast", props.poast);
   const text = props.poast.contents.filter((c) => {
     return (
       "paragraph" in c ||
@@ -35,22 +36,20 @@ function Body(props: PostProps) {
     (c): c is MediaType => "media" in c,
   );
   const hasMedia = media.reduce((acc, item) => {
-    if (acc === true) return acc
+    if (acc === true) return acc;
     if ("images" in item.media) {
-      if (item.media.images.length === 0) return false
-      const f = item.media.images.filter(i => i !== "");
-      return f.length > 0
-    }
-    else if ("video" in item.media) return item.media.video !== ""
-    else if ("audio" in item.media) return item.media.audio !== ""
-    else return acc
+      if (item.media.images.length === 0) return false;
+      const f = item.media.images.filter((i) => i !== "");
+      return f.length > 0;
+    } else if ("video" in item.media) return item.media.video !== "";
+    else if ("audio" in item.media) return item.media.audio !== "";
+    else return acc;
   }, false);
 
   const refs = props.poast.contents.filter((c): c is Reference => "ref" in c);
   const json = props.poast.contents.filter(
     (c): c is ExternalContent => "json" in c,
   );
-
 
   return (
     <div className="body">
@@ -182,14 +181,12 @@ function LinkParser({ href, show }: { href: string; show: string }) {
     <YoutubeSnippet href={href} id={ytb} />
   ) : isImg ? (
     <PostImage className="inline-pic" src={href} />
+  ) : safeHref(href) ? (
+    <a href={href} title={href}>
+      {linkLabel(show)}
+    </a>
   ) : (
-    safeHref(href) ? (
-      <a href={href} title={href}>
-        {linkLabel(show)}
-      </a>
-    ) : (
-      <span>{linkLabel(show)}</span>
-    )
+    <span>{linkLabel(show)}</span>
   );
 }
 function Heading({ string, num }: { string: string; num: number }) {

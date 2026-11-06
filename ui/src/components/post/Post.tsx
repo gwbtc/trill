@@ -55,7 +55,8 @@ function Post(props: PostProps) {
 }
 export default Post;
 
-const INTERACTIVE_SELECTOR = "a, button, video, audio, input, textarea, select, label";
+const INTERACTIVE_SELECTOR =
+  "a, button, video, audio, input, textarea, select, label";
 
 function TrillPost(props: PostProps) {
   const { poast, profile, fake, rp, spine = true } = props;
@@ -86,11 +87,10 @@ function TrillPost(props: PostProps) {
       onClick={openThread}
     >
       <div className="trill-post-gutter left">
-    <div className="avatar sigil cp" role="link" onClick={openModal}>
-      <AvatarPic user={props.user} profile={profile} size={44} />
-    </div>
-
+        <div className="avatar sigil cp" role="link" onClick={openModal}>
+          <AvatarPic user={props.user} profile={profile} size={44} />
         </div>
+      </div>
       <div className="trill-post-body right">
         <Header {...props} />
         <Body {...props} />
