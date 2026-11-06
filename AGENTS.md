@@ -5,6 +5,10 @@ Trill is a fullstack Urbit social application with native posts, Nostr interoper
 
 This guide covers both the Gall backend and browser frontend. Read `WALLET.md` and `TOPICS_API.md` before changing those integrations. Backend details below describe the inspected source, not live-ship verification.
 
+The Tlon chat migration starts with `ui/src/logic/tlon/`; read `TLON_CHAT.md`
+for the installed `%groups` desk's `%chat` v4 API and phased UI migration.
+The existing chat screens still use `%noschat` until that integration is switched.
+
 ## Backend Structure & Ownership
 Use the `urbit` skill when reviewing or changing Hoon. Read imports and nearby molds first. Paths in this section are relative to `backend/`.
 

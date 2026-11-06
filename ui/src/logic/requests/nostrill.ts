@@ -32,6 +32,7 @@ import type { AsyncRes, NostrPID } from "@/types/ui";
 import type { Rope, Skein } from "@/types/hark";
 import type { TopicPrefs } from "@/logic/topics";
 import type { DebateKey, NewDebate } from "@/logic/debates";
+import { TlonChatClient } from "@/logic/tlon/client";
 
 // the UI carries full UrbitIDs, but the backend's user decoder
 // (user:de:common) only takes { urbit: "~ship" } | { nostr: "hex" }; an
@@ -77,8 +78,15 @@ type Handler = (date: any) => void;
 export default class IO {
   airlock;
   subs: Map<string, number> = new Map();
+  private tlonChat: TlonChatClient | null = null;
   constructor(airlock: Urbit) {
     this.airlock = airlock;
+  }
+  getTlonChat(): TlonChatClient {
+    const our = this.airlock.our;
+    if (!our) throw new Error("Ship connection is not ready for Tlon chat");
+    this.tlonChat ??= new TlonChatClient(this.airlock, our);
+    return this.tlonChat;
   }
   private async thread(threadName: string, json: any) {
     return this.airlock.thread({
