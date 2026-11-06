@@ -67,6 +67,20 @@
 ::  +snapshot: a source's topics as of its last successful fetch
 ::
 +$  snapshot  [fetched=@da topics=(list topic)]
+::  Worker diagnostics: wall-clock durations include the cooperative yields.
+::  Bodies are deliberately never retained in this read model.
++$  timing
+  $:  bytes=@ud
+      items=@ud
+      fetch-ms=@ud
+      parse-ms=@ud
+      classify-ms=@ud
+  ==
+::
++$  job
+  [id=source-id =source =prefs]
++$  job-result
+  [out=(each (list topic) @t) =timing]
 ::  +prefs: what the ship's owner wants to see. setting them rebuilds the
 ::  sources (see +sources-for in app/topics.hoon)
 ::

@@ -19,8 +19,51 @@ on the same ship read them via scries.
   Trends and Hacker News topics are classified by keyword rules, falling back
   to `%other`.
 
-Code: `backend/sur/topics.hoon` (types), `backend/lib/topics.hoon` (fetching,
-parsing, classification), `backend/app/topics.hoon` (the agent).
+Code: `backend/sur/topics.hoon` (types), `backend/lib/topics.hoon` (parsing
+and classification), `backend/lib/topics-agent.hoon` (state and scheduling),
+`backend/lib/topics-job.hoon` (cooperative worker),
+`backend/ted/topics-fetch.hoon` (Spider entry), and `backend/app/topics.hoon`
+(persistence and event dispatch). The development desk is currently `%trill`;
+substitute the installed desk in thread commands.
+
+## Work limits and diagnostics
+
+Only one source worker runs at a time. Timer and manual refresh requests do
+not create overlapping refreshes. Fetches have a 20-second deadline per hop,
+at most three redirects, no automatic retries, and a two-minute job watchdog.
+Progress responses exceeding 256 KiB are cancelled; completed bodies are
+checked again before parsing. Hacker News JSON is limited to 64 KiB and 32
+levels of nesting. RSS is scanned in batches of at most 1024 characters,
+with each item limited to 8192 bytes and 256 markup delimiters. At most 30
+items are retained per source. Hitting an input/error limit retains the
+previous successful snapshot; the 30-item selection limit is intentional.
+
+The worker yields through Behn between scan batches, items and individual
+classifications. Threads share Arvo's event loop: their timers do not
+preempt a pure Hoon computation. These input/work limits are therefore part
+of responsiveness, not merely the use of Spider.
+
+`/diagnostics/noun` adds an independent read model (the `/status` shape is
+unchanged):
+
+```hoon
+$:  active=(unit [tid=@ta input=job])
+    pending=(list source-id)
+    timings=(map source-id timing)
+==
++$  timing
+  [bytes=@ud items=@ud fetch-ms=@ud parse-ms=@ud classify-ms=@ud]
+```
+
+Durations are wall-clock milliseconds including cooperative yields and
+other intervening ship work, not CPU measurements. Logs contain source and
+timing summaries, not response bodies. Source/preference changes invalidate
+obsolete results. `/status` records worker failures while keeping saved data.
+
+Run `-trill!topics-check` for the repeatable fixture workflow, including
+actual Behn waits and a timeout. It returns a `%topics-worker-check %passed`
+report with timings. This fixture does not make HTTP requests or edit agent
+state; a live `:topics [%fetch ~]` cycle separately exercises Iris and Spider.
 
 ## Scries
 
@@ -34,6 +77,7 @@ All scries are `%gx`, return `%noun`, and are local to the ship.
 | `/sources` | `(map source-id source)` | the configured sources |
 | `/prefs` | `prefs` | country, language and categories (see [Preferences](#preferences)) |
 | `/status` | see below | fetch schedule, last fetch per source, last error per source |
+| `/diagnostics` | see above | active job, pending source IDs and latest stage timings |
 
 `/status` returns:
 
@@ -111,7 +155,7 @@ From `sur/topics.hoon`:
 | Source ids | Items | `score` | `url` | `links` | Categories |
 |---|---|---|---|---|---|
 | `gtrends-<country>`, e.g. `gtrends-us` | ~10 trending searches | approximate searches (`2K+` → 2000) | the news article behind the search's picture, else the first one | news articles about the search | keyword rules |
-| `gnews-world` `-nation` `-business` `-technology` `-science` `-entertainment` `-sports` `-health` | ~55–70 stories per section | number of articles in the story cluster | Google News link to the lead article | every article in the cluster, with its publisher | the section |
+| `gnews-world` `-nation` `-business` `-technology` `-science` `-entertainment` `-sports` `-health` | up to 30 stories per section | number of articles in the story cluster | Google News link to the lead article | every article in the cluster, with its publisher | the section |
 | `hn` | 30 front-page stories | points | the story (or its HN thread) | the story, plus the HN discussion | keyword rules |
 
 Google News sections map to categories as follows:
@@ -182,6 +226,6 @@ From dojo:
   `%nostrill`: its `/j/topics` scry returns the prefs and each source's leading
   topics as JSON (filtered to the chosen categories), and its `{topics: prefs}`
   UI poke forwards `%set-prefs`.
-- **Unreleased state.** Its shape may still change without migration. After a
-  change the agent is reset with `|nuke %topics, =hard &` and restarts from the
-  default prefs (US, English, every category).
+- **Persistence.** State `%1` migrates the former `%0` without resetting prefs,
+  snapshots, errors, schedule or spam verdicts. Reloading an active worker stops
+  the old thread and requeues that source. No agent reset is required.
