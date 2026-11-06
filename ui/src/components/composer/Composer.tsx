@@ -29,13 +29,13 @@ import {
   ImageIcon,
   Smile,
   Users,
+  X,
 } from "lucide-react";
 import S3Browser from "./S3Browser";
 import ComposerLayer from "./ComposerLayer";
 import EmojiPicker from "./EmojiPicker";
 import { UrbitAvatar } from "../Avatar";
 import {
-  insertComposerImage,
   insertComposerText,
   restoreComposerCaret,
   saveComposerCaret,
@@ -43,6 +43,9 @@ import {
 } from "./composerDom";
 import type { Wevent } from "@/types/nostr";
 import type { NostrPID } from "@/types/ui";
+import { uploadToS3 } from "@/logic/s3";
+
+type AttachedImage = { id: string; url: string; uploading: boolean };
 
 function Composer({
   isAnon,
@@ -62,6 +65,7 @@ function Composer({
     contacts,
     profiles,
     relays,
+    s3,
     setModal,
   } = useLocalState((s) => ({
     api: s.api,
@@ -71,9 +75,18 @@ function Composer({
     contacts: s.contacts,
     profiles: s.profiles,
     relays: s.relays,
+    s3: s.s3,
     setModal: s.setModal,
   }));
   const [input, setInput] = useState("");
+  const [images, setImages] = useState<AttachedImage[]>([]);
+  const imageUploads = useRef(new Map<string, { controller: AbortController; preview: string }>());
+  useEffect(() => () => {
+    for (const upload of imageUploads.current.values()) {
+      upload.controller.abort();
+      URL.revokeObjectURL(upload.preview);
+    }
+  }, []);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isLoading, setLoading] = useState(false);
   const [relayStatus, setRelayStatus] = useState<string | null>(null);
@@ -262,7 +275,11 @@ function Composer({
     e.preventDefault();
     if (!api) return;
 
-    const content = serializeComposerContent(inputRef.current, input);
+    if (images.some(image => image.uploading)) {
+      toast.error("Wait for your image upload to finish");
+      return;
+    }
+    const content = serializeComposerContent(inputRef.current, input, images.map(image => image.url));
     if (!content.trim()) return;
     // Ctrl+Enter submits via requestSubmit, which skips the disabled button
     if (remaining < 0) {
@@ -287,6 +304,7 @@ function Composer({
       await crossPost(prevNewest, relayTargets);
     }
     setInput("");
+    clearImages();
     setComposerData(null); // Clear composer data after successful post
     toast.success(isModal ? "post sent" : "Posted to your relays");
     setLoading(false);
@@ -312,6 +330,7 @@ function Composer({
     e.preventDefault();
     setComposerData(null);
     setInput("");
+    clearImages();
     setIsExpanded(false);
   };
 
@@ -321,11 +340,53 @@ function Composer({
 
   const handleS3Select = (url: string) => {
     setS3Open(false);
+    setImages(current => [...current, { id: crypto.randomUUID(), url, uploading: false }]);
     if (!inputRef.current) return;
     restoreComposerCaret(inputRef.current, caretRef.current);
-    insertComposerImage(url);
-    setInput(serializeComposerContent(inputRef.current, inputRef.current.innerText));
   };
+
+  function removeImage(id: string) {
+    const upload = imageUploads.current.get(id);
+    if (upload) {
+      upload.controller.abort();
+      URL.revokeObjectURL(upload.preview);
+      imageUploads.current.delete(id);
+    }
+    setImages(current => current.filter(image => image.id !== id));
+  }
+
+  function clearImages() {
+    for (const upload of imageUploads.current.values()) {
+      upload.controller.abort();
+      URL.revokeObjectURL(upload.preview);
+    }
+    imageUploads.current.clear();
+    setImages([]);
+  }
+
+  async function uploadImage(file: File) {
+    if (!s3) return;
+    const id = crypto.randomUUID();
+    const preview = URL.createObjectURL(file);
+    const controller = new AbortController();
+    imageUploads.current.set(id, { controller, preview });
+    setImages(current => [...current, { id, url: preview, uploading: true }]);
+    try {
+      const url = await uploadToS3(file, s3, controller.signal);
+      if (!controller.signal.aborted) {
+        setImages(current => current.map(image => image.id === id ? { id, url, uploading: false } : image));
+      }
+    } catch {
+      if (!controller.signal.aborted) {
+        setImages(current => current.filter(image => image.id !== id));
+        toast.error("Upload failed: please try again");
+      }
+    } finally {
+      // A removed upload may have been cleared already; revocation is safe twice.
+      URL.revokeObjectURL(preview);
+      imageUploads.current.delete(id);
+    }
+  }
 
   const openS3Browser = () => {
     caretRef.current = saveComposerCaret(inputRef.current);
@@ -348,8 +409,10 @@ function Composer({
   )!;
   const ReplyIcon = activeReplyOption.icon;
   const charMax = 280;
-  const remaining = charMax - input.length;
-  const progress = Math.min(1, Math.max(0, input.length / charMax));
+  const draft = serializeComposerContent(null, input, images.filter(image => !image.uploading).map(image => image.url));
+  const remaining = charMax - draft.length;
+  const progress = Math.min(1, Math.max(0, draft.length / charMax));
+  const canSubmit = Boolean(draft.trim()) && remaining >= 0 && !images.some(image => image.uploading);
   const circumference = 75.4;
   const ringOffset = circumference * (1 - progress);
   const ringColor =
@@ -422,6 +485,7 @@ function Composer({
             profiles={profiles}
             placeholder={placeholder}
             inputRef={inputRef}
+            onUploadImage={uploadImage}
           />
           {!isModal &&
             (isLoading ? (
@@ -429,13 +493,22 @@ function Composer({
             ) : (
               <button
                 type="submit"
-                disabled={!input.trim()}
+                disabled={!canSubmit}
                 className="post-btn"
               >
                 Post
               </button>
             ))}
         </div>
+        {images.length > 0 && <div className="composer-attachments" role="group" aria-label="Attached images">
+          {images.map((image, index) => <figure className="composer-attachment" key={image.id}>
+            <img src={image.url} alt={`Attachment ${index + 1}`} />
+            {image.uploading && <span className="attachment-upload-status" role="status">Uploading…</span>}
+            <button type="button" className="remove-attachment" aria-label={`Remove image ${index + 1}`} onClick={() => removeImage(image.id)}>
+              <X size={18} aria-hidden="true" />
+            </button>
+          </figure>)}
+        </div>}
         {/* reply policy applies to new top-level posts only */}
         {isModal && !composerData && (
           <div className="compose-reply-restriction">
@@ -553,7 +626,7 @@ function Composer({
               ) : (
                 <button
                   type="submit"
-                  disabled={!input.trim() || remaining < 0}
+                  disabled={!canSubmit}
                   className="post-btn"
                 >
                   Broadcast

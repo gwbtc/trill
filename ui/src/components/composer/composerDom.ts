@@ -1,27 +1,12 @@
+// Images are attachments, never contenteditable nodes. Keep their markup after
+// the text so display order and publication order agree.
 export function serializeComposerContent(
   editor: HTMLElement | null,
   fallback: string,
+  images: string[] = [],
 ) {
-  if (!editor) return fallback;
-
-  const images = editor.querySelectorAll("img");
-  if (images.length === 0) return fallback;
-
-  const clone = editor.cloneNode(true) as HTMLElement;
-  clone.querySelectorAll("img").forEach((img) => {
-    const src = img.getAttribute("src");
-    if (src) {
-      const replacement = document.createTextNode(` ![](${src}) `);
-      img.replaceWith(replacement);
-    }
-  });
-
-  return clone.innerText;
-}
-
-export function insertComposerImage(url: string) {
-  const thumbEl = `<img class="img-thumb" src="${url}"/>`;
-  document.execCommand("insertHTML", false, thumbEl);
+  const text = editor?.innerText ?? fallback;
+  return [text.trimEnd(), ...images.map(url => `![](${url})`)].filter(Boolean).join("\n\n");
 }
 
 export function insertComposerText(text: string, editor?: HTMLElement | null) {

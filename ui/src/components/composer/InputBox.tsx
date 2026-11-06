@@ -9,10 +9,9 @@ import {
 } from "./Autocomplete";
 import ConfirmationDialog from "../modals/ConfirmationDialog";
 import ComposerLayer from "./ComposerLayer";
-import { restoreComposerCaret, saveComposerCaret, serializeComposerContent } from "./composerDom";
+import { restoreComposerCaret, saveComposerCaret } from "./composerDom";
 import useLocalState from "@/state/state";
 import toast from "react-hot-toast";
-import { uploadToS3 } from "@/logic/s3";
 
 type Props = {
   placeholder: string;
@@ -22,6 +21,7 @@ type Props = {
   contacts: UrbitContacts;
   profiles: Map<string, UserProfile>;
   inputRef: RefObject<HTMLDivElement | null>;
+  onUploadImage: (file: File) => Promise<void>;
 };
 
 export default function ({
@@ -32,6 +32,7 @@ export default function ({
   profiles,
   placeholder,
   inputRef,
+  onUploadImage,
 }: Props) {
   // Autocomplete state
   const [mentionState, setMentionState] = useState<{
@@ -48,21 +49,17 @@ export default function ({
     previewUrl: string;
     caret: Range | null;
   } | null>(null);
-  const cancelPaste = useCallback(() => {
-    setPendingPaste((p) => {
-      if (p) URL.revokeObjectURL(p.previewUrl);
-      return null;
-    });
-  }, []);
+  useEffect(() => () => {
+    if (pendingPaste) URL.revokeObjectURL(pendingPaste.previewUrl);
+  }, [pendingPaste]);
+  const cancelPaste = useCallback(() => setPendingPaste(null), []);
   async function confirmPaste() {
     if (!pendingPaste) return;
-    const { file, previewUrl, caret } = pendingPaste;
+    const { file, caret } = pendingPaste;
     setPendingPaste(null);
-    URL.revokeObjectURL(previewUrl);
     if (!inputRef.current) return;
-    // the dialog took focus; put the caret back where the paste happened
     restoreComposerCaret(inputRef.current, caret);
-    await uploadPastedImage(file);
+    await onUploadImage(file);
   }
 
   // Track last known cursor index to restore if needed, though mostly we rely on live selection
@@ -132,41 +129,6 @@ export default function ({
     const cursor = getCaretIndex(el);
     cursorRef.current = cursor;
     checkMention(text, cursor);
-  };
-
-  const uploadPastedImage = async (file: File) => {
-    if (!inputRef.current || !s3) return;
-
-    // 1. Create BLOB URL for immediate preview
-    const blobUrl = URL.createObjectURL(file);
-    // 2. Insert with opacity (loading state)
-    // We use a unique ID to find it later
-    const tempId = `upload-${Date.now()}`;
-    const imgHtml = `<img id="${tempId}" class="img-thumb opacity-50" src="${blobUrl}"/> &nbsp;`;
-    document.execCommand("insertHTML", false, imgHtml);
-
-    try {
-      // 3. Upload
-      const url = await uploadToS3(file, s3);
-
-      // 4. Swap URL
-      const imgEl = inputRef.current.querySelector(`#${tempId}`);
-      if (imgEl) {
-        imgEl.setAttribute("src", url);
-        imgEl.classList.remove("opacity-50");
-        imgEl.removeAttribute("id"); // cleanup
-      }
-    } catch (e: any) {
-      toast.error("Upload failed: " + e.message);
-      // Remove the failed image?
-      const imgEl = inputRef.current.querySelector(`#${tempId}`);
-      imgEl?.remove();
-    } finally {
-      URL.revokeObjectURL(blobUrl);
-      if (inputRef.current) {
-        setInput(serializeComposerContent(inputRef.current, inputRef.current.innerText));
-      }
-    }
   };
 
   const handlePaste = (e: React.ClipboardEvent) => {

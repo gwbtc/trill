@@ -233,10 +233,56 @@
   }
 }
 
-.img-thumb {
-  display: inline-block;
-  margin: 0 1ch 0 1ch;
-  width: 80px;
+#composer .composer-attachments {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  gap: 10px;
+  margin-block: 12px;
+}
+
+#composer .composer-attachment {
+  position: relative;
+  min-width: 0;
+  margin: 0;
+  aspect-ratio: 4 / 3;
+  max-height: 220px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface, var(--color-background));
+}
+
+#composer .composer-attachment img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+#composer .remove-attachment {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-background);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+#composer .attachment-upload-status {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 8px;
+  background: var(--color-background);
+  color: var(--color-text-secondary);
+  text-align: center;
+  font-size: 13px;
 }
 
 #home-composer-prompt #composer {
@@ -525,6 +571,7 @@
 
 #composer.composer-modal-body .composer-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
@@ -542,6 +589,7 @@
 
 .compose-submit-group {
   display: flex;
+  margin-inline-start: auto;
   align-items: center;
   gap: 14px;
 }
