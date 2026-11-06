@@ -431,6 +431,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   send: async (rawId, text) => {
     const id = normalizeTlonWhom(rawId);
     const { client, our } = get();
+    const draftAtSend = get().drafts[id];
     if (!client) throw new Error("Chat is not connected");
     if (get().conversations.get(id)?.blocked)
       throw new Error("Unblock this person before sending");
@@ -467,6 +468,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           "Chat connection changed; check the conversation before retrying",
         );
       failed.delete(draft.id);
+      if (draftAtSend?.trim() === text && get().drafts[id] === draftAtSend)
+        get().setDraft(id, "");
       const messages = get().threads.get(id)?.messages ?? [];
       patchThread(id, {
         messages: messages.map((message) =>

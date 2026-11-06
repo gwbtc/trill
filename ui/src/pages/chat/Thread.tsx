@@ -15,6 +15,7 @@ export default function DmThread({
   loading,
   onOlder,
   onRetry,
+  notice,
 }: {
   messages: TlonMessage[];
   our: string;
@@ -27,12 +28,13 @@ export default function DmThread({
   loading: boolean;
   onOlder: () => void;
   onRetry: (message: TlonMessage) => void;
+  notice?: string;
 }) {
   return (
     <div className="dm-thread-scroll" ref={threadRef}>
       <div className="dm-encryption-note">
-        <Lock size={13} />
-        <span>Messages are end-to-end encrypted</span>
+        {!notice && <Lock size={13} />}
+        <span>{notice || "Messages are end-to-end encrypted"}</span>
       </div>
       {older && (
         <button
@@ -82,7 +84,9 @@ export default function DmThread({
                       <span>
                         {message.delivery === "sending"
                           ? "Sending..."
-                          : "Failed to send"}
+                          : message.delivery === "queued"
+                            ? "Waiting for channel host..."
+                            : "Failed to send"}
                       </span>
                       {message.delivery === "failed" && (
                         <button

@@ -13,7 +13,7 @@ export interface TlonMessage {
   author: string;
   sent: number;
   content: TlonStory;
-  delivery?: "sending" | "failed";
+  delivery?: "sending" | "failed" | "queued";
 }
 
 export interface TlonConversation {

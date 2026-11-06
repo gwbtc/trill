@@ -1,3 +1,4 @@
+import { useChannelsStore, channelUnreadCount } from "@/state/channels";
 import {
   Bell,
   CreditCard,
@@ -7,6 +8,7 @@ import {
   Search,
   Swords,
   UserRound,
+  UsersRound,
   X,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -116,6 +118,7 @@ function SlidingMenu() {
     (acc, n) => (n.unread ? acc + 1 : acc),
     0,
   );
+  const unreadChannels = useChannelsStore((state) => channelUnreadCount(state.groups));
   const unreadDms = useChatStore((s) => chatUnreadCount(s.conversations, s.muted));
 
   function goto(to: string) { navigate(to); }
@@ -189,6 +192,7 @@ function SlidingMenu() {
       badge: unreadDms,
       primary: true,
     },
+    { to: "/groups", label: "Groups", icon: <UsersRound size={22} strokeWidth={1.9} />, badge: unreadChannels },
     { to: "/wallet", label: "Wallet", icon: <CreditCard size={22} strokeWidth={1.9} />, badge: 0 },
     { to: "/fols", label: "Follows", icon: <FollowsIcon />, badge: 0 },
     { to: "/bookmarks", label: "Bookmarks", icon: <BookmarkIcon />, badge: 0 },

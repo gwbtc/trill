@@ -6,6 +6,7 @@ import { P404 } from "./pages/Error";
 import { lazy, Suspense, useEffect } from "react";
 import Modal from "./components/modals/Modal";
 import { DebatePresenceSync } from "./components/debates/Presence";
+import ChannelsSync from "./components/layout/ChannelsSync";
 import ChatSync from "./components/layout/ChatSync";
 
 const WELCOME_SHOWN_KEY = "nostrill-welcome-shown";
@@ -14,6 +15,8 @@ const User = lazy(() => import("@/pages/User"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const Follows = lazy(() => import("@/pages/Follows"));
 const Search = lazy(() => import("@/pages/Search"));
+const Groups = lazy(() => import("@/pages/chat/Groups"));
+const Channel = lazy(() => import("@/pages/chat/Channel"));
 const DMIndex = lazy(() => import("@/pages/chat/Index"));
 const DMShow = lazy(() => import("@/pages/chat/User"));
 const Wallet = lazy(() => import("@/pages/Wallet"));
@@ -57,6 +60,7 @@ export default function r() {
       <div id="trill-app">
         <DebatePresenceSync />
         <ChatSync />
+        <ChannelsSync />
         <div id="trill-shell" className="app-shell">
           <Sidebar />
           <main id="main-column">
@@ -69,6 +73,8 @@ export default function r() {
                 <Route path="/debates" component={Debates} />
                 <Route path="/debates/:host/:id" component={DebateRoom} />
                 <Route path="/notif" component={NotificationCenter} />
+                <Route path="/groups" component={Groups} />
+                <Route path="/groups/chat/:host/:name" component={Channel} />
                 <Route path="/dms" component={DMIndex} />
                 <Route path="/dms/:id" component={DMShow} />
                 <Route path="/wallet" component={Wallet} />

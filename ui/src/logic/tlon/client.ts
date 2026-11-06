@@ -1,3 +1,4 @@
+import { acknowledgedPoke, watchTlon } from "./transport";
 import { isValidPatp } from "urbit-ob";
 import type {
   TlonConversation,
@@ -108,24 +109,28 @@ function messageId(value: unknown): string {
   return value;
 }
 
-export function parseTlonMessage(value: unknown): TlonMessage | null {
-  const raw = object(value, "message");
-  if (raw.type === "tombstone") return null;
-  if (raw.type !== "post") throw new Error("Unsupported Tlon message type");
-  const seal = object(raw.seal, "message seal");
-  const essay = object(raw.essay, "message essay");
+export function parseTlonEssay(
+  value: unknown,
+): Pick<TlonMessage, "author" | "sent" | "content"> {
+  const essay = object(value, "message essay");
   const author =
     typeof essay.author === "string"
       ? ship(essay.author)
       : ship(object(essay.author, "message author").ship);
   const content = array(essay.content, "story") as TlonStory;
+  return { author, sent: count(essay.sent), content };
+}
+
+export function parseTlonMessage(value: unknown): TlonMessage | null {
+  const raw = object(value, "message");
+  if (raw.type === "tombstone") return null;
+  if (raw.type !== "post") throw new Error("Unsupported Tlon message type");
+  const seal = object(raw.seal, "message seal");
   return {
     id: messageId(seal.id),
     time: timeId(seal.time),
     sequence: count(seal.seq),
-    author,
-    sent: count(essay.sent),
-    content,
+    ...parseTlonEssay(raw.essay),
   };
 }
 
@@ -264,17 +269,7 @@ export class TlonChatClient {
   }
 
   private pokeAgent(app: string, mark: string, json: unknown): Promise<void> {
-    return new Promise((resolve, reject) => {
-      this.transport
-        .poke({
-          app,
-          mark,
-          json,
-          onSuccess: resolve,
-          onError: (error) => reject(new Error(String(error))),
-        })
-        .catch(reject);
-    });
+    return acknowledgedPoke(this.transport, app, mark, json);
   }
 
   async loadMuted(): Promise<Set<string>> {
@@ -404,57 +399,26 @@ export class TlonChatClient {
     handler: (event: TlonEvent) => void,
     onError: (error: unknown) => void = () => {},
   ): Promise<() => Promise<void>> {
-    let active = true;
-    const ids: number[] = [];
-    const stop = async () => {
-      active = false;
-      const pending = ids.splice(0);
-      await Promise.all(pending.map((id) => this.transport.unsubscribe(id)));
-    };
-    const terminate = (error: unknown) => {
-      if (!active) return;
-      try {
-        onError(error);
-      } finally {
-        void stop().catch(onError);
-      }
-    };
-    try {
-      for (const [path, type] of [
-        [VERSION, "chat"],
-        ["/unreads", "unread"],
-        ["/dm/invited", "invites"],
-      ] as const) {
-        const id = await this.transport.subscribe({
-          app: APP,
-          path,
-          resubOnQuit: false,
-          event: (data) => {
-            if (!active) return;
-            try {
-              handler(
-                type === "invites"
-                  ? { type, ships: ships(data) }
-                  : { type, data: object(data, `${type} event`) },
-              );
-            } catch (error) {
-              onError(error);
-            }
-          },
-          err: terminate,
-          quit: () => terminate(new Error(`Tlon subscription ended: ${path}`)),
-        });
-        if (!active) {
-          await this.transport.unsubscribe(id);
-          throw new Error(`Tlon subscription ended during setup: ${path}`);
-        }
-        ids.push(id);
-      }
-      return stop;
-    } catch (error) {
-      await stop();
-      throw error;
-    }
+    return watchTlon(
+      this.transport,
+      (
+        [
+          [VERSION, "chat"],
+          ["/unreads", "unread"],
+          ["/dm/invited", "invites"],
+        ] as const
+      ).map(([path, type]) => ({
+        app: APP,
+        path,
+        event: (data: unknown) =>
+          handler(
+            type === "invites"
+              ? { type, ships: ships(data) }
+              : { type, data: object(data, `${type} event`) },
+          ),
+      })),
+      onError,
+    );
   }
 }
 

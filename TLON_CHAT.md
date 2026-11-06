@@ -1,7 +1,7 @@
 # Tlon chat migration
 
 Trill's inbox and conversation screens now use Tlon's `%chat` agent for
-one-to-one and multi-person DMs. `IO.getTlonChat()` shares the authenticated
+one-to-one and multi-person DMs, plus joined groups and their chat channels. `IO.getTlonChat()` shares the authenticated
 Airlock connection; `state/chat.ts` owns chat state independently of the main
 Trill store. `%noschat` is no longer queried or watched by the browser.
 Its backend agent and persisted history remain intact; history is not imported
@@ -11,7 +11,8 @@ into Tlon by this switch.
 
 Inspected `/home/y/code/groundwire/piers/zod/groups` on 2026-11-06.
 `%groups` is the desk; direct messages and multi-person DMs (clubs) are
-served by `%chat`. Group/channel messaging is a later milestone.
+served by `%chat`. Group membership/directory data comes from `%groups`,
+and chat-channel messages come from `%channels`.
 
 Use the installed API v4, whose marks encode chat mold v7. The relevant
 sources are `app/chat.hoon`, `sur/chat.hoon`, `lib/chat-json.hoon`,
@@ -93,15 +94,62 @@ reports an error and closes its companion watches.
 The upstream [web client](https://github.com/tloncorp/tlon-apps/tree/develop/apps/tlon-web)
 uses shared [chat API helpers](https://github.com/tloncorp/tlon-apps/blob/develop/packages/api/src/client/chatApi.ts),
 [request definitions](https://github.com/tloncorp/tlon-apps/blob/develop/packages/api/src/client/requests/chat.ts)
-and [activity helpers](https://github.com/tloncorp/tlon-apps/blob/develop/packages/api/src/client/activityApi.ts).
+[activity helpers](https://github.com/tloncorp/tlon-apps/blob/develop/packages/api/src/client/activityApi.ts),
+[group helpers](https://github.com/tloncorp/tlon-apps/blob/develop/packages/api/src/client/groupsApi.ts)
+and [channel helpers](https://github.com/tloncorp/tlon-apps/blob/develop/packages/api/src/client/channelsApi.ts).
 These were cross-checked on 2026-11-06. Keep installed-backend codecs authoritative
 where that checkout differs from upstream.
 
+## Groups and chat channels
+
+`logic/tlon/channels.ts` adapts groups/channel data; `state/channels.ts` owns
+its lifecycle separately from DMs. `ChannelsSync` maintains three shell-wide
+watches, with the same shared transport/cleanup helper as DMs. A groups outage
+does not disable direct messages or Trill startup. Directory snapshots retain
+unchanged channel references and reconcile unread facts arriving during reads.
+
+| Agent and path | Use |
+| --- | --- |
+| `%groups` `/v3/groups` | Joined groups, roles, read restrictions, sections/order, active channels. |
+| `%groups` `/v3/groups` watch | Directory, membership, metadata and role changes; resynchronize the directory. |
+| `%channels` `/unreads` read/watch | Nested unread counts per channel (outer count is not unread). |
+| `%channels` `/v5/chat/<host>/<name>/posts/newest/50/post` | Initial channel history. |
+| `%channels` `/v5/chat/<host>/<name>/posts/older/<dotted-cursor>/50/post` | Older history. |
+| `%channels` `/chat/<host>/<name>/perm` | Group identity and writer roles. |
+| `%channels` `/v4` watch | Host posts, edits, tombstones, permissions and membership responses. |
+
+The Groups page (`/groups`) lists existing memberships and only `chat/` nests.
+Notebook/diary, collection/heap, notes and other kinds are omitted. Channels
+follow the group's section order. Read restrictions use the current seat's
+roles and group-admin/host privileges, including bans. Channel routes are
+`/groups/chat/<host>/<name>`; group identity is kept separately because the
+channel host need not be the group host. Removed access hides the conversation
+and composer. A readable but unjoined channel requires an explicit Join action;
+no route visit automatically joins a channel.
+
+All mutations use `%channels` mark `channel-action-2` with
+`{channel: {nest, action}}`: `action` is `{join: groupId}`, `{read: null}`, or
+`{post: {add: essay}}`. Writers come from the channel permission read; hosts
+and group admins retain their backend privileges. Keep the composer disabled
+until permissions resolve, and preserve backend refusals rather than assuming
+that a readable channel is writable.
+
+Channel IDs and host-assigned post IDs differ from DM IDs. Channel posts use
+raw decimal `seal.id`; paging URL cursors render as dotted `@ud`. Outgoing
+messages reconcile by author and unique millisecond `essay.sent`, which is the
+backend's client identity, until the host supplies the real post ID. A local
+acknowledgement clears only the unchanged draft; a queued bubble remains until
+the host echo arrives. Nacked retries reuse the same `sent`, and live edits or
+tombstones take precedence over stale history responses. Shared conversation
+components render story content, authors, pagination, media and loaded-history
+search for both transports. Drafts remain separate per conversation/channel.
+
 ## Remaining phases
 
-Group/channel navigation and `%channels` transport are separate work. Removing
-`%noschat` from `desk.bill`, archiving/importing its history, richer citations,
-chat reactions and threaded chat replies require explicit follow-up work.
+Group discovery/invitations, group/channel administration, richer citations,
+chat reactions and threaded chat replies remain follow-up work. Removing
+`%noschat` from `desk.bill` and archiving/importing its history are separate
+operations. Non-chat channel types are outside Trill's intended scope.
 
 ## Verification
 
@@ -126,3 +174,12 @@ are saved in the corresponding `ui/test-results/playwright/` test directories.
 These browser fixtures do not prove live peer delivery. The activity mute JSON
 was independently decoded through installed `activity-json` without changing
 any live notification settings.
+
+Channel browser checks are selected with `--grep "Tlon channels"`. They cover
+filtering, nested unread counts, permission checks, explicit joining, retries,
+host-echo deduplication, edits/tombstones, stale reads, access loss, drafts,
+admin privileges and subscription cleanup. Success screenshots include the
+channel directory and desktop/mobile conversation layouts. Live zod reads
+confirmed the group, channel permission, unread and v5 history JSON shapes;
+`channel-json` decoded send, join and read actions without poking agents or
+publishing messages. As with DMs, peer delivery remains a separate live check.

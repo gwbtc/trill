@@ -13,6 +13,32 @@ export default function DmComposer({
   disabledReason?: string;
 }) {
   const draft = useChatStore((s) => s.drafts[peer] ?? "");
+  return (
+    <MessageComposer
+      draft={draft}
+      blocked={blocked}
+      disabledReason={disabledReason}
+      onChange={(text) => useChatStore.getState().setDraft(peer, text)}
+      onSend={(text) => useChatStore.getState().send(peer, text)}
+    />
+  );
+}
+
+export function MessageComposer({
+  draft,
+  blocked = false,
+  disabledReason,
+  onChange,
+  onSend,
+  placeholder = "Send an encrypted message...",
+}: {
+  draft: string;
+  blocked?: boolean;
+  disabledReason?: string;
+  onChange: (text: string) => void;
+  onSend: (text: string) => Promise<void>;
+  placeholder?: string;
+}) {
   const [sending, setSending] = useState(false);
   const pending = useRef(false);
   async function submit() {
@@ -20,9 +46,7 @@ export default function DmComposer({
     pending.current = true;
     setSending(true);
     try {
-      await useChatStore.getState().send(peer, draft.trim());
-      if (useChatStore.getState().drafts[peer] === draft)
-        useChatStore.getState().setDraft(peer, "");
+      await onSend(draft.trim());
     } catch {
       toast.error("Message could not be sent. Your draft is saved.");
     } finally {
@@ -40,7 +64,7 @@ export default function DmComposer({
       )}
       <textarea
         value={draft}
-        onChange={(e) => useChatStore.getState().setDraft(peer, e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
@@ -50,7 +74,7 @@ export default function DmComposer({
         placeholder={
           blocked
             ? "Blocked users cannot be messaged"
-            : disabledReason || "Send an encrypted message..."
+            : disabledReason || placeholder
         }
         rows={1}
         disabled={blocked || !!disabledReason}

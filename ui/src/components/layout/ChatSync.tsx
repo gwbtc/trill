@@ -9,9 +9,8 @@ export default function ChatSync() {
   useEffect(() => {
     if (!api?.airlock.our) return;
     try {
-      return useChatStore
-        .getState()
-        .connect(api.getTlonChat(), api.airlock.our);
+      useChatStore.getState().connect(api.getTlonChat(), api.airlock.our);
+      return () => useChatStore.getState().disconnect();
     } catch (error) {
       useChatStore.setState({ status: "error", error: String(error) });
     }

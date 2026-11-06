@@ -1,3 +1,5 @@
+const { createGroupsFixture, BASE: CHANNEL_BASE, GROUP: CHANNEL_GROUP, GENERAL, ANNOUNCEMENTS, OPTIONAL, PRIVATE: PRIVATE_CHANNEL, post: channelPost } = require("./groups-fixture.cjs");
+let groupsFixture;
 const { expect, test } = require("./playwright-runtime.cjs");
 
 let dmInboxFixtureKind = "empty";
@@ -166,6 +168,7 @@ async function installUrbitMock(page) {
       },
     }),
   );
+  await groupsFixture.install(page);
   await page.route("**/~/channel/**", handleChannel);
 }
 
@@ -184,7 +187,7 @@ async function handleChannel(route) {
           : fixtureSnapshotsPending && feedFixtureKind === "zap" ? zapFeedFixtureBody()
           : fixtureSnapshotsPending && dmInboxFixtureKind === "requests" ? dmRequestFixtureBody()
           : ""
-      ) + walletFixtureBody() + tlonBody() + takePokeAcks() + ": heartbeat\n\n",
+      ) + walletFixtureBody() + tlonBody() + groupsFixture.body(() => ++ackEventId) + takePokeAcks() + ": heartbeat\n\n",
     });
     fixtureSnapshotsPending = false;
     return;
@@ -194,6 +197,7 @@ async function handleChannel(route) {
   try {
     const actions = JSON.parse(request.postData() || "[]");
     for (const action of actions) {
+      groupsFixture.action(action, !nackPokes);
       if (action.action === "subscribe") fixtureSnapshotsPending = true;
       if (action.action === "subscribe" && action.app === "noschat" && action.path === "/ui") chatSubscriptions.add(action.id);
       if (action.action === "subscribe" && action.app === "trill-wallet" && action.path === "/ui") {
@@ -453,6 +457,7 @@ function zapFeedFixtureBody() {
 
 test.beforeEach(async ({ page }) => {
   tlonSubscriptions = new Map(); tlonEvents = []; tlonActions = []; tlonInvitesHandled = new Set(); tlonHistoryRequests = []; tlonBlocked = new Set(); tlonMuted = new Set(); tlonSent = new Map(); tlonGroups = {}; tlonUnavailable = false;
+  groupsFixture = createGroupsFixture();
   dmInboxFixtureKind = "empty";
   notificationFixtureKind = "empty";
   feedFixtureKind = "empty";
@@ -1969,4 +1974,201 @@ test("Tlon group invitations accept through membership actions", async ({ page }
   await page.getByRole("button", { name: "Inbox", exact: true }).click();
   await page.getByRole("button", { name: "Open conversation with Group invitation" }).click();
   await expect(page.locator(".dm-composer textarea")).toBeEnabled();
+});
+
+test("Tlon channels directory shows chat channels with real unread counts", async ({ page }, testInfo) => {
+  groupsFixture.enabled = true;
+  await page.goto("groups");
+  await expect(page.getByRole("heading", { name: "Garden", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: /General/ })).toContainText("2");
+  await expect(page.getByRole("link", { name: /Announcements/ })).toContainText("3");
+  await expect(page.getByText("Notebook", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Links collection")).toHaveCount(0);
+  await expect(page.getByText("Staff chat")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("channels-directory.png"), fullPage: true });
+  await page.getByRole("link", { name: /General/ }).click();
+  await expect(page.locator("#dm-thread")).toContainText("hello garden");
+  await expect(page.locator("#screen-channel .dm-message-author")).toHaveText("~nec");
+  await expect.poll(() => groupsFixture.actions.some((action) => action.json.channel.action.read === null)).toBe(true);
+  await page.getByRole("button", { name: "Load older messages" }).click();
+  await expect(page.locator("#dm-thread")).toContainText("older garden message");
+  const cursor = (BigInt(CHANNEL_BASE) - 1n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  expect(groupsFixture.requests).toContain(`/v5/${GENERAL}/posts/older/${cursor}/50/post`);
+  await page.locator(".dm-composer textarea").fill("hello from Trill channel");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.locator(".dm-composer textarea")).toHaveValue("");
+  await expect(page.locator("#dm-thread").getByText("hello from Trill channel", { exact: true })).toHaveCount(1);
+  const sent = groupsFixture.actions.find((action) => action.json.channel.action.post);
+  expect(sent.mark).toBe("channel-action-2");
+  expect(sent.json.channel.nest).toBe(GENERAL);
+  expect(sent.json.channel.action.post.add).toMatchObject({ author: "~zod", content: [{ inline: ["hello from Trill channel"] }], kind: "/chat", meta: null, blob: null });
+  await page.screenshot({ path: testInfo.outputPath("channel-desktop.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const composer = await page.locator(".dm-composer textarea").boundingBox();
+  const nav = await page.locator(".left-rail").boundingBox();
+  expect(composer.y + composer.height).toBeLessThanOrEqual(nav.y);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("channel-mobile.png"), fullPage: true });
+});
+
+test("Tlon channels reject sends safely and deduplicate the host echo", async ({ page }) => {
+  groupsFixture.enabled = true;
+  await page.goto("groups/chat/~nec/general");
+  const editor = page.locator(".dm-composer textarea");
+  await expect(editor).toBeEnabled();
+  nackPokes = true;
+  await editor.fill("keep this channel draft");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(editor).toHaveValue("keep this channel draft");
+  await expect(page.locator(".dm-delivery-status.failed")).toBeVisible();
+  const first = groupsFixture.actions.find((action) => action.json.channel.action.post).json.channel.action.post.add;
+  nackPokes = false;
+  groupsFixture.pendingEcho = false;
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(editor).toHaveValue("");
+  await expect(page.getByText("Waiting for channel host...")).toBeVisible();
+  const sends = groupsFixture.actions.filter((action) => action.json.channel.action.post);
+  expect(sends[1].json.channel.action.post.add.sent).toBe(first.sent);
+  const message = groupsFixture.posts.get(GENERAL).at(-1);
+  groupsFixture.events.push({ json: { nest: GENERAL, response: { post: { id: message.seal.id, "r-post": { set: message } } } } });
+  await expect(page.getByText("Waiting for channel host...")).toHaveCount(0);
+  await expect(page.locator("#dm-thread").getByText("keep this channel draft", { exact: true })).toHaveCount(1);
+});
+
+test("Tlon channels require joining and honor writer permissions", async ({ page }) => {
+  groupsFixture.enabled = true;
+  await page.goto("groups/chat/~nec/announcements");
+  await expect(page.locator("#dm-thread")).toContainText("read-only news");
+  await expect(page.locator(".dm-composer textarea")).toBeDisabled();
+  await expect(page.getByText("You can read this channel, but cannot post here.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Back to groups" }).click();
+  await page.getByRole("link", { name: /Optional/ }).click();
+  await expect(page.getByRole("button", { name: "Join channel", exact: true })).toBeVisible();
+  expect(groupsFixture.requests.some((path) => path.includes(`${OPTIONAL}/posts`))).toBe(false);
+  nackPokes = true;
+  await page.getByRole("button", { name: "Join channel", exact: true }).click();
+  await expect(page.getByText("Could not join this channel. Please try again.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Join channel", exact: true })).toBeEnabled();
+  nackPokes = false;
+  await page.getByRole("button", { name: "Join channel", exact: true }).click();
+  await expect(page.locator(".dm-composer textarea")).toBeEnabled();
+  expect(groupsFixture.actions.find((action) => "join" in action.json.channel.action).json.channel).toEqual({ nest: OPTIONAL, action: { join: CHANNEL_GROUP } });
+});
+
+test("Tlon channels apply live edits, tombstones and lost access", async ({ page }) => {
+  groupsFixture.enabled = true;
+  await page.goto("groups/chat/~nec/general");
+  await expect(page.locator("#dm-thread")).toContainText("hello garden");
+  const edited = channelPost(CHANNEL_BASE, "garden edited");
+  groupsFixture.events.push({ json: { nest: GENERAL, response: { post: { id: CHANNEL_BASE, "r-post": { set: edited } } } } });
+  await expect(page.locator("#dm-thread")).toContainText("garden edited");
+  groupsFixture.events.push({ json: { nest: GENERAL, response: { post: { id: CHANNEL_BASE, "r-post": { set: { type: "tombstone", id: CHANNEL_BASE, author: "~nec", seq: 1, "deleted-at": 1793945640000 } } } } } });
+  await expect(page.locator("#dm-thread")).not.toContainText("garden edited");
+  groupsFixture.groups[CHANNEL_GROUP].channels[GENERAL].readers = ["staff"];
+  groupsFixture.events.push({ app: "groups", path: "/v3/groups", json: { flag: CHANNEL_GROUP, "r-group": { channel: { nest: GENERAL, "r-channel": { readers: ["staff"] } } } } });
+  await expect(page.getByRole("heading", { name: "Channel unavailable" })).toBeVisible();
+  await expect(page.locator(".dm-composer textarea")).toHaveCount(0);
+});
+
+test("Tlon channels retain drafts and use one set of watches across routes", async ({ page }) => {
+  groupsFixture.enabled = true;
+  await page.goto("groups/chat/~nec/general");
+  await expect(page.locator(".dm-composer textarea")).toBeEnabled();
+  await page.locator(".dm-composer textarea").fill("garden draft");
+  await page.getByRole("button", { name: "Back to groups" }).click();
+  await page.getByRole("link", { name: /Announcements/ }).click();
+  await expect(page.locator(".dm-composer textarea")).toHaveValue("");
+  await page.getByRole("button", { name: "Back to groups" }).click();
+  await page.getByRole("link", { name: /General/ }).click();
+  await expect(page.locator(".dm-composer textarea")).toHaveValue("garden draft");
+  expect(groupsFixture.subscriptions.size).toBe(3);
+});
+
+test("Tlon channels failure and kicks leave direct messages usable", async ({ page }) => {
+  groupsFixture.unavailable = true;
+  await page.goto("groups");
+  await expect(page.getByRole("heading", { name: "Groups unavailable" })).toBeVisible();
+  groupsFixture.unavailable = false;
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "No groups yet" })).toBeVisible();
+  await expect.poll(() => groupsFixture.subscriptions.size).toBe(3);
+  groupsFixture.events.push({ response: "quit", json: null });
+  await expect(page.getByRole("heading", { name: "Groups unavailable" })).toBeVisible();
+  await expect.poll(() => groupsFixture.subscriptions.size).toBe(0);
+  await page.getByRole("navigation", { name: "Chat navigation" }).getByRole("link", { name: "Messages", exact: true }).click();
+  await expect(page.getByText("No messages yet")).toBeVisible();
+  expect([...tlonSubscriptions.values()].sort()).toEqual(["/dm/invited", "/unreads", "/v4"]);
+});
+
+test("Tlon channels permission reads survive unrelated unread updates", async ({ page }) => {
+  groupsFixture.enabled = true;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let entered = false;
+  await page.route("**/~/scry/channels/chat/~nec/general/perm.json", async (route) => {
+    entered = true; await gate;
+    await route.fulfill({ status: 200, json: { group: CHANNEL_GROUP, writers: [] } });
+  });
+  await page.goto("groups/chat/~nec/general");
+  await expect.poll(() => entered).toBe(true);
+  await expect(page.locator(".dm-composer textarea")).toBeDisabled();
+  groupsFixture.events.push({ path: "/unreads", json: { nest: GENERAL, unread: { count: 900, unread: { id: CHANNEL_BASE, count: 4 }, threads: {}, recency: 1 } } });
+  await expect(page.getByRole("link", { name: /Groups/ }).first()).toContainText("7");
+  release();
+  await expect(page.locator(".dm-composer textarea")).toBeEnabled();
+});
+
+test("Tlon channels live edits and deletions win over stale history reads", async ({ page }) => {
+  groupsFixture.enabled = true;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let entered = false;
+  await page.route("**/~/scry/channels/v5/chat/~nec/general/posts/newest/50/post.json", async (route) => {
+    entered = true; await gate;
+    await route.fulfill({ status: 200, json: { posts: { [CHANNEL_BASE]: channelPost(CHANNEL_BASE, "stale garden text") }, older: null, newer: null, total: 1, newest: 1 } });
+  });
+  await page.goto("groups/chat/~nec/general");
+  await expect.poll(() => entered).toBe(true);
+  const edited = channelPost(CHANNEL_BASE, "newest garden edit");
+  groupsFixture.events.push({ json: { nest: GENERAL, response: { post: { id: CHANNEL_BASE, "r-post": { set: edited } } } } });
+  await expect(page.locator("#dm-thread")).toContainText("newest garden edit");
+  groupsFixture.events.push({ json: { nest: GENERAL, response: { post: { id: CHANNEL_BASE, "r-post": { set: { type: "tombstone", id: CHANNEL_BASE } } } } } });
+  await expect(page.locator("#dm-thread")).not.toContainText("newest garden edit");
+  release();
+  await expect(page.locator(".dm-composer textarea")).toBeEnabled();
+  await expect(page.locator("#dm-thread")).not.toContainText("stale garden text");
+});
+
+test("Tlon channels allow group admins into restricted chats", async ({ page }) => {
+  groupsFixture.enabled = true;
+  groupsFixture.groups[CHANNEL_GROUP].seats["~zod"].roles = ["admin"];
+  groupsFixture.groups[CHANNEL_GROUP]["active-channels"].push(PRIVATE_CHANNEL);
+  await page.goto("groups");
+  await page.getByRole("link", { name: "Staff chat", exact: true }).click();
+  await expect(page.locator(".dm-composer textarea")).toBeEnabled();
+  expect(groupsFixture.requests).toContain(`/${PRIVATE_CHANNEL}/perm`);
+});
+
+test("Tlon channels late acknowledgements preserve edits made after navigation", async ({ page }) => {
+  groupsFixture.enabled = true;
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let captured = false;
+  await page.route("**/~/channel/**", async (route) => {
+    if (route.request().method() === "GET") {
+      const held = pendingPokeAcks.filter((id) => groupsFixture.actions.some((action) => action.id === id && action.json.channel.action.post));
+      if (held.length && !captured) { captured = true; await gate; }
+    }
+    return route.fallback();
+  });
+  await page.goto("groups/chat/~nec/general");
+  await page.locator(".dm-composer textarea").fill("first draft");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect.poll(() => captured).toBe(true);
+  await page.getByRole("button", { name: "Back to groups" }).click();
+  await page.getByRole("link", { name: /General/ }).click();
+  await page.locator(".dm-composer textarea").fill("a new draft while the old message is pending");
+  release();
+  await expect(page.locator("#dm-thread").getByText("first draft", { exact: true })).toHaveCount(1);
+  await expect(page.locator(".dm-composer textarea")).toHaveValue("a new draft while the old message is pending");
 });
