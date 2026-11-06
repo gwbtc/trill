@@ -1,5 +1,4 @@
 import "@/styles/Messages.css";
-import ChatNavigation from "./Navigation";
 import NewDmModal from "@/components/modals/NewDmModal";
 import TabStrip from "@/components/ui/TabStrip";
 import useLocalState from "@/state/state";
@@ -122,7 +121,6 @@ export default function ChatIndex() {
             <MessageSquarePlus size={20} />
           </button>
         </div>
-        <ChatNavigation active="messages" />
         <TabStrip
           id="dm-index-tabs"
           className="dm-index-tabs"

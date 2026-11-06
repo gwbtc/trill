@@ -3,7 +3,6 @@ import { useChannelsStore } from "@/state/channels";
 import { channelRoute } from "@/logic/tlon/channels";
 import { Hash, Users } from "lucide-react";
 import { Link } from "wouter";
-import ChatNavigation from "./Navigation";
 
 export default function Groups() {
   const status = useChannelsStore((state) => state.status);
@@ -15,7 +14,6 @@ export default function Groups() {
         <div className="dm-inbox-title-row">
           <h1>Groups</h1>
         </div>
-        <ChatNavigation active="groups" />
       </header>
       {status === "error" ? (
         <div className="dm-empty-state" role="alert">

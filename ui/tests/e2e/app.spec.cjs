@@ -2095,7 +2095,7 @@ test("Tlon channels failure and kicks leave direct messages usable", async ({ pa
   groupsFixture.events.push({ response: "quit", json: null });
   await expect(page.getByRole("heading", { name: "Groups unavailable" })).toBeVisible();
   await expect.poll(() => groupsFixture.subscriptions.size).toBe(0);
-  await page.getByRole("navigation", { name: "Chat navigation" }).getByRole("link", { name: "Messages", exact: true }).click();
+  await page.locator("#left-nav").getByRole("link", { name: "Messages", exact: true }).click();
   await expect(page.getByText("No messages yet")).toBeVisible();
   expect([...tlonSubscriptions.values()].sort()).toEqual(["/dm/invited", "/unreads", "/v4"]);
 });
