@@ -76,6 +76,7 @@ export default class IO {
   airlock;
   subs: Map<string, number> = new Map();
   private tlonChat: TlonChatClient | null = null;
+  private threadDesk: Promise<string> | null = null;
   constructor(airlock: Urbit) {
     this.airlock = airlock;
   }
@@ -86,7 +87,15 @@ export default class IO {
     return this.tlonChat;
   }
   private async thread(threadName: string, json: any) {
+    // Docket/route names and Gall agent names need not match the source desk.
+    this.threadDesk ??= this.airlock.scry<string>({ app: "nostrill", path: "/j/desk" })
+      .catch(() => {
+        this.threadDesk = null;
+        return this.airlock.desk ?? "nostrill";
+      });
+    const desk = await this.threadDesk;
     return this.airlock.thread({
+      desk,
       body: json,
       inputMark: "json",
       outputMark: "json",

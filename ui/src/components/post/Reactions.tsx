@@ -1,3 +1,4 @@
+import { nativePostRef } from "@/logic/trill/relay";
 import type { Poast } from "@/types/trill";
 import yeschad from "@/assets/reacts/yeschad.png";
 import cringe from "@/assets/reacts/cringe.png";
@@ -148,7 +149,12 @@ export function TrillReactModal({
   const our = api!.airlock.our!;
 
   async function sendReact(s: string) {
-    const result = await api!.addReact(user, poast.id, s);
+    const ref = nativePostRef(poast);
+    if (!ref) {
+      toast.error("Reactions are unavailable for this relay post");
+      return { error: "Native post reference unavailable" };
+    }
+    const result = await api!.addReact(ref.host, ref.id, s);
     if ("error" in result) toast.error("Could not send reaction");
     // Only add notification if reacting to someone else's post
     else if (poast.author !== our) {
@@ -157,12 +163,17 @@ export function TrillReactModal({
     return result;
   }
   async function removeReact() {
-    const result = await api!.removeReact(user, poast.id);
+    const ref = nativePostRef(poast);
+    if (!ref) return { error: "Native post reference unavailable" };
+    const result = await api!.removeReact(ref.host, ref.id);
     if ("error" in result) toast.error("Could not remove reaction");
     return result;
   }
   const hasOurReact = !!poast.engagement.reacts?.[our];
   return (
-    <ReactModal send={sendReact} remove={hasOurReact ? removeReact : undefined} />
+    <ReactModal
+      send={sendReact}
+      remove={hasOurReact ? removeReact : undefined}
+    />
   );
 }

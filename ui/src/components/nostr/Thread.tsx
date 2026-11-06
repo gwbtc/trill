@@ -1,3 +1,6 @@
+import { Redirect } from "wouter";
+import { trillEventAuthor, trillEventRef } from "@/logic/trill/relay";
+import { getUserId } from "@/logic/userDisplay";
 import { usePostUser } from "@/hooks/usePostUser";
 import { usePostProfile } from "@/hooks/usePostProfile";
 import useLocalState from "@/state/state";
@@ -23,8 +26,14 @@ type Props = {
   relays: string[];
 };
 
-export default function Thread({ event, relays }: Props) {
-  const profile = usePostProfile(event.pubkey);
+export default function Thread(props: Props) {
+  const native = trillEventRef(props.event);
+  if (native) return <Redirect to={`/t/u/${native.host}/${native.id}`} />;
+  return <RelayThread {...props} />;
+}
+
+function RelayThread({ event, relays }: Props) {
+  const profile = usePostProfile(trillEventAuthor(event) ?? event.pubkey);
   const { composerData, setModal, configuredRelays } =
     useLocalState((s) => ({
       composerData: s.composerData,
@@ -134,9 +143,10 @@ function ReplyList({ events }: { events: Wevent[] }) {
 
 const Reply = memo(function Reply({ event, spine }: { event: Wevent; spine: boolean }) {
   const post = useMemo(() => eventToPoast(event), [event]);
-  const profile = usePostProfile(event.pubkey);
   const userFromPost = usePostUser();
-  return post ? <Post poast={post} user={userFromPost(post)} profile={profile} spine={spine} /> : null;
+  const user = post ? userFromPost(post) : { nostr: event.pubkey };
+  const profile = usePostProfile(getUserId(user));
+  return post ? <Post poast={post} user={user} profile={profile} spine={spine} /> : null;
 });
 
 function Head({ node, profile, relay, replyIds }: {
@@ -164,7 +174,7 @@ function NostrThreadReplyComposer({ node }: { node: FullNode }) {
       post: {
         nostr: {
           post: poast,
-          pubkey: node.author,
+          pubkey: node.event?.pubkey ?? node.author,
           eventId: node.event?.id || node.hash,
         },
       },

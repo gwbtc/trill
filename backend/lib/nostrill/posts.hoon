@@ -212,7 +212,8 @@
 
           =/  nclient  ~(. nostr-client [state bowl])
           =/  tag=(list @t)  :~('patp' (scot %p our.bowl))
-          =/  tags  :~(tag)
+          =/  ref-tag=(list @t)  :~('trill' (scot:sr %ud id.p))
+          =/  tags  :~(tag ref-tag)
           =/  event  (post-to-event:evlib i.keys.state eny.bowl p 667 tags)
           =/  relay-card  (send-card:global:nclient [%event event])
           =/  ui-fact  [%nostr %sent-event ~[global-relay:constants] event [%post host.p id.p]]

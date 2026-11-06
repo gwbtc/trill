@@ -14,7 +14,6 @@
   ?-  +<.u.req
     %feed
       ;<  =bowl:spider  bind:m  get-bowl:strandio
-      =/  desk  q.byk.bowl
       =/  ship=@p  +>.u.req
       =/  =user:sur  (atom-to-user:lib ship)
       ?-  -.user
@@ -23,14 +22,13 @@
           =/  j=json  ~
           (pure:m !>(j))
         %urbit
-          ;<  =cage  bind:m  (watch-one:strandio /beg/feed [p.user desk] /beg/feed)
+          ;<  =cage  bind:m  (watch-one:strandio /beg/feed [p.user %nostrill] /beg/feed)
           =/  j  !<(json +.cage)
           (pure:m !>(j))
       ==
 
     %thread
       ;<  =bowl:spider  bind:m  get-bowl:strandio
-      =/  desk  q.byk.bowl
       =/  ship=@p  +>-.u.req
       =/  =user:sur  (atom-to-user:lib ship)
       =/  id=@da  +>+.u.req
@@ -42,7 +40,7 @@
           =/  j=json  ~
           (pure:m !>(j))
         %urbit
-          ;<  =cage  bind:m  (watch-one:strandio wire [p.user desk] wire)
+          ;<  =cage  bind:m  (watch-one:strandio wire [p.user %nostrill] wire)
           =/  j  !<(json +.cage)
           (pure:m !>(j))
       ==

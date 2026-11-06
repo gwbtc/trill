@@ -8,9 +8,10 @@ import TrillThread from "@/components/trill/Thread";
 import NostrThread from "@/components/nostr/Thread";
 import NostrThreadFetcher from "@/components/nostr/Fetcher";
 import { decodeNostrEventId } from "@/logic/nostr";
-import { nostrEventInFeed } from "@/logic/nostrill";
+import { eventToPoast, nostrEventInFeed, nostrEventsInFeed } from "@/logic/nostrill";
+import { nativePost, trillEventRef } from "@/logic/trill/relay";
 import PageHeader from "@/components/layout/PageHeader";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { skipToken, useQuery } from "@tanstack/react-query";
 import type { Wevent } from "@/types/nostr";
 
@@ -24,6 +25,16 @@ export default function ThreadLoader() {
   }));
   const params = useParams<{ host: string; id: string }>();
   const { host, id } = params;
+  const globalFeed = useLocalState((s) => s.globalFeed);
+  const cachedPost = useMemo(() => {
+    for (const event of nostrEventsInFeed(globalFeed)) {
+      const ref = trillEventRef(event);
+      if (ref?.host !== host || ref.id !== id) continue;
+      const post = eventToPoast(event);
+      return post ? nativePost(post) ?? undefined : undefined;
+    }
+    return undefined;
+  }, [globalFeed, host, id]);
   const feed = following.urbit.get(host);
   const profile = profiles.get(host);
 
@@ -35,7 +46,7 @@ export default function ThreadLoader() {
     <div id="screen-thread" className="trill-screen">
       <PageHeader title="Thread" back />
       {/* keyed so moving between threads drops the previous thread's state */}
-      <TrillThread key={`${host}/${id}`} feed={feed} profile={profile} host={host} id={id} />
+      <TrillThread key={`${host}/${id}`} feed={feed} cachedPost={cachedPost} profile={profile} host={host} id={id} />
     </div>
   );
 }

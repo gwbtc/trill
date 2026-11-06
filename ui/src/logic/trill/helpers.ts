@@ -1,3 +1,4 @@
+import { TRILL_EVENT_KIND } from "./relay";
 import type { Wevent } from "@/types/nostr";
 import type { FullFeed, FullNode, Poast } from "@/types/trill";
 import { eventToPoast } from "../nostrill";
@@ -76,8 +77,19 @@ export function eventsToFF(nodes: FullNode[]): FullFeed {
 }
 
 // `us`: notes signed with our own nostr key are ours, so they show as our
-// ship. (other notes' "patp" tags are unverified claims and aren't trusted)
-export function userFromPost(poast: Poast, us?: { pubkey: string; our: UrbitID | null }) {
+// ship. Kind-667 posts carry Trill identities; kind-1 patp tags are ignored.
+export function userFromPost(
+  poast: Poast,
+  us?: { pubkey: string; our: UrbitID | null },
+) {
+  if (poast.event?.kind === TRILL_EVENT_KIND && isValidPatp(poast.author)) {
+    return {
+      urbit:
+        us?.our?.patp === poast.author && poast.event.pubkey === us.pubkey
+          ? us.our
+          : poast.authorFull.author,
+    } as UserType;
+  }
   if (us?.our && poast.event && poast.event.pubkey === us.pubkey)
     return { urbit: us.our } as UserType;
   const user: UserType = poast.event

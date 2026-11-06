@@ -19,7 +19,7 @@ export default function PostDetails({
   const created = new Date(event.created_at * 1000);
 
   function openPost() {
-    const nev = generateNevent(event!);
+    const nev = generateNevent(event!.id, event!.pubkey, event!.kind);
     window.open(`https://primal.net/e/${nev}`, "_blank");
   }
   function openProf() {
@@ -69,7 +69,7 @@ export default function PostDetails({
           </button>
         </div>
         <CodeBlock>{event.id}</CodeBlock>
-        <CodeBlock>{generateNevent(event)}</CodeBlock>
+        <CodeBlock>{generateNevent(event.id, event.pubkey, event.kind)}</CodeBlock>
 
         <div className="post-details-section-head">
           <h4>Author pubkey</h4>

@@ -1,4 +1,4 @@
-import useLocalState from "@/state/state";
+import useLocalState, { useStore } from "@/state/state";
 import ThreadState from "@/components/thread/ThreadState";
 import { toFlat } from "@/logic/trill/helpers";
 import type { FC, FullNode, Poast } from "@/types/trill";
@@ -19,13 +19,15 @@ export default function Thread({
   id,
   feed,
   profile,
+  cachedPost,
 }: {
   host: Ship;
   id: string;
   feed?: FC;
   profile?: UserProfile;
+  cachedPost?: Poast;
 }) {
-  const poast = feed?.feed[id];
+  const poast = feed?.feed[id] ?? cachedPost;
   return (
     <>
       {/* the page header has the title and the back arrow */}
@@ -54,7 +56,8 @@ function Loader({
   const [error, setError] = useState("");
   const threadStyle = useThreadStyle();
   async function fetchThread() {
-    const res = await api!.scryThread(host, id);
+    const local = host === api!.airlock.our || useStore.getState().following.urbit.get(host)?.feed[id];
+    const res = local ? await api!.scryThread(host, id) : await api!.peekThread(host, id);
     if ("error" in res) setError(res.error);
     else {
       const msg = res.ok.data.msg;
@@ -130,7 +133,7 @@ function Loader({
         </div>
       </>
     );
-  if (poast)
+  if (poast && !error)
     return (
       <>
         <Head poast={poast} profile={profile} />

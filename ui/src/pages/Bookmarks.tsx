@@ -1,3 +1,5 @@
+import { trillEventRef } from "@/logic/trill/relay";
+import { eventToPoast, nostrEventsInFeed } from "@/logic/nostrill";
 import { usePostProfile } from "@/hooks/usePostProfile";
 import "@/styles/Profile.css";
 import "@/styles/Bookmarks.css";
@@ -20,7 +22,10 @@ export default function Bookmarks() {
 
   return (
     <div id="screen-bookmarks" className="trill-screen">
-      <PageHeader title="Bookmarks" subtitle={`${n} saved ${n === 1 ? "post" : "posts"}`} />
+      <PageHeader
+        title="Bookmarks"
+        subtitle={`${n} saved ${n === 1 ? "post" : "posts"}`}
+      />
       {n === 0 ? (
         <div className="profile-tab-empty">
           <span className="profile-tab-empty-icon" aria-hidden="true">
@@ -30,7 +35,9 @@ export default function Bookmarks() {
           <p>Bookmark posts from their ••• menu to find them here later.</p>
         </div>
       ) : (
-        items.map(({ ref }) => <BookmarkedPost key={refKey(ref)} postRef={ref} />)
+        items.map(({ ref }) => (
+          <BookmarkedPost key={refKey(ref)} postRef={ref} />
+        ))
       )}
     </div>
   );
@@ -47,8 +54,20 @@ function BookmarkedPost({ postRef }: { postRef: PostRef }) {
   if ("urbit" in postRef) {
     const { host, id } = postRef.urbit;
     // cached in our own feed or a followed ship's; else ask the host
-    const cached = myFeed.feed[id]?.host === host ? myFeed.feed[id] : following.urbit.get(host)?.feed[id];
-    if (cached) return <BookmarkedPostRow poast={cached} />;
+    const cached =
+      myFeed.feed[id]?.host === host
+        ? myFeed.feed[id]
+        : following.urbit.get(host)?.feed[id];
+    let global: Poast | undefined;
+    if (!cached) for (const event of nostrEventsInFeed(globalFeed)) {
+      const ref = trillEventRef(event);
+      if (ref?.host === host && ref.id === id) {
+        global = eventToPoast(event) ?? undefined;
+        break;
+      }
+    }
+    if (cached || global)
+      return <BookmarkedPostRow poast={(cached ?? global)!} />;
     return <RemotePost host={host} id={id} />;
   }
 
@@ -69,7 +88,13 @@ function NodePost({ data, refetch }: { data: Poast; refetch: Function }) {
   return <BookmarkedPostRow poast={data} refetch={refetch} />;
 }
 
-function BookmarkedPostRow({ poast, refetch }: { poast: Poast; refetch?: Function }) {
+function BookmarkedPostRow({
+  poast,
+  refetch,
+}: {
+  poast: Poast;
+  refetch?: Function;
+}) {
   const userFromPost = usePostUser();
   const user = userFromPost(poast);
   const userId = getUserId(user);
@@ -81,7 +106,11 @@ function BookmarkedPostRow({ poast, refetch }: { poast: Poast; refetch?: Functio
 function UnloadedNote({ id }: { id: string }) {
   const [, navigate] = useLocation();
   return (
-    <button type="button" className="bookmark-unloaded" onClick={() => navigate(`/t/n/${id}`)}>
+    <button
+      type="button"
+      className="bookmark-unloaded"
+      onClick={() => navigate(`/t/n/${id}`)}
+    >
       <span>Nostr note not loaded</span>
       <span className="mono">{id.slice(0, 16)}…</span>
     </button>

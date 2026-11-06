@@ -1,3 +1,4 @@
+import { nativePost, nativePostRef } from "@/logic/trill/relay";
 import type { PostProps } from "./Post";
 import { useEffect, useRef, useState } from "react";
 import useLocalState, { useStore } from "@/state/state";
@@ -41,7 +42,11 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
     }),
   );
   const our = api!.airlock.our!;
+  const pubkey = useLocalState((s) => s.pubkey);
+  const nativeRef = nativePostRef(poast);
   function getComposerData(): SPID {
+    const original = nativePost(poast);
+    if (original) return { trill: original };
     if (poast.event)
       return {
         nostr: {
@@ -121,17 +126,18 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
   // reposts already deleted. fall back to engagement for reposts too old to
   // be loaded in myFeed
   function findOurRepostId(): string | null {
+    if (!nativeRef) return null;
     const feed = useStore.getState().myFeed.feed;
     const rp = Object.values(feed).find((p) => {
       const ref = repostData(p);
-      return ref?.ship === poast.host && ref.id === poast.id;
+      return ref?.ship === nativeRef.host && ref.id === nativeRef.id;
     });
     return rp?.id ?? myRP?.pid.id ?? null;
   }
 
   async function doCancelRP() {
     // TODO
-    if ("nostr" in user) return;
+    if (!nativeRef) return;
     setRepostConfirmOpen(false);
     const repostId = findOurRepostId();
     if (!repostId) {
@@ -139,7 +145,7 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
       return;
     }
     setReposting(true);
-    const r = await api!.deletePost(user.urbit.patp, repostId);
+    const r = await api!.deletePost(our, repostId);
     if (!("error" in r)) {
       setRepostOverride(false);
       if (myRP) setRepostCountDelta((count) => count - 1);
@@ -156,7 +162,7 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
   }
   async function doSendRP() {
     if (reposting) return;
-    const id = "urbit" in user ? poast.id : poast.hash;
+    const id = nativeRef?.id ?? poast.event?.id ?? poast.hash;
     setReposting(true);
     setRepostOverride(true);
     if (!myRP) setRepostCountDelta((count) => count + 1);
@@ -177,8 +183,8 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
       ),
       { duration: 5000, id: `repost-${poast.id}`, position: "bottom-center" },
     );
-    if ("urbit" in user) {
-      const r = await api!.addRP(user.urbit.patp, id);
+    if (nativeRef) {
+      const r = await api!.addRP(nativeRef.host, id);
       if ("error" in r) {
         toast.dismiss(toastId);
         setRepostOverride(false);
@@ -197,7 +203,7 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
   }
   async function undoRepost() {
     // TODO
-    if ("nostr" in user) return;
+    if (!nativeRef) return;
     setRepostConfirmOpen(false);
     const repostId = findOurRepostId();
     if (!repostId) {
@@ -206,7 +212,7 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
     }
     setRepostOverride(false);
     if (!myRP) setRepostCountDelta((count) => count - 1);
-    const r = await api!.deletePost(user.urbit.patp, repostId);
+    const r = await api!.deletePost(our, repostId);
     if ("error" in r) {
       setRepostOverride(true);
       if (!myRP) setRepostCountDelta((count) => count + 1);
@@ -267,14 +273,17 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
   }
 
   async function doDelete() {
-    if ("nostr" in user) return;
-    const r = await api!.deletePost(user.urbit.patp, poast.id);
+    if (!nativeRef) return;
+    const r = await api!.deletePost(nativeRef.host, nativeRef.id);
     if ("error" in r) toast.error("Could not delete post");
     else toast.success("Post deleted");
     setModal(null);
   }
 
-  const isMine = poast.author === api?.airlock.our;
+  const isMine =
+    !!nativeRef &&
+    poast.author === our &&
+    (!poast.event || poast.event.pubkey === pubkey);
   // cross-posting is for the user's own urbit posts only
   const canRelay = isMine && "urbit" in user && Object.keys(relays).length > 0;
   const hasDetails = !!poast.event;
@@ -328,7 +337,8 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
     e.stopPropagation();
     e.preventDefault();
     setShowMenu(false);
-    setModal(<RelayPost poast={poast} />);
+    const original = nativePost(poast);
+    if (original) setModal(<RelayPost poast={original} />);
   }
 
   function showDetails(e: React.MouseEvent) {
@@ -338,7 +348,9 @@ function Footer({ user, poast, profile, thread, refetch }: PostProps) {
     setModal(<PostDetails poast={poast} onClose={() => setModal(null)} />);
   }
 
-  const ref = postRef(poast);
+  const canonicalRef = postRef(poast);
+  const oldRef = poast.event ? { nostr: poast.event.id } : null;
+  const ref = !lists.bookmarks.has(refKey(canonicalRef)) && oldRef && lists.bookmarks.has(refKey(oldRef)) ? oldRef : canonicalRef;
   const bookmarked = lists.bookmarks.has(refKey(ref));
   const muted = lists.muted.has(authorId(poast));
   async function toggleBookmark(e: React.MouseEvent) {

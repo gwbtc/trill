@@ -159,6 +159,12 @@ async function installUrbitMock(page) {
   await page.route("**/~/scry/nostrill/**", (route) =>
     route.fulfill({ status: 200, json: {} }),
   );
+  await page.route("**/~/scry/nostrill/j/desk.json", (route) =>
+    route.fulfill({ status: 200, json: "trill" }),
+  );
+  await page.route("**/spider/**", (route) =>
+    route.fulfill({ status: 404, json: { error: "unmocked thread" } }),
+  );
   await page.route("**/~/scry/nostrill/j/gwid/**", (route) =>
     route.fulfill({
       status: 200,
@@ -740,7 +746,7 @@ test("muted and blocked conversations are separated from inbox", async ({ page }
 // --- regressions for the UI review fixes ---------------------------------
 
 const REACT_POKE = (reaction) => ({
-  post: { reaction: { reaction, id: "zap-post", host: { urbit: "~litzod" } } },
+  post: { reaction: { reaction, id: "zap-post", host: "~litzod" } },
 });
 
 test("reacting sends a ~ship user and the remove button only shows once reacted", async ({
@@ -756,8 +762,7 @@ test("reacting sends a ~ship user and the remove button only shows once reacted"
   await expect(page.locator("#react-list .react-remove")).toHaveCount(0);
   await page.locator("#react-list span", { hasText: "🫡" }).first().dispatchEvent("mouseup");
   await expect(page.locator("#react-list")).toBeHidden();
-  // users go over the wire as { urbit: "~ship" }: the backend drops the
-  // full UrbitID object the UI works with
+  // Native engagement uses the host ship string, as decoded by json/nostrill.
   await expect.poll(() => pokeLog).toContainEqual(REACT_POKE("🫡"));
 });
 
@@ -774,7 +779,7 @@ test("an existing reaction can be removed from the reaction picker", async ({ pa
   await expect
     .poll(() => pokeLog)
     .toContainEqual({
-      post: { "del-reaction": { host: { urbit: "~litzod" }, id: "zap-post" } },
+      post: { "del-reaction": { host: "~litzod", id: "zap-post" } },
     });
 });
 
@@ -2209,4 +2214,138 @@ test("Tlon group identity updates show imagery and fall back after image errors"
   await expect(page.locator(".chat-group-cover > img")).toHaveCount(0);
   await expect(page.locator(".chat-group-avatar")).toHaveText("G");
   await expect(page.getByRole("link", { name: /General/ })).toBeVisible();
+});
+
+// The public fixture key signs relay frames; all events and ship endpoints
+// below stay inside the mocked browser boundary.
+function globalTrillFixture() {
+  const { finalizeEvent } = require("nostr-tools");
+  const key = new Uint8Array(32); key[31] = 2;
+  const nativeId = "170141184508244624088857107891174244352";
+  const make = (content, tags, kind = 667) => finalizeEvent({ kind, content, tags, created_at: 1793945640 }, key);
+  const native = make("A Trill post from the discovery relay", [["patp", "~nec"], ["trill", nativeId]]);
+  const legacy = make("An older Trill post", [["patp", "~bud"]]);
+  return { nativeId, native, legacy, make };
+}
+async function mockGlobalRelay(page, events) {
+  const frames = [];
+  const sockets = [];
+  let closed = 0;
+  await page.routeWebSocket(/wss:\/\/nostr\.sortug\.com/, (ws) => {
+    sockets.push(ws);
+    ws.onClose(() => { closed++; });
+    ws.onMessage((raw) => {
+      const frame = JSON.parse(String(raw)); frames.push(frame);
+      if (frame[0] !== "REQ") return;
+      for (const event of events) ws.send(JSON.stringify(["EVENT", frame[1], event]));
+      ws.send(JSON.stringify(["EOSE", frame[1]]));
+    });
+  });
+  return { frames, sockets, get closed() { return closed; } };
+}
+
+test("global Trill posts use ship profiles and exact native references", async ({ page }, testInfo) => {
+  feedFixtureKind = "state2"; state2Snapshot = state2Fixture();
+  const { nativeId, native, legacy } = globalTrillFixture();
+  const relay = await mockGlobalRelay(page, [native, legacy]);
+  const peerReads = [];
+  const node = { ...makeDmRequest("~nec", "Native friend", "Original native thread", 1793945640000).post, id: nativeId, hash: nativeId, children: {} };
+  await page.route("**/spider/trill/json/beg/json.json", (route) => {
+    peerReads.push(route.request().postDataJSON());
+    return route.fulfill({ status: 200, json: { thread: { id: nativeId, data: { msg: "", data: { node, thread: [node] } } } } });
+  });
+  await page.goto("f/global");
+  const post = page.locator("#home-feed article.trill-post", { hasText: native.content });
+  await expect(post).toBeVisible();
+  await expect(post.locator("header .name")).toHaveText("Native friend");
+  const old = page.locator("#home-feed article.trill-post", { hasText: legacy.content });
+  await expect(old.locator("header .name")).toHaveText("~bud");
+  expect(relay.frames.filter((frame) => frame[0] === "REQ")[0].slice(2)).toEqual([{ kinds: [667] }]);
+  await post.getByRole("button", { name: "More post actions" }).click();
+  await page.getByRole("menuitem", { name: "See details" }).click();
+  await expect(page.locator(".post-details-modal")).toContainText(native.id);
+  await expect(page.locator(".post-details-modal")).toContainText("wss://nostr.sortug.com");
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await post.getByRole("button", { name: "More post actions" }).click();
+  await page.getByRole("menuitem", { name: "Bookmark", exact: true }).click();
+  await expect.poll(() => pokeLog).toContainEqual({ lists: { bookmark: { add: true, ref: { urbit: { host: "~nec", id: nativeId } } } } });
+  await post.locator(".reply-action").click();
+  const editor = page.locator("#home-composer-prompt .input-editor");
+  await editor.fill("A native reply from discovery");
+  await page.locator("#home-composer-prompt").getByRole("button", { name: "Post", exact: true }).click();
+  await expect.poll(() => pokeLog).toContainEqual({ post: { reply: { content: "A native reply from discovery", host: "~nec", id: nativeId, thread: nativeId } } });
+  await post.locator(".reaction-action").click();
+  await page.locator("#react-list span", { hasText: "🫡" }).first().dispatchEvent("mouseup");
+  await expect.poll(() => pokeLog).toContainEqual({ post: { reaction: { host: "~nec", id: nativeId, reaction: "🫡" } } });
+  await expect(page.locator("#react-list")).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("global-trill-identities.png"), fullPage: true });
+  await post.getByText(native.content, { exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/t/u/~nec/${nativeId}$`));
+  await expect(page.locator("#thread-root-post")).toContainText("Original native thread");
+  expect(peerReads).toEqual([{ begs: { thread: { host: "~nec", id: nativeId } } }]);
+  await page.screenshot({ path: testInfo.outputPath("global-trill-native-thread.png"), fullPage: true });
+});
+
+test("global Trill posts reject malformed identity tags and preserve same-second events", async ({ page }) => {
+  const { native, legacy, make } = globalTrillFixture();
+  const bad = [make("no ship tag", []), make("invalid ship tag", [["patp", "~not-a-ship"]]), make("conflicting ships", [["patp", "~nec"], ["patp", "~bud"]])];
+  const relay = await mockGlobalRelay(page, [native, legacy, native, ...bad]);
+  await page.goto("f/global");
+  await expect(page.locator("#home-feed article.trill-post")).toHaveCount(2);
+  await expect(page.getByText(native.content, { exact: true })).toBeVisible();
+  await expect(page.getByText(legacy.content, { exact: true })).toBeVisible();
+  await page.locator("#left-nav").getByRole("link", { name: "Wallet", exact: true }).click();
+  await expect.poll(() => relay.closed).toBe(1);
+});
+
+test("ordinary Nostr notes cannot acquire Trill identities through patp tags", async ({ page }) => {
+  feedFixtureKind = "state2"; state2Snapshot = state2Fixture();
+  const { make } = globalTrillFixture();
+  const note = make("A regular note with a ship claim", [["patp", "~nec"], ["trill", "170141184508244624088857107891174244352"]], 1);
+  state2Snapshot.nostr.feeds.timeline["wss://one.example"].feed = [note];
+  state2Snapshot.nostr.feeds.timeline["wss://two.example"].feed = [];
+  await page.goto("f/nostr");
+  const post = page.locator("#home-feed article.trill-post", { hasText: note.content });
+  await expect(post).toBeVisible();
+  await expect(post.locator("header .name")).not.toHaveText("Native friend");
+  await expect(post.locator(".avatar svg.sigil")).toHaveCount(0);
+  await post.getByRole("button", { name: "More post actions" }).click();
+  await page.getByRole("menuitem", { name: "Bookmark", exact: true }).click();
+  await expect.poll(() => pokeLog).toContainEqual({ lists: { bookmark: { add: true, ref: { nostr: note.id } } } });
+});
+
+test("legacy global posts retain ship identity on relay-backed thread pages", async ({ page }) => {
+  const { legacy } = globalTrillFixture();
+  await mockGlobalRelay(page, [legacy]);
+  await page.goto("f/global");
+  const post = page.locator("#home-feed article.trill-post", { hasText: legacy.content });
+  await expect(post.locator("header .name")).toHaveText("~bud");
+  await post.getByText(legacy.content, { exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/t/n/${legacy.id}$`));
+  await expect(page.locator("#thread-root-post")).toContainText("~bud");
+});
+
+for (const [label, data] of [["pending", "maybe"], ["denied", null]]) {
+  test(`discovered native thread preserves ${label} access results`, async ({ page }, testInfo) => {
+    const { native, nativeId } = globalTrillFixture();
+    await mockGlobalRelay(page, [native]);
+    await page.route("**/spider/trill/json/beg/json.json", (route) => route.fulfill({ status: 200, json: { thread: { id: nativeId, data: { msg: "Host policy", data } } } }));
+    await page.goto("f/global");
+    await page.getByText(native.content, { exact: true }).click();
+    await expect(page.locator("#feed-proper")).toContainText(label === "pending" ? "reviewed manually" : "was denied");
+    await expect(page.locator("#feed-proper .input-editor")).toHaveCount(0);
+    await expect(page.locator("#feed-proper")).not.toContainText("Loading replies");
+    await page.screenshot({ path: testInfo.outputPath(`global-thread-${label}.png`), fullPage: true });
+  });
+}
+
+test("invalid native references keep Trill identity without guessing native IDs", async ({ page }) => {
+  const { make } = globalTrillFixture();
+  const event = make("Invalid native reference", [["patp", "~nec"], ["trill", "340282366920938463463374607431768211456"]]);
+  await mockGlobalRelay(page, [event]);
+  await page.goto("f/global");
+  const post = page.locator("#home-feed article.trill-post", { hasText: event.content });
+  await expect(post.locator("header .name")).toHaveText("~nec");
+  await post.getByText(event.content, { exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/t/n/${event.id}$`));
 });

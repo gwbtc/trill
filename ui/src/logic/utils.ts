@@ -1,3 +1,4 @@
+import { nativePostRef } from "./trill/relay";
 import type { Poast, PID, SortugRef } from "@/types/trill";
 import { REF_REGEX } from "./constants";
 import type { DM, DMRaw, DMRequest, DMRequests, DMs, PeekDMsRes } from "@/types/nostrill";
@@ -189,8 +190,8 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
   };
 }
 export function getThreadPath(post: Poast): string {
-  if (post.event) return `/t/n/${post.event.id}`;
-  else return `/t/u/${post.host}/${post.id}`;
+  const native = nativePostRef(post);
+  return native ? `/t/u/${native.host}/${native.id}` : `/t/n/${post.event!.id}`;
 }
 
 export function fixDMs(dms: PeekDMsRes): DMs {

@@ -51,6 +51,7 @@ export type Poast = {
   tlonRumor?: boolean;
   json?: { origin: ExternalApp; content: string }; // for rumor quoting
   event?: Wevent;
+  trillRef?: { host: Ship; id: string };
 };
 export type FullNode = Omit<Poast, "children"> & {
   children: FullFeed;

@@ -290,6 +290,7 @@
   |~  =(pole knot)
   ^-  (unit (unit cage))
   ?+  pole  ~
+    [%x %j %desk ~]  ``json+!>(`json`[%s (scot %tas q.byk.bowl)])
     [%x %j %feed host=@ start=@ end=@ count=@ newest=@ replies=@ *]
       (sfeed:scry host.pole start.pole end.pole count.pole newest.pole replies.pole)
     [%x %j %thread host=@ id=@ *]  (thread:scry host.pole id.pole)

@@ -1,3 +1,4 @@
+import { trillEventAuthor } from "@/logic/trill/relay";
 import { NRelay1 } from "@nostrify/nostrify";
 import useLocalState from "@/state/state";
 import { useEffect, useState } from "react";
@@ -25,7 +26,7 @@ export default function Thread({ id }: { id: string }) {
       try {
         const note = await Promise.any(connections.map(async ({ url, relay }) => {
           for await (const msg of relay.req([{ ids: [id], kinds: [1, 667] }], { signal })) {
-            if (msg[0] === "EVENT" && msg[2].id === id) return { ...msg[2], relays: [url] };
+            if (msg[0] === "EVENT" && msg[2].id === id && (msg[2].kind === 1 || trillEventAuthor(msg[2]))) return { ...msg[2], relays: [url] };
             if (msg[0] === "EOSE" || msg[0] === "CLOSED") break;
           }
           throw new Error("Note unavailable");

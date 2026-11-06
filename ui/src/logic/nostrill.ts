@@ -1,3 +1,4 @@
+import { trillEventAuthor, trillEventRef } from "./trill/relay";
 import type { Wevent, Event } from "@/types/nostr";
 import type { Content, Cursor, FC, FlatFeed, Poast } from "@/types/trill";
 import { defaultGate, engagementBunt } from "./bunts";
@@ -131,7 +132,7 @@ function indexedNostrFeed(events: Map<string, Wevent>, previous?: FC): FC {
 export function eventsToFc(postEvents: Wevent[]): FC {
   const events = new Map<string, Wevent>();
   for (const event of postEvents) {
-    if (event.kind !== 1 && event.kind !== 667) continue;
+    if (event.kind !== 1 && !trillEventAuthor(event)) continue;
     events.set(event.id, mergeEventRelays(events.get(event.id), event));
   }
   return indexedNostrFeed(events);
@@ -174,7 +175,7 @@ export function nostrFeedsToFcMap(nf: NostrFeeds): Record<string, FC> {
 }
 // returns a new FC (never mutates `fc`) so store/state updates re-render
 export function addEventToFc(event: Wevent, fc: FC): FC {
-  if (event.kind !== 1 && event.kind !== 667) return fc;
+  if (event.kind !== 1 && !trillEventAuthor(event)) return fc;
   const events = rawFeedEvents.get(fc);
   if (events || Object.keys(fc.feed).length === 0) {
     const previous = events?.get(event.id);
@@ -224,8 +225,8 @@ export function extractURLs(text: string): {
 
 export function eventToPoast(event: Wevent): Poast | null {
   // console.log("etop", event);
-  const valid = [1, 667];
-  if (!valid.includes(event.kind)) return null;
+  const trillAuthor = trillEventAuthor(event);
+  if (event.kind !== 1 && !trillAuthor) return null;
   const cached = parsedEvents.get(event.id);
   if (cached?.event && sameEventBody(cached.event, event)) {
     const post = sameStrings(cached.event.relays, event.relays)
@@ -256,12 +257,14 @@ export function eventToPoast(event: Wevent): Poast | null {
       hanzi: { nym: "", abridged: "", foreshortened: "" },
     },
   };
-  const authorFull = { host: uid, author: uid };
+  const trillId = trillAuthor ? patpToFallbackUID(trillAuthor) : uid;
+  const authorFull = { host: trillId, author: trillId };
+  const trillRef = trillEventRef(event);
 
   const poast: Poast = {
     id,
-    host: event.pubkey,
-    author: event.pubkey,
+    host: trillAuthor ?? event.pubkey,
+    author: trillAuthor ?? event.pubkey,
     authorFull,
     contents,
     thread: null,
@@ -273,13 +276,13 @@ export function eventToPoast(event: Wevent): Poast | null {
     engagement: engagementBunt,
     children: [],
     event,
+    ...(trillRef ? { trillRef } : {}),
   };
   for (const tag of event.tags) {
     const f = tag[0];
     if (!f) continue;
     const ff = f.toLowerCase();
     // console.log("tag", ff);
-    if (ff === "patp") poast.author = tag[1];
     if (ff === "e") {
       const [, eventId, _relayURL, marker, _pubkey, ..._] = tag;
       // TODO
