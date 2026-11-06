@@ -48,8 +48,14 @@ async function request(
     });
     url = await client.getPresignedUrl(method, [...prefix, config.currentBucket, key].filter(Boolean).join("/"), { expirySeconds: 60 });
   }
-  // Jars' wildcard CORS allows query signing, but not Authorization headers
-  // or cross-origin session cookies. Credentials never enter stored media URLs.
+  // Sign for the ship, then transport through Vite in development. The proxy
+  // restores the signed host/path, avoiding Eyre + Jars duplicate CORS headers.
+  // Public media URLs still point straight to the ship.
+  if (import.meta.env.DEV) {
+    const proxied = new URL(url);
+    proxied.pathname = `${import.meta.env.BASE_URL.replace(/\/$/, "")}${proxied.pathname}`;
+    url = `${window.location.origin}${proxied.pathname}${proxied.search}`;
+  }
   const response = await fetch(url, {
     method, body: payload, headers,
     credentials: config.secretAccessKey ? "omit" : "same-origin",

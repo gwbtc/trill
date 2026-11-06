@@ -7,6 +7,16 @@ import { createHash } from "node:crypto";
 // https://vite.dev/config/
 export default defineConfig({
   base: "/apps/nostrill",
+  server: {
+    proxy: {
+      "/apps/nostrill/jars": {
+        target: "http://localhost:8900",
+        // SigV4 signs the ship's Host and /jars path, not the dev origin.
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/apps\/nostrill/, ""),
+      },
+    },
+  },
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

@@ -1447,10 +1447,10 @@ async function installJarsMock(page, { exists = false, headStatus, createStatus 
     const request = route.request();
     const method = request.method();
     const url = new URL(request.url());
-    const bucket = /^\/jars\/trill\/?$/.test(url.pathname);
-    const headers = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "HEAD, GET, PUT, OPTIONS" };
+    const bucket = /^\/jars\/trill\/?$/.test(url.pathname.replace(/^\/apps\/nostrill/, ""));
+    const headers = { "access-control-allow-origin": "http://localhost:5173, *", "access-control-allow-headers": "*", "access-control-allow-methods": "HEAD, GET, PUT, OPTIONS" };
     if (method === "OPTIONS") return route.fulfill({ status: 200, headers });
-    calls.push({ method, path: url.pathname, signed: url.searchParams.has("X-Amz-Signature"), type: request.headers()["content-type"] });
+    calls.push({ method, path: url.pathname.replace(/^\/apps\/nostrill/, ""), proxied: url.pathname.startsWith("/apps/nostrill/jars/"), signed: url.searchParams.has("X-Amz-Signature"), type: request.headers()["content-type"] });
     if (method === "HEAD" && bucket) return route.fulfill({ status: headStatus ?? (present ? 200 : 404), headers });
     if (method === "PUT" && bucket) {
       if (createStatus === 200) present = true;
@@ -1499,6 +1499,7 @@ test("Jars creates the Trill bucket and supports browsing and pasted uploads wit
   expect(jars.calls.filter(call => call.method === "PUT" && call.path.endsWith(".png"))).toHaveLength(1);
   expect(jars.calls.filter(call => call.method !== "GET" || /^\/jars\/trill\/?$/.test(call.path)).every(call => call.signed)).toBe(true);
   expect(jars.calls.find(call => call.method === "PUT" && call.path.endsWith(".png")).type).toBe("image/png");
+  expect(jars.calls.filter(call => call.signed).every(call => call.proxied)).toBe(true);
   expect(storageReads).toEqual([]);
   expect(await editor.locator("img").getAttribute("src")).not.toContain("X-Amz-");
   await page.setViewportSize({ width: 390, height: 844 });
